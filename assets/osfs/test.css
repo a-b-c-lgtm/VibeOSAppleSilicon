@@ -1,0 +1,59 @@
+/* M61 CSS fixture — exercised by /bin/cssparse + scripts/test_css.py.
+ *
+ * Mirrors the structure of assets/osfs/test.html (M59/M60 fixture)
+ * so we can verify that selectors actually match the right DOM
+ * nodes once both halves are wired in M62.
+ *
+ * Selectors in this file are deliberately chosen to cover every
+ * piece of css.h's selector grammar:
+ *   - universal     ( * )
+ *   - type          ( body, h1, p, ul, li )
+ *   - class         ( .intro, .warn )
+ *   - id            ( #lead )
+ *   - compound      ( p.intro, p.intro#lead )
+ *   - descendant    ( body p, ul li )
+ *   - child         ( ul > li )
+ *   - comma list    ( .note, .warn { ... } )
+ *
+ * Plus a malformed-rule recovery test (the @media block) and an
+ * unterminated-rule test (the /+ ... +/ block comment).
+ */
+
+* { box-sizing: border-box; }
+
+body {
+  background: white;
+  color: black;
+  font-family: serif;
+  margin: 0;
+}
+
+h1 {
+  font-size: 32px;
+  color: navy;
+}
+
+/* descendant + child + comma list all in one stretch */
+body p { line-height: 1.4; }
+ul li  { list-style: square; }
+ul > li { padding-left: 10px; }
+
+p.intro     { font-weight: bold; color: #333333; }
+p.intro#lead { font-style: italic; }
+
+#lead { text-decoration: underline; }
+
+.note, .warn {
+  border: 1px solid red;
+  padding: 4px;
+}
+
+/* this @-rule should be skipped entirely; the block inside MUST NOT
+   bleed selectors into the outer stylesheet */
+@media (min-width: 800px) {
+  body { background: pink; }
+  h1   { font-size: 48px; }
+}
+
+/* trailing rule after the at-rule must still parse */
+script { display: none; }

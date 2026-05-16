@@ -1,0 +1,356 @@
+/*
+ * kernel/core/syscall.h — kernel-side syscall ABI.
+ *
+ * Calling convention (matches the AArch64 Linux ABI):
+ *   x8       syscall number       (selects which handler)
+ *   x0..x5   up to six arguments
+ *   x0       return value         (negative errno on error)
+ *
+ * The syscall number lives in x8 rather than x0 so that the
+ * dispatcher does not have to shuffle arguments before calling the
+ * handler — the C signature `long handler(long, long, long, long,
+ * long, long)` already maps 1:1 to x0..x5.
+ *
+ * The numeric values are intentionally NOT the Linux ABI numbers.
+ * We pick small dense numbers and grow the table as needed; user
+ * code talks to this kernel via a tiny userspace libc that hides
+ * the numbers behind named wrappers (write, exit, ...).
+ */
+#ifndef SYSCALL_H
+#define SYSCALL_H
+
+#include <stdint.h>
+#include "exception.h"
+
+/* Stable syscall numbers.  Append-only — never renumber. */
+enum {
+    SYS_WRITE  = 1,   /* (int fd, const void *buf, size_t len) -> ssize_t  */
+    SYS_EXIT   = 2,   /* (int code) -> noreturn                            */
+    SYS_GETPID = 3,   /* (void) -> int                                     */
+    SYS_YIELD  = 4,   /* (void) -> int (always 0)                          */
+    SYS_OPEN   = 5,   /* (const char *name, int flags) -> int fd           */
+    SYS_READ   = 6,   /* (int fd, void *buf, size_t len) -> ssize_t        */
+    SYS_CLOSE  = 7,   /* (int fd) -> int                                   */
+    SYS_SPAWN  = 8,   /* (const char *path, const char *args) -> int tid   */
+    SYS_WAIT   = 9,   /* (int *code_out) -> int tid (or -1 if no children) */
+    SYS_GETARGS= 10,  /* (char *buf, size_t len) -> ssize_t bytes copied   */
+    SYS_SBRK   = 11,  /* (intptr_t inc) -> void *prev_brk (-1 on failure)  */
+    SYS_LISTDIR= 12,  /* (int idx, char *name, size_t cap, uint32_t *size_out)
+                       *   -> ssize_t name length (or -ENOENT past end)    */
+    SYS_UPTIME_MS = 13, /* (void) -> uint64 monotonic milliseconds since boot */
+    SYS_CHDIR  = 14,  /* (const char *path) -> int (0 / -errno)            */
+    SYS_GETCWD = 15,  /* (char *buf, size_t cap) -> ssize_t bytes incl NUL */
+    SYS_GETENV = 16,  /* (const char *key, char *buf, size_t cap)
+                       *   -> ssize_t bytes incl NUL, or -ENOENT           */
+    SYS_SETENV = 17,  /* (const char *key, const char *val) -> int         */
+    SYS_UNSETENV = 18,/* (const char *key) -> int                          */
+    SYS_GETENV_ALL = 19, /* (char *buf, size_t cap) -> ssize_t bytes used   */
+    SYS_SPAWN_REDIR = 20, /* (const char *path, const char *args,
+                           *  const char *stdin_path) -> int tid             */
+    SYS_SLEEP_MS = 21,    /* (uint64_t ms) -> int (always 0)                  */
+    SYS_PIPE     = 22,    /* (int fds[2]) -> int (0 ok, -errno fail)          */
+    SYS_DUP2     = 23,    /* (int oldfd, int newfd) -> int (newfd)            */
+    SYS_SPAWN_PIPE = 24,  /* (path, args, stdin_fd, stdout_fd) -> int tid     */
+    SYS_UNLINK   = 25,    /* (const char *path) -> int (0 ok, -errno fail)    */
+    SYS_TTY_RAW  = 26,    /* (int enable) -> int (previous mode, 0/1)         */
+    SYS_KILL     = 27,    /* (int pid, int sig) -> int (0 ok, -errno fail)    */
+    SYS_SET_FG_PID = 28,  /* (int pid) -> int (previous fg pid)               */
+
+    /* Milestone 65 — fork + exec.  Together these supplant the
+     * old SYS_SPAWN family for callers that want POSIX semantics
+     * (fork to set up redirections / inherit fds / ..., then exec).
+     * SYS_SPAWN is preserved as a fast-path "fork-then-immediate-
+     * exec" primitive for everything that doesn't need it. */
+    SYS_FORK     = 29,    /* (void) -> int  (parent: child pid; child: 0)     */
+    SYS_EXEC     = 30,    /* (const char *path, char *const argv[]) -> -errno
+                           *   on failure; never returns on success.          */
+
+    /* Chapter 77 — Catchable signals (sigaction + sigreturn).
+     *   sys_sigaction(sig, handler, restorer) -> uint64_t old_handler
+     *     handler == 0 ⇒ SIG_DFL (terminate with 128+sig).
+     *     handler == 1 ⇒ SIG_IGN (drop silently).
+     *     otherwise   ⇒ EL0 user function pointer; called with
+     *                   x0 = signum and LR = restorer.
+     *   restorer is a tiny user-mode stub (typically in libc)
+     *   that issues SYS_SIGRETURN with x0 = the sigframe pointer
+     *   that the kernel placed at SP_EL0 just before the
+     *   handler started running.  The stub is shared across all
+     *   handlers in this thread; pass its address on the FIRST
+     *   sys_sigaction call (subsequent calls may pass 0 to keep
+     *   the existing one).
+     *   Returns the previous handler value, or (uint64_t)-EINVAL
+     *   for a bad signum.
+     *
+     *   sys_sigreturn(uptr) -> noreturn
+     *     uptr points at a struct sigframe written by the kernel
+     *     when it diverted the thread into the handler.  Restores
+     *     gpr[0..30], elr, spsr, sp_el0 from that frame and erets
+     *     to wherever the program was when the signal arrived. */
+    SYS_SIGACTION = 31,
+    SYS_SIGRETURN = 32,
+
+    /* Chapter 78 — SIGCHLD + waitpid.  Generalises SYS_WAIT:
+     *   pid > 0 → wait for that specific child only.
+     *   pid <= 0 → wait for any child (legacy SYS_WAIT).
+     *   options & WNOHANG (1) → do not block; return 0 if a
+     *     matching child exists but has not yet exited.
+     * Returns the reaped child's pid (and writes exit code via
+     * code_out_ptr if non-NULL), 0 for the WNOHANG no-exit case,
+     * or -1 if no child matches the filter at all. */
+    SYS_WAITPID = 33,
+
+    /* Chapter 79b — pseudo-terminal allocation.
+     *   sys_openpty(int *master_out, int *slave_out) -> 0 or -errno
+     * Allocates a pty (two pipes + a foreground-pid field) and
+     * installs two new fds in the calling thread:
+     *   - *master_out: FD_PTY_MASTER, intended for gui_term.
+     *     Reads drain the slave-to-master ring (non-blocking;
+     *     returns 0 if no data).  Writes enqueue to the
+     *     master-to-slave ring after scanning each byte: a
+     *     literal Ctrl-C (0x03) is translated to SIGINT for the
+     *     pty's fg_pid (set via sys_set_fg_pid by the shell)
+     *     and not forwarded.
+     *   - *slave_out: FD_PTY_SLAVE, intended to be dup2'd onto
+     *     fds 0/1/2 of the child shell after fork().  Reads
+     *     block on the master-to-slave ring; writes enqueue to
+     *     slave-to-master.
+     * Errors: -EFAULT (bad pointer), -EMFILE (no fd slots),
+     * -ENOMEM (pty/pipe alloc). */
+    SYS_OPENPTY = 34,
+
+    /* Chapter 82 — durability for OSFS-2.
+     *   sys_fsync(int fd) -> 0 or -errno
+     * For an OSFS-2 file fd, flushes every dirty block in the
+     * write-back cache to disk synchronously and returns 0 only
+     * after every virtio-blk write has acked.  No-op (returns 0)
+     * for fds backed by storage that's already synchronous or
+     * volatile by design: console, ramfs, OSFS-1 (read-only),
+     * tmpfs, pipes, ptys, sockets.
+     * Errors: -EBADF (bad fd), -EIO (a writeback failed; the
+     * cache slot is left dirty so a retry can succeed). */
+    SYS_FSYNC = 35,
+
+    /* Chapter 85 \u2014 directory namespace.
+     *   sys_mkdir(const char *path) -> 0 or -errno
+     * Creates a directory at `path` (must start with /data/ \u2014
+     * the only writable mount with subdirectory support).  All
+     * parent components must already exist.  -EEXIST if the leaf
+     * already exists, -EINVAL if the prefix isn't /data/, -ENOSPC
+     * if we ran out of inodes/blocks. */
+    SYS_MKDIR = 36,
+
+    /*   sys_listdir_at(const char *path, int idx, char *name,
+     *                  size_t cap, uint32_t *size_out,
+     *                  uint32_t *type_out) -> bytes-of-name or -errno
+     * Iterates the directory at `path` (currently /data/<dir>)
+     * by index, returning leaf names rather than full paths.
+     * `type_out` receives 1 (file) or 2 (dir) so callers can\n     * tag entries without a follow-up stat. */
+    SYS_LISTDIR_AT = 37,
+
+    /* Milestone 40 — minimal in-kernel window manager. */
+    SYS_GUI_CREATE_WINDOW  = 40,  /* (uint32_t w, uint32_t h, const char *t) -> id */
+    SYS_GUI_DESTROY_WINDOW = 41,  /* (int id) -> 0/-errno                          */
+    SYS_GUI_PRESENT        = 42,  /* (struct gui_present_args *)   -> 0/-errno     */
+    SYS_GUI_FILL_RECT      = 43,  /* (struct gui_fill_rect_args *) -> 0/-errno     */
+    SYS_GUI_DRAW_TEXT      = 44,  /* (struct gui_draw_text_args *) -> 0/-errno     */
+    SYS_GUI_FLUSH          = 45,  /* (int id) -> 0/-errno                          */
+    SYS_GUI_POLL_EVENT     = 46,  /* (struct gui_event *out) -> 1 if ev, 0 if none */
+
+    /* Milestone 47 — taskbar / always-on-top windows + window list. */
+    SYS_GUI_CREATE_WINDOW_EX = 47, /* (struct gui_create_window_ex_args *) -> id   */
+    SYS_GUI_LIST_WINDOWS   = 48,  /* (struct gui_window_info *out, int max) -> n  */
+    SYS_GUI_RAISE_WINDOW   = 49,  /* (int id) -> 0/-errno                         */
+
+    /* Milestone 50 — userspace desktop environment. */
+    SYS_GUI_GET_SCREEN_SIZE = 50, /* (uint32_t *w, uint32_t *h) -> 0/-errno       */
+
+    /* Milestone 51 — minimize / restore windows. */
+    SYS_GUI_SET_MINIMIZED   = 51, /* (int id, int on) -> 0/-errno                 */
+
+    /* Milestone 56 — sockets (active-open client side). */
+    SYS_SOCKET_CONNECT  = 60, /* (uint32_t ip4_be, uint16_t port) -> fd / -errno */
+    SYS_SOCKET_STATE    = 61, /* (int fd) -> int state (enum tcp_state)          */
+    SYS_SOCKET_SHUTDOWN = 62, /* (int fd) -> 0 / -errno; FIN, fd still readable  */
+
+    /* Milestone 57 — DNS resolver. */
+    SYS_RESOLVE         = 63, /* (const char *name, uint32_t *out_ip4_be) -> 0/-errno */
+
+    /* Chapter 90 — mmap + unified page cache.
+     *   sys_mmap(addr, len, prot, flags, fd, offset) -> VA / -errno
+     *     Supports MAP_PRIVATE | MAP_ANONYMOUS (anonymous, lazy
+     *     zero-fill) and MAP_PRIVATE on a ramfs file fd at
+     *     PROT_READ.  See mmap_uapi.h for the full list of
+     *     accepted flags + protections.  `addr` is ignored;
+     *     the kernel always picks a fresh range from the per-AS
+     *     mmap bump pointer.  `len`, `offset` must be page-
+     *     aligned; `len` must be > 0.
+     *   sys_munmap(addr, len) -> 0 / -errno
+     *     `addr` must be the exact start of an existing mmap;
+     *     partial unmaps return -EINVAL.  `len` is currently
+     *     ignored \u2014 the whole vma is removed.
+     */
+    SYS_MMAP    = 70,
+    SYS_MUNMAP  = 71,
+
+    /* Chapter 91 — userspace threads (clone-shaped) + futex.
+     *
+     *   sys_clone(entry, arg, stack_top, tls) -> tid / -errno
+     *     Spawns a new thread that shares the calling thread's
+     *     address space.  The new thread starts at user VA
+     *     `entry` with x0 = arg, SP_EL0 = stack_top, and
+     *     TPIDR_EL0 = tls.  When `entry` returns or calls exit,
+     *     the thread terminates like any other.  Both `entry`
+     *     and `stack_top` must lie in the user range; `tls` is
+     *     opaque to the kernel.  Returns the child's tid in
+     *     the parent on success, or -EINVAL/-ENOMEM on failure.
+     *     File descriptors are NOT shared — each thread gets a
+     *     fresh empty fd table.  Pre-chapter-91 fork copied the
+     *     parent's fds; chapter 91 deliberately doesn't because
+     *     the floor target (a thread doing CPU work under a
+     *     mutex) doesn't need shared fds and per-thread tables
+     *     are simpler than refcounted ones.
+     *
+     *   sys_futex_wait(uaddr, expected) -> 0 / -EAGAIN / -EFAULT
+     *     If *uaddr == expected, block on a wait queue keyed by
+     *     `uaddr` (per-AS — the same VA in different processes
+     *     would alias today, but cross-process futex isn't a
+     *     thing in chapter 91 because we have no shared memory).
+     *     If *uaddr != expected, return -EAGAIN immediately.
+     *     Spurious wakeups are allowed; callers must re-check
+     *     the predicate after waking.
+     *
+     *   sys_futex_wake(uaddr, n) -> count_woken / -EFAULT
+     *     Wake up to `n` threads currently blocked on this AS's
+     *     `uaddr` queue.  Returns the number actually woken
+     *     (may be 0 if no waiter has parked yet).  Pass INT_MAX
+     *     for "wake all".
+     */
+    SYS_CLONE       = 72,
+    SYS_FUTEX_WAIT  = 73,
+    SYS_FUTEX_WAKE  = 74,
+    /* Chapter 92 — clone with explicit CPU placement.  Same
+     * contract as SYS_CLONE plus a 5th `cpu_id` argument:
+     *
+     *   sys_clone2(entry, arg, stack_top, tls, cpu_id) -> tid
+     *
+     *   cpu_id == -1   : place on the calling thread's CPU
+     *                    (identical behaviour to SYS_CLONE).
+     *   cpu_id >= 0    : pin the new thread to absolute CPU
+     *                    cpu_id (must be < SMP_MAX_CPUS).
+     *
+     * The new thread inherits its home_cpu from cpu_id and stays
+     * there for life — chapter 92 doesn't migrate.  Misplacing a
+     * thread on a CPU that doesn't have user-thread support
+     * (today: any cpu_id >= 2 in the default 2-CPU build) is
+     * caught by the SMP_MAX_CPUS bound; cpu_id of an unbooted
+     * but in-range CPU returns -EINVAL via the secondary-CPU
+     * boot status. */
+    SYS_CLONE2      = 75,
+    /* Chapter 92 — return the CPU the calling thread is currently
+     * running on.  Used by tests to verify pinning works.  The
+     * value is a snapshot — if the caller is preempted between
+     * the syscall and using the result, it might end up on a
+     * different CPU.  Threads with home_cpu set (i.e. ALL chapter
+     * 92 user threads) don't migrate, so for them the snapshot
+     * is stable. */
+    SYS_GETCPU      = 76,
+    /* Chapter 93 — clone with extended argument struct (POSIX
+     * pthread_create-style interface, in spirit) and per-clone
+     * "what to share" flags.  Argument is a pointer to a
+     * `struct clone_args` in user memory; kernel copies it into
+     * its own buffer before validating.  Returns the new tid or
+     * -errno.
+     *
+     *   sys_clone3(struct clone_args *uargs) -> tid
+     *
+     * struct clone_args carries flags / entry / arg / stack_top
+     * / tls / cpu_id.  The only flag bit defined today is
+     * CLONE_FILES (bit 0) — when set, the new thread shares its
+     * parent's fd_table by reference (CLONE_FILES semantics).
+     * When clear, the new thread gets a fresh private fd_table
+     * (same as SYS_CLONE / SYS_CLONE2).
+     *
+     * Future flag bits will be rejected as -EINVAL until they
+     * are explicitly defined; this keeps userspace from
+     * accidentally relying on undefined-bit behaviour. */
+    SYS_CLONE3      = 77,
+
+    /* Chapter 95 — wall-clock time.  Pairs with the PL031 RTC
+     * boot snapshot in kernel/core/walltime.c.
+     *
+     *   sys_gettimeofday(struct timeval *out) -> 0 / -EFAULT
+     *
+     * Writes (tv_sec, tv_usec) where tv_sec is 64-bit signed
+     * seconds since 1970-01-01 UTC and tv_usec is the sub-
+     * second residual in microseconds (0..999_999).  The 64-
+     * bit width is deliberate Y2038-safety: the underlying
+     * PL031 wraps in 2038 but the kernel promotes the value
+     * before exporting it, so the ABI itself is good past 2038.
+     *
+     * No timezone information is conveyed — that's a userspace
+     * concern.  See /bin/date for an example consumer.
+     *
+     * `out` must be a writable user pointer; the kernel uses
+     * uaccess to copy the struct out, returning -EFAULT if the
+     * page is missing or read-only. */
+    SYS_GETTIMEOFDAY = 78,
+
+    /* Chapter 96 — synthesise a square wave through the
+     * virtio-snd PCM stream.
+     *
+     *   sys_beep(uint32_t freq_hz, uint32_t duration_ms)
+     *       -> 0 on success
+     *       -> -ENODEV if no virtio-sound device is present
+     *
+     * `freq_hz` is clipped to [20, 22050] (Nyquist for our
+     * 44_100 Hz sampling rate).  `duration_ms` is clipped to
+     * [1, 5000] to bound how long the call blocks.
+     *
+     * The call BLOCKS the calling thread for approximately
+     * `duration_ms` while the device consumes the synthesised
+     * samples; it does NOT return early.  Callers that want
+     * fire-and-forget audio should spawn a child first.
+     *
+     * No mixing: concurrent SYS_BEEP calls serialise inside the
+     * driver and only the most recent caller's audio is heard
+     * cleanly. */
+    SYS_BEEP        = 79,
+};
+
+/* Chapter 95 — POSIX-shaped wall-clock value.  Layout is part
+ * of the userspace ABI (mirrored byte-for-byte in
+ * userspace/libc/syscall.h).  The 4-byte _pad keeps the total
+ * struct size a multiple of 8 so further fields could be
+ * appended without changing alignment of existing ones. */
+struct timeval {
+    int64_t  tv_sec;     /* seconds since 1970-01-01 UTC      */
+    uint32_t tv_usec;    /* microseconds, 0..999_999          */
+    uint32_t _pad;
+};
+
+/* Chapter 93 — clone3 argument struct.  Layout is part of the
+ * userspace ABI; do not reorder.  The 4-byte _pad keeps the
+ * struct's total size a multiple of 8 so further additions can
+ * append fields without changing alignment of existing ones. */
+struct clone_args {
+    uint64_t flags;
+    uint64_t entry;
+    uint64_t arg;
+    uint64_t stack_top;
+    uint64_t tls;
+    int32_t  cpu_id;
+    uint32_t _pad;
+};
+
+/* Chapter 93 — clone3 flag bits.  Only bit 0 (CLONE_FILES) is
+ * defined today; sys_clone3 rejects unknown bits with -EINVAL. */
+#define CLONE_FILES  0x01ULL
+
+/* Errno values.  Returned as negatives from syscalls. */
+#define ENOSYS    38
+#define ENODEV    19   /* matches POSIX ENODEV; see SYS_BEEP */
+
+/* Called from svc_entry in vectors.S after save_context. */
+void svc_dispatch(struct exception_frame *frame);
+
+#endif

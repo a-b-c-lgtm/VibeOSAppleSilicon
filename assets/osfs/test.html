@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>M59 tokenizer fixture</title>
+<style>
+  body { color: red; }
+</style>
+</head>
+<body>
+<!-- a comment in the middle -->
+<h1>Hello, &amp; goodbye</h1>
+<p class="intro" id='lead'>The quick brown fox &lt;jumps&gt; over the lazy dog.</p>
+<ul>
+  <li>one</li>
+  <li>two</li>
+  <li data-x=42 disabled>three</li>
+</ul>
+<img src="/icon.png" alt="x" />
+<script>
+var x = 1 < 2 && 3 > 0; // not html, won't be re-tokenized
+</script>
+<p>price: &#36; &#x26; done.</p>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><title>chapter 98b intrinsic-size test</title></head>
+<body>
+<h1>Image intrinsic-size test</h1>
+<p>Below is a 64x64 PNG with no width/height attributes.  Layout
+should pick up the intrinsic dimensions from the image cache;
+without the chapter 98b fix the image would render at the 16x16
+placeholder size and only the top-left quadrant would be visible.</p>
+<img src="/icon_large.png" alt="missing big icon" />
+<p>End of page.</p>
+</body>
+</html>

@@ -1,0 +1,14 @@
+If you can read this through the kernel's OSFS-1 mount,
+the chain works:
+
+  /bin/sh -> read(0) line "/bin/cat /mnt/poem.txt"
+  /bin/cat -> SYS_OPEN("/mnt/poem.txt")
+  vfs_open -> osfs_lookup -> hits sector N
+  vfs_read -> osfs_read -> virtio_blk_read(N)
+  virtio queue 0 -> QEMU virtio-blk -> build/disk.img
+  back up the chain to write(1) -> PL011 -> your terminal.
+
+The OSFS-1 layout is documented in kernel/core/osfs.h.
+For the moment everything is read-only; write support
+needs a free-space map and a way to grow files past their
+initially-allocated sector range.

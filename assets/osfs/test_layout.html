@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>M62 layout fixture</title>
+<style>
+  body { background: white; color: #202020; font-size: 16px;
+         margin: 16px; line-height: 1.4em; }
+  h1 { color: navy; font-size: 32px; margin-top: 0; margin-bottom: 16px; }
+  h2 { color: #404080; font-size: 24px; margin-top: 24px; margin-bottom: 12px; }
+  p  { margin-top: 8px; margin-bottom: 8px; }
+  p.intro { font-weight: bold; color: #105050; }
+  p.intro#lead { font-style: italic; }
+  .note { background: #FFFFC0; padding: 8px;
+          border: 2px solid #C0A040; }
+  .center { text-align: center; }
+  .right  { text-align: right; }
+  .small  { font-size: 13px; color: gray; }
+  ul { padding-left: 32px; margin-top: 8px; margin-bottom: 8px; }
+  li { color: #303030; }
+  a  { color: #0050C0; text-decoration: underline; }
+  .bordered-block {
+      border: 1px solid #888888;
+      padding: 12px;
+      margin-top: 16px;
+      margin-bottom: 16px;
+  }
+  .half { width: 50%; background: #E0F0FF; padding: 4px;
+          border: 1px solid #6090C0; }
+  .swatch { background: #FF8040; color: white;
+            padding: 4px 12px;
+            margin-top: 4px; margin-bottom: 4px;
+            border: 1px solid black; }
+</style>
+</head>
+<body>
+
+<h1>M62 Layout Smoke Page</h1>
+
+<p class="intro" id="lead">
+  This is the lead paragraph, styled bold + italic via two
+  cascading rules.  It also exercises whitespace collapsing
+  across multiple source-line breaks and inline runs.
+</p>
+
+<p>
+  A normal paragraph with an
+  <a href="https://example.org/">inline link</a> in the middle and
+  some <b>bold</b> + <i>italic</i> + <u>underlined</u> spans.  This
+  one is long enough to wrap at the viewport width, so the line
+  breaker should produce more than one line box for it.  Word
+  word word word word word word word word word word.
+</p>
+
+<h2>Lists</h2>
+<ul>
+  <li>First list item with a short bit of text.</li>
+  <li>Second list item, slightly longer to test wrapping inside the
+      list-item content area when it overflows the right edge.</li>
+  <li>Third item.</li>
+</ul>
+
+<h2>Box model</h2>
+
+<div class="bordered-block">
+  <p>This paragraph lives inside a div with a 1px border and 12px
+     padding.  The border should hug the padded box.</p>
+</div>
+
+<div class="note">
+  <b>Note:</b> the surrounding box has a 2px gold border and a
+  pale-yellow background.  Padding is 8px on every side.
+</div>
+
+<h2>Width &amp; alignment</h2>
+
+<div class="half">
+  This block has width:50% — it should be half the viewport
+  wide, with a light-blue background and a darker blue border.
+</div>
+
+<p class="center">Centred paragraph (text-align: center).</p>
+<p class="right">Right-aligned paragraph.</p>
+<p class="small">Small grey footer-style paragraph.</p>
+
+<h2>Inline swatches</h2>
+
+<p>
+  Three swatches:
+  <span class="swatch">RED-A</span>
+  <span class="swatch">RED-B</span>
+  <span class="swatch">RED-C</span>
+  inline within a paragraph.
+</p>
+
+<h2>End</h2>
+
+<p>End of fixture.</p>
+
+</body>
+</html>

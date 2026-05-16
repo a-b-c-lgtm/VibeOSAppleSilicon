@@ -1,0 +1,140 @@
+Running under HVF (-m 8G) — Ctrl-A X to quit.
+qemu-system-aarch64 -M virt,gic-version=3 -cpu host -accel hvf \
+	        -m 8G -nographic -serial mon:stdio \
+	        -global virtio-mmio.force-legacy=off \
+	        -device loader,file=assets/virt.dtb,addr=0x44000000 \
+	        -drive if=none,file=build/disk.img,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 \
+	        -kernel build/kernel.elf
+
+============================================================
+osdev aarch64 — milestone 14 (block cache in front of virtio-blk)
+============================================================
+dtb_phys = 0x0000000000000000
+initialising GIC v3 ... ok
+priming generic timer for 100 ms ticks ... ok
+[fdt] valid DTB at 0x0000000044000000, totalsize = 0x0000000000100000
+[fdt] memory[0x0000000000000000] base = 0x0000000040000000, size = 0x0000000200000000
+[pmap] installed 0x0000000000000008 x 1 GiB RAM block descriptor(s)
+[pmem] usable pages = 0x00000000001ffedf (= 0x00000000007ffb7c KiB)
+initialising kernel heap (0x0000000010000000 bytes @ 0x0000000230000000) ... ok
+initialising thread bookkeeping ... ok
+initialising VFS ... [vfs] ramfs files:
+       /motd (0x00000000000001dd bytes)
+       /README (0x00000000000000ea bytes)
+ok
+probing virtio-mmio bus for a block device ... [virtio-blk] found block device at slot 0x000000000000001f base=0x000000000a003e00
+[virtio-blk] ready, capacity = 0x0000000000000800 sectors (0x0000000000100000 bytes)
+ok
+[blk_cache] ready, 0x0000000000000040 slots × 512B = 32 KiB
+mounting OSFS-1 from disk ... [osfs] mounted, 0x0000000000000006 files:
+       /mnt/hello.txt (0x0000000000000071 bytes @ sector 0x0000000000000002)
+       /mnt/poem.txt (0x0000000000000239 bytes @ sector 0x0000000000000003)
+       /mnt/init (0x00000000000014e8 bytes @ sector 0x0000000000000005)
+       /mnt/sh (0x0000000000001658 bytes @ sector 0x0000000000000010)
+       /mnt/cat (0x00000000000013a8 bytes @ sector 0x000000000000001c)
+       /mnt/hello (0x0000000000001230 bytes @ sector 0x0000000000000026)
+ok
+unmasking IRQs in PSTATE ... ok
+
+[heap] running split + coalesce smoke test
+[heap] initial used = 0x00000000000002c0, blocks = 0x0000000000000002
+[heap] after 3 allocs: used = 0x0000000000000800, blocks = 0x0000000000000005
+[heap] after kfree(middle): blocks = 0x0000000000000005
+[heap] after kfree(all):    blocks = 0x0000000000000002, used = 0x00000000000002c0
+
+
+[thread] spawning two CPU-bound busy workers
+[thread] (no yield calls — only the timer can swap them)
+[busy-A] iter 0x0000000000000000
+[busy-B] iter 0x0000000000000000
+[busy-A] iter 0x0000000000000001
+[busy-B] iter 0x0000000000000001
+[busy-A] iter 0x0000000000000002
+[busy-B] iter 0x0000000000000002
+[busy-A] iter 0x0000000000000003
+[busy-A] done
+[busy-B] iter 0x0000000000000003
+[busy-B] done
+[thread] all workers reaped
+
+
+[user] loading /bin/init (0x00000000000014e8 bytes)
+[user] entry = 0x000000022fffa000, sp = 0x000000022fffa000
+[user] spawned init pid 0x0000000000000003
+[init] starting (pid 1)
+[init] spawn /bin/hello -> tid=4
+hello from EL0!
+pid=0x00000004
+after yield, still alive
+[sys_exit] thread '/bin/hello' exited with code 0x0000000000000000
+[init] reaped tid=4 code=0
+[init] spawn /bin/cat -> tid=5
+Welcome to the hobby OS.
+
+This file lives in the kernel-embedded ramfs. It was placed at
+/motd by the Makefile via objcopy -I binary -O elf64-littleaarch64,
+linked into the kernel image's .rodata.embedded_user section, and
+served by the milestone-8 VFS.
+
+If you can read this, the chain works:
+  user 'cat' -> SYS_OPEN("/motd") -> vfs_open -> ramfs lookup
+              -> SYS_READ(fd, buf, len) -> vfs_read -> memcpy
+              -> SYS_WRITE(1, buf, len) -> serial console.
+[sys_exit] thread '/bin/cat' exited with code 0x0000000000000000
+[init] reaped tid=5 code=0
+[init] launching /bin/sh
+[sh] tiny shell ready.  type 'help' for a list of commands.
+$ /bin/cat /mnt/hello.txt
+hello from disk!
+
+This file was read from sector 2 of the virtio-blk device,
+not from the kernel-embedded ramfs.
+[sys_exit] thread '/bin/cat' exited with code 0x0000000000000000
+$ /bin/cat /mnt/hello.txt
+hello from disk!
+
+This file was read from sector 2 of the virtio-blk device,
+not from the kernel-embedded ramfs.
+[sys_exit] thread '/bin/cat' exited with code 0x0000000000000000
+$ /bin/cat /mnt/hello.txt
+hello from disk!
+
+This file was read from sector 2 of the virtio-blk device,
+not from the kernel-embedded ramfs.
+[sys_exit] thread '/bin/cat' exited with code 0x0000000000000000
+$ /bin/cat /mnt/hello.txt
+hello from disk!
+
+This file was read from sector 2 of the virtio-blk device,
+not from the kernel-embedded ramfs.
+[sys_exit] thread '/bin/cat' exited with code 0x0000000000000000
+$ /bin/hello
+hello from EL0!
+pid=0x0000000b
+after yield, still alive
+[sys_exit] thread '/bin/hello' exited with code 0x0000000000000000
+$ /bin/hello
+hello from EL0!
+pid=0x0000000c
+after yield, still alive
+[sys_exit] thread '/bin/hello' exited with code 0x0000000000000000
+$ exit
+[sys_exit] thread '/bin/sh' exited with code 0x0000000000000000
+[init] /bin/sh exited code=0
+[init] all done, exiting 0
+[sys_exit] thread 'init' exited with code 0x0000000000000000
+[user] init (pid 0x0000000000000003) exited code = 0x0000000000000000
+[blk_cache] hits=0x000000000000003f misses=0x000000000000002e evictions=0x0000000000000000
+entering wfe loop; heartbeat every 0x00000000000003e8 ms (Ctrl-A X to quit QEMU)
+
+[tick] count = 0x000000000000000a
+[tick] count = 0x0000000000000014
+[tick] count = 0x000000000000001e
+[tick] count = 0x0000000000000028
+[tick] count = 0x0000000000000032
+[tick] count = 0x000000000000003c
+[tick] count = 0x0000000000000046
+[tick] count = 0x0000000000000050
+[tick] count = 0x000000000000005a
+[tick] count = 0x0000000000000064
+qemu-system-aarch64: terminating on signal 15 from pid 59226 (<unknown process>)

@@ -1,0 +1,4 @@
+hello from disk!
+
+This file was read from sector 2 of the virtio-blk device,
+not from the kernel-embedded ramfs.

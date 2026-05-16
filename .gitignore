@@ -1,0 +1,24 @@
+# Build artifacts
+build/
+*.iso
+*.elf
+*.bin
+*.img
+*.map
+*.o
+
+# Runtime logs
+*.log
+
+# macOS
+.DS_Store
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~

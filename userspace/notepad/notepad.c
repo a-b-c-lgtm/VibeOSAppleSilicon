@@ -386,18 +386,43 @@ static void render_to_buffer(void)
                           FG_BGRA, BG_BGRA, 0);
     }
 
-    /* Cursor (block). */
+    /* Cursor (block). Chapter 102 -- the kernel font is now
+     * proportional, so the cursor's x position must come from
+     * measuring the text up to the cursor column rather than from
+     * `col * GLYPH_W`. Same for the cursor block's width: we use
+     * the rendered width of the glyph under the cursor (or a one-
+     * space fallback at end-of-line). */
     int vrow = g_cur_row - g_top_row;
     if (vrow >= 0 && vrow < ROWS) {
         int col = g_cur_col;
         if (col > COLS - 1) col = COLS - 1;        /* clip horizontally */
-        uint32_t cx = (uint32_t)(GUTTER + col * GLYPH_W);
+        const char *line = g_lines[g_cur_row];
+        int line_len_local = g_line_len[g_cur_row];
+
+        /* Measure prefix up to the cursor column. */
+        int prefix_px = 0;
+        if (col > 0 && col <= line_len_local) {
+            char saved = line[col];
+            ((char *)line)[col] = '\0';
+            prefix_px = gui_measure_text(line);
+            ((char *)line)[col] = saved;
+        }
+        uint32_t cx = (uint32_t)(GUTTER + prefix_px);
         uint32_t cy = (uint32_t)(GUTTER + vrow * GLYPH_H);
-        gui_fill_rect(g_win_id, cx, cy, GLYPH_W, GLYPH_H, CUR_BGRA);
+
+        /* Cursor block width: one glyph's advance, or a sensible
+         * fallback (~ space width) at end-of-line. */
+        uint32_t cw = GLYPH_W;
+        if (col < line_len_local) {
+            char one[2] = { line[col], '\0' };
+            int w_one = gui_measure_text(one);
+            if (w_one > 0) cw = (uint32_t)w_one;
+        }
+        gui_fill_rect(g_win_id, cx, cy, cw, GLYPH_H, CUR_BGRA);
         /* Re-draw the glyph under the cursor in the bg colour so it's
          * visible against the blue block. */
-        if (col < g_line_len[g_cur_row]) {
-            char one[2] = { g_lines[g_cur_row][col], '\0' };
+        if (col < line_len_local) {
+            char one[2] = { line[col], '\0' };
             gui_draw_text(g_win_id, cx, cy, one, BG_BGRA, CUR_BGRA, 0);
         }
     }

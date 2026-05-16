@@ -365,7 +365,7 @@ static void render(int win_id, int win_w, int win_h,
     gui_fill_rect(win_id, (uint32_t)dlg_x, (uint32_t)dlg_y,
                   DLG_W, DLG_TITLE_H, DLG_TITLE_BG);
     const char *title = (g_mode == MODE_NEW_FOLDER)
-        ? "Save As — New Folder"
+        ? "Save As - New Folder"
         : "Save As";
     gui_draw_text(win_id, (uint32_t)(dlg_x + DLG_PAD),
                   (uint32_t)(dlg_y + 4),
@@ -432,19 +432,22 @@ static void render(int win_id, int win_w, int win_h,
                 s_append(sz, " b", sizeof(sz));
                 suffix = sz;
             }
-            int sz_chars = (int)s_strlen(suffix);
-            int sz_x = list_x + list_w - 6 - sz_chars * GLYPH_W;
+            /* Right-align the suffix. Chapter 102 -- measure the
+             * proportional rendered width instead of `chars * 8`. */
+            int sz_x = list_x + list_w - 6 - gui_measure_text(suffix);
             gui_draw_text(win_id, (uint32_t)sz_x, (uint32_t)row_y,
                           suffix, DLG_DIM, row_bg, 0);
         }
     }
     y = list_y + list_h + 12;
 
-    /* 4. "Filename:" or "Folder:" label + field. */
+    /* 4. "Filename:" or "Folder:" label + field. Chapter 102 --
+     * measure the label so the field x-position is independent of
+     * the kernel font's glyph pitch. */
     const char *label = (g_mode == MODE_NEW_FOLDER) ? "Folder:  " : "Filename:";
     gui_draw_text(win_id, (uint32_t)(dlg_x + DLG_PAD), (uint32_t)y,
                   label, DLG_FG, DLG_BG, 0);
-    int field_x = dlg_x + DLG_PAD + 10 * GLYPH_W;
+    int field_x = dlg_x + DLG_PAD + gui_measure_text(label) + 8;
     int field_y = y - 2;
     int field_w = DLG_W - DLG_PAD - (field_x - dlg_x);
     uint32_t fbg = (g_mode == MODE_NEW_FOLDER) ? DLG_NF_BG : DLG_FIELD_BG;
@@ -461,11 +464,27 @@ static void render(int win_id, int win_w, int win_h,
                   (uint32_t)field_y, 1, DLG_FIELD_H, DLG_DIM);
     gui_draw_text(win_id, (uint32_t)(field_x + 4), (uint32_t)(field_y + 3),
                   g_field, DLG_FG, fbg, 0);
-    /* Field cursor (block). */
-    int cur_px = field_x + 4 + g_field_cur * GLYPH_W;
-    if (cur_px < field_x + field_w - GLYPH_W) {
+    /* Field cursor (block). Chapter 102 -- position via measured
+     * width of the prefix up to the cursor. */
+    int prefix_px = 0;
+    if (g_field_cur > 0) {
+        char saved = g_field[g_field_cur];
+        g_field[g_field_cur] = '\0';
+        prefix_px = gui_measure_text(g_field);
+        g_field[g_field_cur] = saved;
+    }
+    int cur_px = field_x + 4 + prefix_px;
+    /* Width of the cursor block: width of the glyph under it, or
+     * a sensible fallback (GLYPH_W) at end-of-line. */
+    int cur_w = GLYPH_W;
+    if (g_field_cur < g_field_len) {
+        char one[2] = { g_field[g_field_cur], '\0' };
+        int w_one = gui_measure_text(one);
+        if (w_one > 0) cur_w = w_one;
+    }
+    if (cur_px < field_x + field_w - cur_w) {
         gui_fill_rect(win_id, (uint32_t)cur_px, (uint32_t)(field_y + 3),
-                      GLYPH_W, GLYPH_H, DLG_CUR_BG);
+                      (uint32_t)cur_w, GLYPH_H, DLG_CUR_BG);
         if (g_field_cur < g_field_len) {
             char one[2] = { g_field[g_field_cur], '\0' };
             gui_draw_text(win_id, (uint32_t)cur_px, (uint32_t)(field_y + 3),

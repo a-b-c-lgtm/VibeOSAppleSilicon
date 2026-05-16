@@ -95,6 +95,9 @@ enum {
     SYS_GUI_GET_SCREEN_SIZE = 50,
     SYS_GUI_SET_MINIMIZED   = 51,
 
+    /* Chapter 102 -- measure text in the kernel's default font. */
+    SYS_GUI_MEASURE_TEXT    = 52,
+
     /* Milestone 56 — sockets (active-open client side). */
     SYS_SOCKET_CONNECT  = 60,
     SYS_SOCKET_STATE    = 61,
@@ -971,6 +974,22 @@ static inline int gui_draw_text(int id,
         .transparent = transparent,
     };
     return (int)_svc1(SYS_GUI_DRAW_TEXT, (long)(uintptr_t)&a);
+}
+
+/* Chapter 102 -- measure a string's rendered width in pixels in
+ * the kernel's default font (TTF DejaVu Sans @ 16 px today).
+ * Stops at '\n'. Returns the pixel width as a non-negative int,
+ * or 0 on EFAULT (the kernel returns -EFAULT but we don't expose
+ * errno here; callers can detect bad input by checking that the
+ * string they passed isn't empty). Used by apps that previously
+ * assumed an 8-px glyph pitch -- carets, centred labels,
+ * truncate-to-fit -- so they keep working with proportional
+ * glyphs. */
+static inline int gui_measure_text(const char *s)
+{
+    long r = _svc1(SYS_GUI_MEASURE_TEXT, (long)(uintptr_t)s);
+    if (r < 0) return 0;
+    return (int)r;
 }
 
 static inline int gui_flush(int id)

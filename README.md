@@ -89,7 +89,7 @@ window to quit.
 The regression sweep that gates every chapter lives in `scripts/`:
 
 ```bash
-for t in scripts/test_*.py; do python3 "$t" || break; done
+./scripts/sweep.sh
 ```
 
 ## Where to start reading

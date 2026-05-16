@@ -212,3 +212,65 @@ non-background colours from the swatches.
 
 These are all incremental; the contiguous-pixel-buffer model in
 this chapter is the foundation everything else layers on top of.
+
+## Postscript (milestone 87): the bitmap font gave way to TrueType
+
+For 41 chapters the 8×16 VGA font carried the entire GUI: the
+banner above, the gui_term in chapter 50, notepad in chapter 51,
+the clock in 56, the launcher and taskbar, and the browser's
+text runs in chapters 70–71. By chapter 102 the price of looking
+like a 1985 console outweighed the simplicity. Milestone 87
+replaced the bitmap with an in-kernel TrueType rasteriser that
+ships DejaVu Sans at 16 px with grayscale anti-aliasing.
+
+If you're reading this book linearly, you'll keep seeing
+references to the 8×16 cell, `GLYPH_W = 8`, and `* 8` arithmetic
+right up through Part VIII. Those are accurate snapshots of the
+code at the time each chapter was written. What's worth knowing
+in advance:
+
+- **The API at this chapter's layer survived intact.** `font.h`
+  still exposes `font_get_default()`, `font_glyph()`, and a
+  `struct bitmap_font` -- the same handle the text renderer has
+  always taken. The bitmap font is still compiled in and is the
+  fallback when TTF init fails, so `fb_init()` produces a
+  visible banner even on a stripped boot.
+
+- **`text_draw_string` kept the same signature.** Internally it
+  switched from "blit 16 rows of 8 bits, set/clear" to "for each
+  glyph: look up its rasterised bitmap in the cache, alpha-blend
+  it into the framebuffer at the proportional X advance". The
+  callers in the WM (chapter 48) didn't change.
+
+- **What did change is *per-glyph width*.** The bitmap font was
+  monospace at 8 px; DejaVu Sans is proportional. So the cell
+  arithmetic that worked silently for 40 chapters -- *"this
+  string is 12 chars, therefore it's 96 pixels wide"* -- stopped
+  giving the right answer. A new syscall, `gui_measure_text`,
+  gives apps the right answer in pixels. Where you see code in
+  later chapters multiplying a character count by 8 to find a
+  caret position or to centre a label, that's the pre-M87
+  shortcut. The current source uses `gui_measure_text` instead.
+
+- **A new file appeared in the kernel:**
+  `kernel/device/ttf.c` -- a self-contained TrueType parser
+  (cmap, glyf, loca, head, hhea, hmtx, maxp), Q16.16 scale,
+  26.6 subpixel outline points, quadratic Bezier flattening, and
+  4×4 supersampled scanline fill. The font file itself
+  (`assets/fonts/DejaVuSans.ttf`) is embedded into the kernel
+  ELF via `objcopy -I binary` -- the same trick the ramfs uses.
+
+- **One stack overflow story.** The first integration crashed at
+  boot because the rasteriser allocated ~44 KB of buffers on a
+  16 KB kernel stack. The fix was to make the buffers
+  file-scope statics. Chapter 102 walks through the diagnosis
+  (the `FAR_EL1` value was `0x00202020...`, which is the ASCII
+  bytes of a space-filled glyph being interpreted as a pointer
+  -- a memorable signature).
+
+If you are reading this chapter to understand the *current*
+font path, jump to chapter 102 for the rasteriser and
+chapter 108b for the (planned) move into userspace. If you're
+reading to understand how a kernel first lights up a screen and
+draws something on it, what's on this page is still exactly
+what happens at boot; only the glyph data is different.

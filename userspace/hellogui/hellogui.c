@@ -121,7 +121,10 @@ int main(int argc, char **argv)
         gui_present(win, 0, 200, WIDTH, 40, pixels + 200 * WIDTH);
         gui_draw_text(win, 16, 208, "input: ",
                       GUI_BGRA(0xFF, 0xFF, 0x80), 0, 1);
-        gui_draw_text(win, 16 + 7 * 8, 208, line,
+        /* Chapter 102 -- measure "input: " width instead of
+         * assuming 7 chars * 8 px. */
+        int label_w = gui_measure_text("input: ");
+        gui_draw_text(win, 16 + label_w, 208, line,
                       GUI_BGRA(0xFF, 0xFF, 0xFF), 0, 1);
         gui_flush(win);
     }

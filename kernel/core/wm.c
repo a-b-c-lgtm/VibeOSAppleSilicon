@@ -1264,6 +1264,56 @@ long wm_fill_rect(uint64_t pid, int32_t id,
     return 0;
 }
 
+/* Per-pixel alpha-blend BGRA into a window buffer pixel.
+ * Chapter 102: TTF glyphs carry per-pixel alpha (0..255). For 0
+ * (transparent) we skip; for 255 (opaque) we write fg directly;
+ * otherwise we blend fg over the existing pixel using the same
+ * (a*src + (255-a)*dst) / 255 formula text_alpha_blend uses. */
+static inline void wm_blend_pixel(uint32_t *p, uint32_t fg, uint8_t a)
+{
+    if (a == 0) return;
+    if (a == 0xFF) { *p = fg; return; }
+    uint32_t dst = *p;
+    uint8_t fr = (fg >> 16) & 0xFF, fg_ = (fg >> 8) & 0xFF, fb = fg & 0xFF;
+    uint8_t dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF, db = dst & 0xFF;
+    uint16_t inv = (uint16_t)(255 - a);
+    uint8_t orr = (uint8_t)(((uint16_t)fr  * a + (uint16_t)dr * inv) / 255);
+    uint8_t org = (uint8_t)(((uint16_t)fg_ * a + (uint16_t)dg * inv) / 255);
+    uint8_t orb = (uint8_t)(((uint16_t)fb  * a + (uint16_t)db * inv) / 255);
+    *p = ((uint32_t)0xFFu << 24) | ((uint32_t)orr << 16)
+       | ((uint32_t)org  <<  8) |  (uint32_t)orb;
+}
+
+/* Chapter 102 -- pixel-accurate text measurement.
+ *
+ * Sums the per-glyph advance widths for `s_user` using the same
+ * default font that wm_draw_text uses. Mirrors the loop in
+ * wm_draw_text exactly so callers get a width that matches what
+ * they'll actually paint. Stops at '\n' (callers wanting multi-line
+ * measure should split first). Returns the pixel width as a
+ * non-negative long, or -EFAULT if `s_user` isn't readable. */
+long wm_measure_text(const char *s_user)
+{
+    char buf[256];
+    long got = copy_string_from_user(buf, (uint64_t)(uintptr_t)s_user,
+                                     sizeof(buf));
+    if (got < 0) return -EFAULT;
+
+    const struct bitmap_font *font = font_get_default();
+    if (!font) return 0;
+
+    uint32_t w = 0;
+    for (size_t i = 0; buf[i]; i++) {
+        char ch = buf[i];
+        if (ch == '\n') break;
+        struct glyph_info gi;
+        if (font_get_glyph(font, (uint32_t)(uint8_t)ch, &gi) != 0) continue;
+        uint32_t adv = gi.advance ? gi.advance : font->cell_width;
+        w += adv;
+    }
+    return (long)w;
+}
+
 long wm_draw_text(uint64_t pid, int32_t id,
                   uint32_t x, uint32_t y,
                   const char *s_user,
@@ -1280,46 +1330,68 @@ long wm_draw_text(uint64_t pid, int32_t id,
 
     const struct bitmap_font *font = font_get_default();
     if (!font) return -EINVAL;
-    struct fb_color fg = bgra_unpack(fg_bgra);
-    struct fb_color bg = bgra_unpack(bg_bgra);
 
-    /* Render glyph by glyph straight into the window pixel buffer,
-     * not the framebuffer.  We don't reuse text_draw_glyph because
-     * that draws into fb directly; we need to render into the
-     * window's BGRA back buffer. */
+    /* Chapter 102: render glyph-by-glyph using the new font_get_glyph
+     * API. Bitmap-kind fonts produce alpha values of 0 or 255 so the
+     * blend collapses to the old fast path; TTF-kind fonts produce
+     * full grayscale AA. Per-glyph advance gives proportional spacing
+     * with no caller change.
+     *
+     * Pen origin (cx, y) is the cell's top-left; the baseline sits
+     * at (y + cell_height - 4) for TTF and at (y + cell_height) for
+     * the bitmap font -- matching what text.c::text_draw_glyph does. */
     uint32_t cx = x;
+    uint32_t baseline_off = (font->kind == BITMAP_FONT_KIND_TTF)
+                                ? (uint32_t)font->cell_height - 4u
+                                : (uint32_t)font->cell_height;
+
     for (size_t i = 0; buf[i]; i++) {
         char ch = buf[i];
         if (ch == '\n') {
-            y += font->cell_height;
+            y += font->cell_height + font->line_spacing;
             cx = x;
             continue;
         }
-        const uint8_t *glyph = font_glyph(font, (uint8_t)ch);
-        if (!glyph) continue;
-        for (uint32_t gy = 0; gy < font->cell_height; gy++) {
-            uint8_t row = glyph[gy];
-            for (uint32_t gx = 0; gx < font->cell_width; gx++) {
-                uint32_t px = cx + gx;
-                uint32_t py = y + gy;
-                if (px >= w->w || py >= w->h) continue;
-                int on = row & (1u << (7 - gx));
-                if (on) {
-                    ((uint32_t *)w->pixels)[py * w->w + px] = fg_bgra;
-                } else if (!transparent) {
-                    ((uint32_t *)w->pixels)[py * w->w + px] = bg_bgra;
+        struct glyph_info gi;
+        if (font_get_glyph(font, (uint32_t)(uint8_t)ch, &gi) != 0) continue;
+
+        uint32_t adv = gi.advance ? gi.advance : font->cell_width;
+
+        /* Wrap if this glyph won't fit on the line. */
+        if (cx + adv > w->w) {
+            cx = x;
+            y += font->cell_height + font->line_spacing;
+        }
+        if (y + font->cell_height > w->h) break;
+
+        int32_t bx = (int32_t)cx + gi.left_bearing;
+        int32_t by = (int32_t)(y + baseline_off) - gi.top_bearing;
+
+        for (int row = 0; row < gi.bitmap_h; row++) {
+            for (int col = 0; col < gi.bitmap_w; col++) {
+                int32_t px = bx + col;
+                int32_t py = by + row;
+                if (px < 0 || py < 0) continue;
+                if ((uint32_t)px >= w->w || (uint32_t)py >= w->h) continue;
+                uint8_t a = gi.pixels ? gi.pixels[row * gi.bitmap_w + col] : 0;
+                uint32_t *slot = &((uint32_t *)w->pixels)[py * w->w + px];
+                if (a == 0) {
+                    if (!transparent) *slot = bg_bgra;
+                    continue;
+                }
+                if (transparent) {
+                    wm_blend_pixel(slot, fg_bgra, a);
+                } else {
+                    /* Blend fg over bg (deterministic, no fb readback). */
+                    uint32_t tmp = bg_bgra;
+                    wm_blend_pixel(&tmp, fg_bgra, a);
+                    *slot = tmp;
                 }
             }
         }
-        cx += font->cell_width;
-        if (cx + font->cell_width > w->w) {
-            cx = x;
-            y += font->cell_height;
-        }
+
+        cx += adv;
     }
-    /* fg/bg unused locally except via the *_bgra forms; suppress
-     * unused-variable warnings without -Wno-unused-variable. */
-    (void)fg; (void)bg;
     return 0;
 }
 

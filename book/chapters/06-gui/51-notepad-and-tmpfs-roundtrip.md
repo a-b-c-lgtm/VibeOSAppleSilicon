@@ -16,7 +16,9 @@
 Notepad opens a 720×440 window with two regions:
 
 - A scrollable edit area (about 25 visible rows × 88 columns of
-  the 8×16 bitmap font) showing the contents of a text file.
+  the 8×16 bitmap font — chapter 102 swapped this for DejaVu
+  Sans, so the visible column count is now approximate) showing
+  the contents of a text file.
 - A one-row dark-blue status bar at the bottom showing the file
   path, the current line / total lines, the keybindings, and an
   amber `*` modified-since-save indicator on the right.

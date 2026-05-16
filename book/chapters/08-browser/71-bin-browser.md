@@ -94,6 +94,11 @@ The plain and ANSI grids are sized from `doc_width_px /
 LAYOUT_BASE_GLYPH_W`. The GUI window is sized from
 `doc_width_px` capped at a default, and learns to deal with the
 fact that the user might subsequently shrink or grow it.
+(`LAYOUT_BASE_GLYPH_W` is still 8 -- the legacy bitmap font's
+cell width. After chapter 102 the GUI font is proportional, so
+the grid columns no longer line up pixel-perfectly with rendered
+text; the URL field and toolbar were updated to use
+`gui_measure_text` for caret and label positioning instead.)
 
 ## GUI mode in detail
 

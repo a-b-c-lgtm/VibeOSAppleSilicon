@@ -695,6 +695,12 @@ void kernel_main(uint64_t dtb_phys)
     if (virtio_gpu_init() == 0) {
         serial_puts("ok\n");
         if (fb_init() == 0) {
+            /* Chapter 102 -- initialise the TTF rasteriser now that
+             * kmalloc is up and we know we have a framebuffer to
+             * render into. font_init_ttf is a no-op if it fails,
+             * leaving font_get_default returning the bitmap font;
+             * the boot screen below uses font_get_default unchanged. */
+            font_init_ttf();
             /* Paint the milestone-38 boot screen.  This is the first
              * graphical artifact the project produces; if it shows up
              * the whole [pmem -> virtio-gpu -> RAM-backed framebuffer

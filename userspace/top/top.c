@@ -130,7 +130,7 @@ static void render_frame(unsigned long iter)
             if (buf[i] == '\n') lines++;
         }
     }
-    printf("frame %lu — refresh /1s\n", iter);
+    printf("frame %lu - refresh /1s\n", iter);
     printf("%5s %5s %3s %s %s\n", "PID", "PPID", "CPU", "S", "CMD");
 
     char path[64];

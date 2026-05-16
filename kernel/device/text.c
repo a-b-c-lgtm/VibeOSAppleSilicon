@@ -1,27 +1,29 @@
 /*
- * Text rendering implementation — Chapter 23.
+ * Text rendering implementation -- Chapter 23 (bitmap) +
+ * Chapter 102 (per-glyph AA + variable-width).
  *
- * See text.h for the public contract. Notes on choices made here:
+ * Public contract in text.h hasn't changed. What HAS changed is
+ * the internal pipeline:
  *
- * - Glyph blit uses fb_draw_pixel rather than poking the framebuffer
- *   directly. The cost is one bounds-check per pixel; the benefit is
- *   we never duplicate the framebuffer's pitch/format math here, so
- *   any future framebuffer (16-bpp, 24-bpp, indexed, virtual surface)
- *   works without touching this file. The hot path optimisation is
- *   to push the inner loop down into framebuffer.c later.
+ *  - text_draw_glyph now fetches a `struct glyph_info` via
+ *    font_get_glyph and alpha-blends each pixel of the alpha
+ *    bitmap into the framebuffer. Bitmap-kind fonts produce
+ *    0/255 alphas (no visible change); TTF-kind fonts produce
+ *    grayscale-AA alphas.
  *
- * - Layout uses a single advance value (`cell_width`) and treats '\n'
- *   as the only line-break. No kerning, no shaping, no Unicode. That
- *   is the right complexity ceiling for a first text layer; the box
- *   model and clip rules are already what an eventual richer layout
- *   engine will need to slot into.
+ *  - text_draw_string and text_measure honour the per-glyph
+ *    advance returned by font_get_glyph instead of the fixed
+ *    cell_width. This makes proportional text Just Work without
+ *    any change to callers.
  *
- * - alpha_blend uses (a * src + (255 - a) * dst) / 255 with integer
- *   math. The /255 is a real divide on the path that uses it (the
- *   demo's translucent overlay), not the per-glyph hot path. Glyph
- *   blits are pure copy, no blending — bitmap fonts have no
- *   per-pixel alpha. That arrives with grayscale antialised fonts in
- *   a later chapter.
+ *  - Layout still uses cell_height + line_spacing for line
+ *    stepping and uses left_bearing / top_bearing to position
+ *    each glyph relative to the pen origin.
+ *
+ * alpha_blend is unchanged -- the same (a*src + (255-a)*dst)/255
+ * formula text_alpha_blend already provided. The hot path now
+ * uses it per glyph pixel, but only when alpha is neither 0 nor
+ * 255 (a quick branch keeps the bitmap-font path fast).
  */
 
 #include "text.h"
@@ -42,57 +44,104 @@ struct fb_color text_alpha_blend(struct fb_color src, struct fb_color dst, uint8
     return out;
 }
 
+/* Blit one glyph alpha bitmap into the framebuffer.
+ *
+ * Pen origin is (pen_x, pen_y) where pen_y is the BASELINE y.
+ * left_bearing shifts the bitmap right; top_bearing tells how far
+ * above the baseline the bitmap top sits. */
+static void blit_glyph_alpha(uint32_t pen_x, uint32_t pen_y,
+                             const struct glyph_info *gi,
+                             struct fb_color fg, struct fb_color bg,
+                             int transparent_bg)
+{
+    if (!gi || gi->bitmap_w == 0 || gi->bitmap_h == 0 || !gi->pixels) {
+        /* Empty glyph (space, whitespace) -- only need to fill bg
+         * for the advance if we're opaque. We don't know the
+         * advance rect here without ascent/descent, so skip. */
+        return;
+    }
+    int32_t bx = (int32_t)pen_x + gi->left_bearing;
+    int32_t by = (int32_t)pen_y - gi->top_bearing;
+
+    for (int row = 0; row < gi->bitmap_h; row++) {
+        for (int col = 0; col < gi->bitmap_w; col++) {
+            uint8_t a = gi->pixels[row * gi->bitmap_w + col];
+            if (a == 0) {
+                if (!transparent_bg) {
+                    fb_draw_pixel((uint32_t)(bx + col),
+                                  (uint32_t)(by + row), bg);
+                }
+                continue;
+            }
+            if (a == 255) {
+                fb_draw_pixel((uint32_t)(bx + col),
+                              (uint32_t)(by + row), fg);
+                continue;
+            }
+            /* Partial coverage. If bg is transparent we blend against
+             * the existing framebuffer pixel by reading it back; we
+             * don't have a fast read path, so approximate by blending
+             * against bg when opaque and against fg-at-zero when not.
+             * The cheap path that still looks good: when transparent,
+             * just scale fg by alpha (treating bg = black). That's
+             * acceptable for our colour palette (dark backgrounds). */
+            struct fb_color dst = transparent_bg ? (struct fb_color){0,0,0,0xFF} : bg;
+            struct fb_color out = text_alpha_blend(fg, dst, a);
+            fb_draw_pixel((uint32_t)(bx + col),
+                          (uint32_t)(by + row), out);
+        }
+    }
+}
+
 void text_draw_glyph(const struct bitmap_font *font,
                      uint32_t x, uint32_t y, uint8_t cp,
                      struct fb_color fg, struct fb_color bg,
                      int transparent_bg)
 {
-    if (!font) {
-        return;
-    }
-    const uint8_t *glyph = font_glyph(font, cp);
-    if (!glyph) {
-        /* Render the placeholder by re-asking for the first defined
-         * codepoint. The font generator makes this slot a bordered
-         * empty box so missing glyphs are visually distinguishable. */
-        glyph = font_glyph(font, font->first_cp);
-        if (!glyph) {
-            return;
-        }
-    }
+    if (!font) return;
+    struct glyph_info gi;
+    if (font_get_glyph(font, (uint32_t)cp, &gi) != 0) return;
 
     uint32_t w = font->cell_width;
     uint32_t h = font->cell_height;
 
-    /* If the cell background is opaque, paint it as a single fast
-     * rect first, then overdraw the on-bits. This is faster than
-     * per-pixel branching when the background is mostly visible. */
-    if (!transparent_bg) {
-        fb_fill_rect(x, y, w, h, bg);
+    /* For bitmap-kind fonts the cell is exactly the bitmap, and the
+     * "pen origin" semantics differ from TTF (no baseline). Handle
+     * both by computing a baseline from the font kind. */
+    uint32_t baseline_y;
+    if (font->kind == BITMAP_FONT_KIND_BITMAP) {
+        /* The bitmap font has no real baseline -- the bitmap is the
+         * whole cell. We pretend the baseline is the bottom edge so
+         * top_bearing == cell_height (font.c sets this) places the
+         * bitmap at (x, y..y+h-1) exactly as before. */
+        baseline_y = y + h;
+        if (!transparent_bg) {
+            /* Original behaviour: clear the whole cell first. */
+            fb_fill_rect(x, y, w, h, bg);
+        }
+    } else {
+        /* TTF: x/y from callers are the cell's top-left; the
+         * baseline is `cell_ascent_px` below the top, but we don't
+         * expose cell_ascent_px here, so derive from top_bearing of
+         * an arbitrary tall glyph. The cheaper approximation: use
+         * `cell_height - 4` as the baseline, which matches DejaVu
+         * Sans @ 16 px (ascent ~13, descent ~3). The 4 px bottom
+         * margin matches what the bitmap font used. */
+        baseline_y = y + h - 4;
     }
 
-    for (uint32_t row = 0; row < h; row++) {
-        uint8_t bits = glyph[row];
-        if (bits == 0) {
-            continue;       /* fully empty row, nothing to draw */
-        }
-        for (uint32_t col = 0; col < w; col++) {
-            if (bits & (0x80u >> col)) {
-                fb_draw_pixel(x + col, y + row, fg);
-            }
-        }
-    }
+    blit_glyph_alpha(x, baseline_y, &gi, fg, bg, transparent_bg);
+    (void)gi;
 }
 
-/* Internal: advance one glyph forward. Wraps if it would cross max_x;
- * stops returning anything useful if it would cross max_y. The caller
- * uses the returned (x, y) as the position of the *next* glyph. */
+/* Internal: advance the cursor by `adv` pixels along x. If that
+ * would cross max_x, wrap to (origin_x, next line). */
 static void advance_cursor(const struct bitmap_font *font,
                            uint32_t *x, uint32_t *y,
                            uint32_t origin_x, uint32_t max_x, uint32_t max_y,
-                           uint32_t advance)
+                           uint32_t adv)
 {
-    *x += advance;
+    *x += adv;
     if (*x + font->cell_width > max_x) {
         *x  = origin_x;
         *y += (uint32_t)font->cell_height + font->line_spacing;
@@ -123,31 +172,30 @@ void text_draw_string(const struct bitmap_font *font,
         if (c == '\n') {
             x  = origin_x;
             y += line_step;
-            if (y + font->cell_height > max_y) {
-                break;          /* clipped on bottom — stop drawing */
-            }
+            if (y + font->cell_height > max_y) break;
             continue;
         }
         if (c == '\t') {
             advance_cursor(font, &x, &y, origin_x, max_x, max_y,
                            (uint32_t)font->cell_width * 4);
-            if (y + font->cell_height > max_y) {
-                break;
-            }
+            if (y + font->cell_height > max_y) break;
             continue;
         }
 
+        /* Per-glyph advance. */
+        struct glyph_info gi;
+        if (font_get_glyph(font, (uint32_t)c, &gi) != 0) continue;
+        uint32_t adv = gi.advance ? gi.advance : font->cell_width;
+
         /* Wrap before drawing if this glyph wouldn't fit on the line. */
-        if (x + font->cell_width > max_x) {
+        if (x + adv > max_x) {
             x  = origin_x;
             y += line_step;
-            if (y + font->cell_height > max_y) {
-                break;
-            }
+            if (y + font->cell_height > max_y) break;
         }
 
         text_draw_glyph(font, x, y, c, fg, bg, transparent_bg);
-        x += font->cell_width;
+        x += adv;
     }
 
     if (out_x) *out_x = x;
@@ -159,9 +207,7 @@ struct text_metrics text_measure(const struct bitmap_font *font,
                                  uint32_t max_width)
 {
     struct text_metrics m = { 0, 0, 0 };
-    if (!font || !s) {
-        return m;
-    }
+    if (!font || !s) return m;
 
     const uint32_t line_step = (uint32_t)font->cell_height + font->line_spacing;
     uint32_t cur_w = 0;
@@ -177,9 +223,17 @@ struct text_metrics text_measure(const struct bitmap_font *font,
             lines++;
             continue;
         }
-        uint32_t adv = (c == '\t')
-                       ? (uint32_t)font->cell_width * 4
-                       : (uint32_t)font->cell_width;
+        uint32_t adv;
+        if (c == '\t') {
+            adv = (uint32_t)font->cell_width * 4;
+        } else {
+            struct glyph_info gi;
+            if (font_get_glyph(font, (uint32_t)c, &gi) == 0) {
+                adv = gi.advance ? gi.advance : font->cell_width;
+            } else {
+                adv = font->cell_width;
+            }
+        }
 
         if (max_width != 0 && cur_w + adv > max_width && cur_w > 0) {
             if (cur_w > max_w) max_w = cur_w;
@@ -201,9 +255,6 @@ void text_draw_box(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                    const struct bitmap_font *font, const char *s,
                    struct fb_color fg)
 {
-    /* Background fill, then border on top so a 1-pixel border is
-     * visible even when bg == border (in which case the user gets
-     * a borderless filled rect, which is also a valid result). */
     fb_fill_rect(x, y, w, h, bg);
     fb_draw_rect(x, y, w, h, border);
 

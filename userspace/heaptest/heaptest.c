@@ -48,7 +48,7 @@ int main(void)
     write(1, "  c = ", 6); puthex((unsigned long)(uintptr_t)c); write(1, "\n", 1);
 
     if (!a || !b || !c) {
-        write(1, "[heaptest] FAIL — malloc returned NULL\n", 39);
+        write(1, "[heaptest] FAIL - malloc returned NULL\n", 39);
         return 1;
     }
 
@@ -70,7 +70,7 @@ int main(void)
     /* Big allocation — should trigger sbrk to grow the heap. */
     unsigned char *big = (unsigned char *)malloc(32 * 1024);
     write(1, "  big = ", 8); puthex((unsigned long)(uintptr_t)big); write(1, "\n", 1);
-    if (!big) { write(1, "[heaptest] FAIL — big malloc NULL\n", 34); return 1; }
+    if (!big) { write(1, "[heaptest] FAIL - big malloc NULL\n", 34); return 1; }
     fill(big, 32 * 1024, 0x55);
     if (!verify(big, 32 * 1024, 0x55)) {
         write(1, "[heaptest] FAIL pattern BIG\n", 28);

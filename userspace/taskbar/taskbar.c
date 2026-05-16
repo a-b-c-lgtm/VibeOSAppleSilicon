@@ -125,13 +125,22 @@ static void draw_cell(int idx, const struct gui_window_info *info)
     gui_fill_rect(g_self_id, x,         y,         1, h, border);
     gui_fill_rect(g_self_id, x + w - 1, y,         1, h, border);
 
-    /* Truncate label to fit. */
+    /* Truncate label to fit. Chapter 102 -- with the proportional
+     * kernel font we can't count fixed-width cells. Build the
+     * label one character at a time, measuring after each, and
+     * stop before we'd overflow the available width. */
     char label[32];
-    int max_chars = (w - 2 * 6) / GLYPH_W;
-    if (max_chars > 31) max_chars = 31;
+    int avail_w = w - 2 * 6;
     int li = 0;
-    for (; li < max_chars && info->title[li]; li++)
+    while (li < 31 && info->title[li]) {
         label[li] = info->title[li];
+        label[li + 1] = '\0';
+        if (gui_measure_text(label) > avail_w) {
+            label[li] = '\0';     /* drop this last char */
+            break;
+        }
+        li++;
+    }
     label[li] = '\0';
 
     int tx = x + 6;
@@ -216,8 +225,9 @@ static void draw_clock(void)
     gui_fill_rect(g_self_id, CLOCK_X + CLOCK_W - 1, CLOCK_Y,
                   1,        CLOCK_H, CELL_BORDER);
 
-    /* Centred glyphs.  HH:MM:SS = 8 chars * 8 px = 64 px. */
-    int tx = CLOCK_X + (CLOCK_W - 8 * GLYPH_W) / 2;
+    /* Centred glyphs. Chapter 102 -- measure the formatted clock
+     * string with the proportional font instead of `8 * 8`. */
+    int tx = CLOCK_X + (CLOCK_W - gui_measure_text(buf)) / 2;
     int ty = CLOCK_Y + (CLOCK_H - GLYPH_H) / 2;
     gui_draw_text(g_self_id, tx, ty, buf, CLOCK_FG_BGRA, CLOCK_BG_BGRA, 0);
 

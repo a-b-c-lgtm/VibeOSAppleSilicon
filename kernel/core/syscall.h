@@ -167,6 +167,14 @@ enum {
     /* Milestone 51 — minimize / restore windows. */
     SYS_GUI_SET_MINIMIZED   = 51, /* (int id, int on) -> 0/-errno                 */
 
+    /* Chapter 102 -- measure a string's rendered width in pixels
+     * using the kernel's default font. Lets userspace centre
+     * labels, position carets, and truncate-to-fit without
+     * assuming a fixed glyph pitch (which no longer holds with
+     * the variable-width TTF font). Returns width in pixels, or
+     * -EFAULT if the string pointer isn't readable. */
+    SYS_GUI_MEASURE_TEXT    = 52, /* (const char *s) -> uint32_t px width        */
+
     /* Milestone 56 — sockets (active-open client side). */
     SYS_SOCKET_CONNECT  = 60, /* (uint32_t ip4_be, uint16_t port) -> fd / -errno */
     SYS_SOCKET_STATE    = 61, /* (int fd) -> int state (enum tcp_state)          */

@@ -236,6 +236,14 @@ long wm_draw_text(uint64_t pid, int32_t id,
                   const char *s_user,
                   uint32_t fg_bgra, uint32_t bg_bgra,
                   int transparent);
+
+/* Chapter 102 -- return the pixel width that wm_draw_text would
+ * paint for `s_user` using the kernel's default font. Honours
+ * per-glyph advance widths so callers can position carets and
+ * centre labels accurately even with the proportional TTF font.
+ * Stops at '\n'. Returns the width in pixels (>= 0), or -EFAULT
+ * if the string pointer isn't readable. */
+long wm_measure_text(const char *s_user);
 long wm_flush(uint64_t pid, int32_t id);
 long wm_poll_event(uint64_t pid, struct gui_event *out_user);
 /* Milestone 47: enumerate windows.  Copies up to `max` snapshots

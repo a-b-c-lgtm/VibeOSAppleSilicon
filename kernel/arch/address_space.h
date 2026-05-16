@@ -60,6 +60,14 @@
 #define USER_MMAP_MAX       0x103F000000UL    /* mmap region end (240 MiB) */
 #define USER_STACK_TOP      0x1040000000UL    /* one past top of user range */
 #define USER_STACK_PAGES    16                /* 64 KiB user stack          */
+/* Chapter 101 — one unmapped page immediately below the user
+ * stack base.  Touching it produces a translation fault that the
+ * fault handler recognises (via the DESC_SW_GUARD software bit
+ * on the L3 entry) and turns into a friendly "user stack
+ * overflow" diagnostic rather than a generic fault dump.
+ * USER_STACK_GUARD_VA is the page-aligned VA of the guard. */
+#define USER_STACK_GUARD_VA                                                 \
+    (USER_STACK_TOP - ((uint64_t)(USER_STACK_PAGES + 1)) * 0x1000UL)
 /* The 16 KiB original (4 pages) was just enough for shell-style
  * tools but blew up on the M64 browser when laying out deeply
  * nested HN comment threads (each comment is wrapped in 4-5
@@ -195,6 +203,29 @@ int address_space_make_writable(struct address_space *as, uint64_t va);
 int address_space_map(struct address_space *as,
                       uint64_t va, uint64_t pa,
                       uint64_t pages, int writable, int executable);
+
+/* Chapter 101 — install a one-page guard at `va`.  The L3 entry
+ * is written *invalid* (touching it faults) but tagged with the
+ * DESC_SW_GUARD software bit so address_space_lookup_pte and the
+ * data-abort handler can distinguish "intentional guard" from
+ * "accidentally unmapped VA".  No physical backing is consumed.
+ * Returns 0 on success or -1 on OOM (only if the covering L3
+ * page itself had to be allocated and pmem refused). */
+int address_space_install_guard(struct address_space *as, uint64_t va);
+
+/* Chapter 101 — read the raw L3 descriptor that backs `va`, or
+ * 0 if no L2 / L3 covers the address.  Software bits like
+ * DESC_SW_GUARD survive in the entry even when DESC_VALID is
+ * clear; the fault handler uses this to read them back. */
+uint64_t address_space_lookup_pte(const struct address_space *as,
+                                  uint64_t va);
+
+/* Chapter 101 — DESC_SW_GUARD as observable through
+ * address_space_lookup_pte.  Software bit 57 (bits 55, 56 are
+ * already used by DESC_SW_COW and DESC_SW_PAGECACHE).  The MMU
+ * ignores bits 55..58 when DESC_VALID is clear, so we get a free
+ * communication channel between AS-create time and fault time. */
+#define DESC_SW_GUARD       (1ULL << 57)
 
 /* Activate this AS by writing TTBR0_EL1 and flushing the TLB.  If
  * `as` is NULL, restores the boot L1 (kernel-thread context). */

@@ -85,12 +85,18 @@ static void draw_toast(const char *msg)
     /* Title row. */
     gui_draw_text(g_win, 16, 12, "Notice", TITLE_BGRA, BG_BGRA, 0);
 
-    /* Body row.  Truncate to fit. */
-    int max_glyphs = (WIN_W - 32) / GLYPH_W;
+    /* Body row. Chapter 102 -- truncate by measured pixel width
+     * with the proportional kernel font, not by character count. */
+    int avail_w = WIN_W - 32;
     char trunc[MAX_MSG_LEN + 1];
     int gi = 0;
-    while (gi < max_glyphs && msg[gi] && gi < MAX_MSG_LEN) {
+    while (gi < MAX_MSG_LEN && msg[gi]) {
         trunc[gi] = msg[gi];
+        trunc[gi + 1] = '\0';
+        if (gui_measure_text(trunc) > avail_w) {
+            trunc[gi] = '\0';
+            break;
+        }
         gi++;
     }
     trunc[gi] = '\0';

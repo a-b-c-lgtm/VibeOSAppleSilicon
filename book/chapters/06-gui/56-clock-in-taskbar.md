@@ -93,6 +93,13 @@ static void draw_clock(void)
 }
 ```
 
+(Centring by `8 * GLYPH_W` assumes the monospace bitmap font.
+When chapter 102 swapped in TrueType the glyph advance became
+proportional, and this line now reads
+`CLOCK_X + (CLOCK_W - gui_measure_text(buf)) / 2`. Same
+intent, asking the kernel for the actual pixel width instead
+of multiplying.)
+
 ## Tick logic
 
 The taskbar's main loop already wakes every 150 ms to poll

@@ -32,6 +32,6 @@ int main(void)
     *kaddr = 0xDEADBEEFCAFEBABEUL;
 
     /* If we somehow get here, the isolation is still broken. */
-    puts("[badpoke] FAIL: write succeeded — isolation broken");
+    puts("[badpoke] FAIL: write succeeded - isolation broken");
     return 1;
 }

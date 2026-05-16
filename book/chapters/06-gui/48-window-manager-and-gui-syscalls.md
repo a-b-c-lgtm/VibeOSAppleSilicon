@@ -127,8 +127,7 @@ copies the window's BGRA pixels into the framebuffer via
 `fb_draw_pixel` (clipped to screen bounds).
 
 We re-paint the entire screen on every `wm_flush`.  This is
-wasteful — chapter 30 of the x86-64 edition ran a per-window
-dirty-rectangle pipeline — but at HVF speed it's invisible, and
+wasteful — at HVF speed the repaint is invisible, and
 having a single composite path makes z-order changes,
 focus changes, and window destroys trivial to get right.
 

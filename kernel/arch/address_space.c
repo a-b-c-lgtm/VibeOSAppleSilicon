@@ -66,6 +66,14 @@ extern uint64_t l1_pgtable[512];
  * sharing them \u2014 chapter 90 floor: mmaps do not survive fork.
  * The child can re-mmap if it wants the same content. */
 #define DESC_SW_PAGECACHE (1ULL << 56)
+/* Chapter 101 — software-defined bit 57 marks "this is an
+ * intentional guard page (invalid, no backing)."  The MMU
+ * ignores software bits when DESC_VALID is clear, so the entry
+ * faults normally; the data-abort handler then reads the bit
+ * back via address_space_lookup_pte to distinguish a guard
+ * fault (= friendly "user stack overflow" diagnostic + thread
+ * exit) from a generic translation fault (= unmapped VA bug).
+ * Defined in address_space.h so the syscall layer can see it. */
 #define ATTR_NORMAL     (0ULL << 2)     /* MAIR slot 0            */
 
 /* The user range is slot 64 of the L1 (covers 64 GiB..65 GiB).
@@ -246,6 +254,54 @@ int address_space_map(struct address_space *as,
     return 0;
 }
 
+/* Chapter 101 — install a one-page guard at `va`.
+ *
+ * The L3 entry is written *invalid* (DESC_VALID=0) but tagged
+ * with DESC_SW_GUARD.  Any load/store to the page produces a
+ * translation fault routed through svc_dispatch; the fault
+ * handler reads the descriptor back, sees the SW bit, and turns
+ * the fault into a friendly stack-overflow report instead of a
+ * generic register dump.
+ *
+ * No physical page is consumed.  We do allocate the covering
+ * L3 page if it doesn't already exist, but the common case
+ * (guard sits one page below the user stack, which has just
+ * been mapped) hits an existing L3 and costs nothing.
+ *
+ * Note on the descriptor format: when DESC_VALID is clear the
+ * MMU treats the entry as "invalid descriptor" and reserves
+ * bits [58:55] for software (ARM ARM D5.4.5).  We are free to
+ * store whatever marker we like there. */
+int address_space_install_guard(struct address_space *as, uint64_t va)
+{
+    if (!as) return -1;
+    if ((va & 0xFFFULL) != 0) return -1;  /* must be page-aligned */
+    uint64_t *l3 = l3_for(as, va);
+    if (!l3) return -1;
+    /* Tag with SW_GUARD only; DESC_VALID stays clear so the
+     * MMU still faults.  Any previous descriptor at this slot
+     * (there shouldn't be one, but be explicit) is overwritten. */
+    l3[L3_INDEX(va)] = DESC_SW_GUARD;
+    __asm__ volatile("dsb ishst" ::: "memory");
+    return 0;
+}
+
+/* Chapter 101 — read the raw L3 descriptor that backs `va`, or
+ * 0 if no L2/L3 covers it.  Used by the fault handler to read
+ * software bits (DESC_SW_GUARD) on entries that are invalid
+ * from the MMU's perspective. */
+uint64_t address_space_lookup_pte(const struct address_space *as,
+                                  uint64_t va)
+{
+    if (!as) return 0;
+    uint64_t l2i = L2_INDEX(va);
+    uint64_t l2_ent = as->l2_va[l2i];
+    if ((l2_ent & DESC_VALID) == 0) return 0;
+    if ((l2_ent & DESC_TABLE) == 0) return 0;
+    uint64_t l3_pa = l2_ent & ~0xFFFULL & ((1ULL << 48) - 1);
+    return ((const uint64_t *)(uintptr_t)l3_pa)[L3_INDEX(va)];
+}
+
 void address_space_activate(const struct address_space *as)
 {
     uint64_t ttbr = as ? as->l1_pa : address_space_boot_l1_pa();
@@ -352,7 +408,24 @@ struct address_space *address_space_clone(const struct address_space *src)
 
         for (int j = 0; j < PTES_PER_TABLE; j++) {
             uint64_t src_ent = src_l3[j];
-            if ((src_ent & DESC_VALID) == 0) continue;
+            if ((src_ent & DESC_VALID) == 0) {
+                /* Chapter 101 — preserve guard pages.  These
+                 * carry DESC_SW_GUARD but no DESC_VALID; if we
+                 * don't re-install them in the child, the
+                 * child's stack overflow will fall through to
+                 * the generic "non-SVC sync exception" message
+                 * instead of the friendly one. */
+                if (src_ent & DESC_SW_GUARD) {
+                    uint64_t va = USER_VA_BASE
+                                + ((uint64_t)i << L2_SHIFT)
+                                + ((uint64_t)j << L3_SHIFT);
+                    if (address_space_install_guard(dst, va) != 0) {
+                        address_space_destroy(dst);
+                        return NULL;
+                    }
+                }
+                continue;
+            }
 
             /* Chapter 90: skip page-cache pages (mmaps don't
              * survive eager clone either). */
@@ -433,7 +506,31 @@ struct address_space *address_space_clone_cow(struct address_space *src)
 
         for (int j = 0; j < PTES_PER_TABLE; j++) {
             uint64_t src_ent = src_l3[j];
-            if ((src_ent & DESC_VALID) == 0) continue;
+            if ((src_ent & DESC_VALID) == 0) {
+                /* Chapter 101 — preserve guard pages across
+                 * COW fork too.  Same reasoning as
+                 * address_space_clone: a forked child whose
+                 * stack overflows should also get the friendly
+                 * diagnostic. */
+                if (src_ent & DESC_SW_GUARD) {
+                    uint64_t va = USER_VA_BASE
+                                + ((uint64_t)i << L2_SHIFT)
+                                + ((uint64_t)j << L3_SHIFT);
+                    if (address_space_install_guard(dst, va) != 0) {
+                        address_space_destroy(dst);
+                        if (touched_src) {
+                            __asm__ volatile(
+                                "dsb ishst        \n"
+                                "tlbi vmalle1     \n"
+                                "dsb ish          \n"
+                                "isb              \n"
+                                ::: "memory");
+                        }
+                        return NULL;
+                    }
+                }
+                continue;
+            }
 
             /* Chapter 90 floor: mmaps do not survive fork.  Page-
              * cache-owned pages are skipped entirely \u2014 the child

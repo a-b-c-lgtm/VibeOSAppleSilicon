@@ -2485,6 +2485,15 @@ static long sys_gui_draw_text(long args_uptr)
                         a.fg_bgra, a.bg_bgra, a.transparent);
 }
 
+/* Chapter 102 -- measure text width in the kernel's default font.
+ * Lets userspace position carets, centre labels, and truncate to
+ * fit without assuming a fixed 8-px glyph pitch (no longer true
+ * with the TTF font). */
+static long sys_gui_measure_text(long s_uptr)
+{
+    return wm_measure_text((const char *)(uintptr_t)s_uptr);
+}
+
 static long sys_gui_flush(long id)
 {
     return wm_flush((uint64_t)thread_current()->id, (int32_t)id);
@@ -2495,6 +2504,61 @@ static long sys_gui_poll_event(long out_uptr)
     pump_input_into_wm();
     return wm_poll_event((uint64_t)thread_current()->id,
                          (struct gui_event *)(uintptr_t)out_uptr);
+}
+
+/* Chapter 101 — friendly stack-overflow diagnostic.
+ *
+ * Called from svc_dispatch when a data abort from EL0 lands on
+ * a page tagged DESC_SW_GUARD (i.e. the one-page guard sitting
+ * immediately below the user stack base).  The forensic dance
+ * that chapter 27's postscript described — match ESR EC=0x24,
+ * eyeball FAR against the stack base, suspect runaway recursion
+ * — is now a single message printed at fault time.
+ *
+ * `far`  = the offending VA (somewhere in the guard page).
+ * `elr`  = the user PC of the faulting instruction.
+ *
+ * The function only prints; the caller is responsible for
+ * killing the thread (via thread_exit) so the kernel can return
+ * cleanly to the scheduler. */
+static void report_user_stack_overflow(struct thread *t,
+                                       uint64_t far, uint64_t elr)
+{
+    const uint64_t stack_top    = USER_STACK_TOP;
+    const uint64_t stack_bot    = stack_top -
+                                  (uint64_t)USER_STACK_PAGES * 0x1000ULL;
+    const uint64_t guard_va     = USER_STACK_GUARD_VA;
+    /* Bytes the access overshot the stack floor.  Capped at one
+     * page because the guard is one page wide; anything beyond
+     * that would not be a guard-page fault in the first place. */
+    const uint64_t overshoot    = (far <= stack_bot) ? (stack_bot - far) : 0;
+
+    serial_puts("\n[svc] user stack overflow in thread \"");
+    serial_puts(t ? t->name : "(null)");
+    serial_puts("\" (pid ");
+    serial_puthex(t ? (uint64_t)t->id : 0);
+    serial_puts(")\n");
+
+    serial_puts("        FAR_EL1  = "); serial_puthex(far);
+    serial_puts("  (stack floor "); serial_puthex(stack_bot);
+    serial_puts(", overran by "); serial_puthex(overshoot);
+    serial_puts(" bytes)\n");
+
+    serial_puts("        ELR_EL1  = "); serial_puthex(elr); serial_puts("\n");
+
+    serial_puts("        stack    = ["); serial_puthex(stack_bot);
+    serial_puts(", "); serial_puthex(stack_top);
+    serial_puts(")  ");
+    serial_puthex((uint64_t)USER_STACK_PAGES);
+    serial_puts(" pages\n");
+
+    serial_puts("        guard    = ["); serial_puthex(guard_va);
+    serial_puts(", "); serial_puthex(guard_va + 0x1000ULL);
+    serial_puts(")  1 page (DESC_SW_GUARD)\n");
+
+    serial_puts("        likely cause: unbounded recursion, "
+                "or one stack frame larger than 64 KiB.\n");
+    serial_puts("        thread killed.\n");
 }
 
 void svc_dispatch(struct exception_frame *frame)
@@ -2508,6 +2572,28 @@ void svc_dispatch(struct exception_frame *frame)
     if (ec != ESR_EC_SVC64) {
         uint64_t far;
         __asm__ volatile("mrs %0, far_el1" : "=r"(far));
+
+        /* Chapter 101 — guard-page check FIRST.  An access to a
+         * page tagged DESC_SW_GUARD presents as a translation
+         * fault from EL0 (DFSC 0x04..0x07), which would
+         * otherwise fall through to the mmap/COW path.  Both of
+         * those would return -1 for the guard VA (no vma, no
+         * COW marker), but checking the SW bit up-front lets us
+         * emit a domain-specific diagnostic instead of the
+         * generic "non-SVC sync exception" dump.  This is the
+         * payoff for installing the guard at AS-create time:
+         * the kernel can name the failure mode for the user. */
+        if (ec == 0x24) {
+            struct thread *t = thread_current();
+            if (t && t->as) {
+                uint64_t pte = address_space_lookup_pte(t->as, far);
+                if (pte & DESC_SW_GUARD) {
+                    report_user_stack_overflow(t, far, frame->elr);
+                    thread_exit(-1);
+                    /* not reached */
+                }
+            }
+        }
 
         /* Chapter 75 \u2014 if this is a data abort from EL0 caused
          * by a write to a permission-faulting page, give the COW
@@ -2678,6 +2764,9 @@ void svc_dispatch(struct exception_frame *frame)
         break;
     case SYS_GUI_SET_MINIMIZED:
         ret = sys_gui_set_minimized(a0, a1);
+        break;
+    case SYS_GUI_MEASURE_TEXT:
+        ret = sys_gui_measure_text(a0);
         break;
 
     case SYS_SOCKET_CONNECT:

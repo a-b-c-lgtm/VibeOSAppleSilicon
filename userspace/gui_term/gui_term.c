@@ -187,8 +187,11 @@ static void render(void)
             gui_draw_text(win_id, GUTTER_X, cur_y, cur_line,
                           FG_BGRA, BG_BGRA, 1);
         }
-        /* Block cursor at the end of cur_line. */
-        uint32_t cur_x = (uint32_t)(GUTTER_X + cur_len * GLYPH_W);
+        /* Block cursor at the end of cur_line. Chapter 102 --
+         * the proportional kernel font means we measure the
+         * rendered width rather than counting characters * 8. */
+        uint32_t cur_x = (uint32_t)GUTTER_X;
+        if (cur_len > 0) cur_x += (uint32_t)gui_measure_text(cur_line);
         gui_fill_rect(win_id, cur_x, cur_y, GLYPH_W, GLYPH_H, FG_BGRA);
     } else {
         /* Scrollback indicator: a dim banner at the bottom row

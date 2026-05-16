@@ -42,7 +42,10 @@ Three things stand out:
    to the background colour and redraw the visible scrollback
    plus the prompt edit line each time anything changes.  At
    8x16 glyph cost and ≤25 visible rows it is fast enough that
-   you can't see it.
+   you can't see it.  (At chapter 102 the bitmap font was
+   replaced by a TrueType rasteriser; the per-glyph cost is
+   still bounded by a glyph cache, and the redraw model below
+   didn't change.)
 3. **Built-in commands first, otherwise spawn.**  `exit`, `quit`,
    `clear`, and `help` are handled in-process; everything else is
    resolved against `/bin/` and run.

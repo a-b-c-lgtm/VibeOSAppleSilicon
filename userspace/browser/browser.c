@@ -1148,10 +1148,10 @@ static void render_tb_button(int win_id, int x, int y,
                   1, (uint32_t)h, border);
     gui_fill_rect(win_id, (uint32_t)(x + w - 1), (uint32_t)y,
                   1, (uint32_t)h, border);
-    /* Center the label horizontally; vertical center fixed for an
-     * 8x16 glyph inside a 20-px-tall button (pad ~2 above). */
-    int n = 0; while (label[n]) n++;
-    int tx = x + (w - n * 8) / 2;
+    /* Center the label horizontally; vertical center fixed for a
+     * 16-px-tall glyph inside a 20-px-tall button (pad ~2 above).
+     * Chapter 102 -- measure with the proportional kernel font. */
+    int tx = x + (w - gui_measure_text(label)) / 2;
     int ty = y + (h - 16) / 2;
     if (tx < x + 1) tx = x + 1;
     if (ty < y + 1) ty = y + 1;
@@ -1214,7 +1214,7 @@ static void render_toolbar(int win_id, int win_w,
         }
     }
     ind[ip] = '\0';
-    int ind_px_w = ip * 8;
+    int ind_px_w = gui_measure_text(ind);
     int ind_x   = win_w - ind_px_w - BR_TB_PAD;
     if (ind_x < BR_TB_URL_X + 32) ind_x = BR_TB_URL_X + 32;
     gui_draw_text(win_id, (uint32_t)ind_x, (BR_GUI_STATUS_H - 16) / 2,
@@ -1240,10 +1240,12 @@ static void render_toolbar(int win_id, int win_w,
                   1, (uint32_t)url_field_h, url_brd);
 
     /* Visible window: scroll horizontally so the cursor stays in
-     * view.  Each glyph is 8 px wide; field interior is
-     * (url_field_w - 6) px. */
+     * view. Chapter 102 -- the proportional font means we can no
+     * longer compute "max visible chars" as `width / 8`. We use a
+     * conservative average of ~7 px/char to pick a max-char window,
+     * then rely on gui_measure_text for the actual pixel layout. */
     int interior_w   = url_field_w - 6;
-    int max_visible  = interior_w / 8;
+    int max_visible  = interior_w / 7;
     if (max_visible < 1) max_visible = 1;
     int focus = (cursor >= 0);
     int caret = focus ? cursor : url_len;
@@ -1255,23 +1257,37 @@ static void render_toolbar(int win_id, int win_w,
     if (win_start < 0) win_start = 0;
     if (win_start > url_len) win_start = url_len;
 
-    /* Render the visible substring one glyph at a time so we can
-     * sanitize non-printable bytes. */
+    /* Build the visible substring (sanitised) in a small buffer
+     * and draw it in ONE gui_draw_text call so the kernel's
+     * variable-width advance places each glyph correctly. */
     int x_pen = url_field_x + 3;
     int y_pen = url_field_y + (url_field_h - 16) / 2;
-    char one[2]; one[1] = '\0';
     int max_show = url_len - win_start;
     if (max_show > max_visible) max_show = max_visible;
+    char vis[256];
+    if (max_show > (int)sizeof(vis) - 1) max_show = (int)sizeof(vis) - 1;
     for (int k = 0; k < max_show; k++) {
         unsigned char b = (unsigned char)url_buf[win_start + k];
-        one[0] = (b >= 0x20 && b < 0x7F) ? (char)b : '?';
-        gui_draw_text(win_id, (uint32_t)(x_pen + k * 8),
-                      (uint32_t)y_pen, one, url_fg, url_bg, 0);
+        vis[k] = (b >= 0x20 && b < 0x7F) ? (char)b : '?';
     }
-    /* Caret: a 1-px vertical bar at (caret - win_start) glyph pos.
-     * Drawn ONLY when the URL field is focused. */
+    vis[max_show] = '\0';
+    if (max_show > 0) {
+        gui_draw_text(win_id, (uint32_t)x_pen, (uint32_t)y_pen,
+                      vis, url_fg, url_bg, 0);
+    }
+
+    /* Caret: position by measuring the prefix up to (caret -
+     * win_start) characters. Drawn ONLY when the URL field is
+     * focused. */
     if (focus) {
-        int cx = x_pen + (caret - win_start) * 8;
+        int prefix_len = caret - win_start;
+        if (prefix_len < 0) prefix_len = 0;
+        if (prefix_len > max_show) prefix_len = max_show;
+        char saved = vis[prefix_len];
+        vis[prefix_len] = '\0';
+        int prefix_px = gui_measure_text(vis);
+        vis[prefix_len] = saved;
+        int cx = x_pen + prefix_px;
         if (cx < url_field_x + 1) cx = url_field_x + 1;
         if (cx > url_field_x + url_field_w - 2)
             cx = url_field_x + url_field_w - 2;
@@ -1391,48 +1407,25 @@ static void render_gui_frame(int win_id, int win_w, int win_h,
             if (n <= 0) break;
             uint32_t fg = color_to_bgra(c->color);
 
-            /* Layout assumed each glyph is `font_size_px / 2` wide
-             * when it placed words on the line.  The kernel font,
-             * however, is fixed 8 px wide.  When font_size_px != 16
-             * a single gui_draw_text() call would advance every
-             * character by 8 px, pushing this word's tail past the
-             * x where layout placed the next word — characters from
-             * adjacent words would then collide ("Smal greyfooter
-             * -stylearagraph.").  When the layout-implied glyph
-             * pitch differs from 8, fall back to one draw call per
-             * character at the layout-implied positions. */
-            int pitch = c->font_size_px / 2;
-            if (pitch < LAYOUT_BASE_GLYPH_W) pitch = LAYOUT_BASE_GLYPH_W;
-            if (pitch == BR_CELL_W && clip_left == 0) {
-                /* Whole text fits on the left, fast path. */
-                gui_draw_text(win_id,
-                              (uint32_t)draw_x,
-                              (uint32_t)draw_y,
-                              text_buf,
-                              fg,
-                              0,
-                              1);
-            } else {
-                /* Per-glyph: place each at its layout-implied x,
-                 * skipping ones that fall outside the window. */
-                int x_off = (pitch > BR_CELL_W) ? (pitch - BR_CELL_W) / 2 : 0;
-                int doc_x0 = c->x - scroll_x;     /* unclamped left */
-                char one[2]; one[1] = '\0';
-                for (int k = 0; k < n; k++) {
-                    int gx = doc_x0 + k * pitch + x_off;
-                    if (gx + BR_CELL_W <= 0) continue;
-                    if (gx       >= win_w) break;
-                    int gx_clamped = gx < 0 ? 0 : gx;
-                    one[0] = text_buf[k];
-                    gui_draw_text(win_id,
-                                  (uint32_t)gx_clamped,
-                                  (uint32_t)draw_y,
-                                  one,
-                                  fg,
-                                  0,
-                                  1);
-                }
-            }
+            /* Chapter 102 (TTF): the kernel font is proportional,
+             * so a single gui_draw_text call now advances by each
+             * glyph's natural width. We trust that advance instead
+             * of layout's assumed pitch (`font_size_px / 2`). Text
+             * will be slightly narrower than the layout box for
+             * most fonts but spaced correctly within itself --
+             * which is exactly what the user sees as "proper
+             * looking text". The old per-glyph fallback was only
+             * needed when layout pitch != kernel font pitch; with
+             * variable widths the only honest answer is to let the
+             * font do its own metrics. */
+            (void)clip_left;
+            gui_draw_text(win_id,
+                          (uint32_t)draw_x,
+                          (uint32_t)draw_y,
+                          text_buf,
+                          fg,
+                          0,
+                          1);
             break;
         }
         case LAY_PAINT_UNDERLINE: {
@@ -2091,7 +2084,7 @@ static struct loaded_page *load_page(const char *url, int viewport)
             free(p->html_buf);
             p->html_buf = make_error_html(url,
                 "Image fetched but decoder rejected it (unsupported "
-                "PNG variant — interlaced or 16-bit? Try another image).",
+                "PNG variant - interlaced or 16-bit? Try another image).",
                 &p->html_len);
             if (!p->html_buf) { free_page(p); return 0; }
         }

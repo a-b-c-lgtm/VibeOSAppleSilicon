@@ -57,8 +57,6 @@ static int g_hover  = -1;     /* index of button under cursor, or -1 */
 
 /* ---------------- helpers ---------------- */
 
-static size_t s_strlen(const char *s) { size_t n = 0; while (s[n]) n++; return n; }
-
 static int btn_y(int i)
 {
     return BTN_TOP + i * (BTN_H + BTN_GAP);
@@ -87,9 +85,9 @@ static void draw_button(int i)
     gui_fill_rect(g_win_id, BTN_X,             by + BTN_H - 1, BTN_W, 1,     BTN_BORDER);
     gui_fill_rect(g_win_id, BTN_X,             by,             1,     BTN_H, BTN_BORDER);
     gui_fill_rect(g_win_id, BTN_X + BTN_W - 1, by,             1,     BTN_H, BTN_BORDER);
-    /* Centred label. */
-    int len   = (int)s_strlen(g_buttons[i].label);
-    int pix_w = len * GLYPH_W;
+    /* Centred label. Chapter 102 -- measure the rendered width
+     * with the proportional kernel font instead of `len * 8`. */
+    int pix_w = gui_measure_text(g_buttons[i].label);
     int tx    = BTN_X + (BTN_W - pix_w) / 2;
     int ty    = by + (BTN_H - GLYPH_H) / 2;
     gui_draw_text(g_win_id, tx, ty, g_buttons[i].label, TEXT_BGRA, fill, 0);

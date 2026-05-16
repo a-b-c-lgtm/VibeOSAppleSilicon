@@ -90,6 +90,7 @@ C_SRCS   := kernel/core/main.c \
             kernel/device/fb.c \
             kernel/device/font.c \
             kernel/device/text.c \
+            kernel/device/ttf.c \
             kernel/arch/page_tables.c \
             kernel/arch/address_space.c \
             kernel/arch/cpu.c \
@@ -162,6 +163,14 @@ BADPTR_OBJS := $(BUILD)/userspace/crt/crt0.o \
                $(BUILD)/userspace/badptr/badptr.o
 BADPTR_ELF  := $(BUILD)/userspace/badptr/badptr.elf
 BADPTR_STRIPPED := $(BUILD)/userspace/badptr/badptr.stripped.elf
+
+# chapter-101 guard-page test: recurses until it pokes the guard
+# below the user stack, expecting the kernel's friendly
+# "[svc] user stack overflow" diagnostic instead of a generic dump.
+STACKBOMB_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                  $(BUILD)/userspace/stackbomb/stackbomb.o
+STACKBOMB_ELF  := $(BUILD)/userspace/stackbomb/stackbomb.elf
+STACKBOMB_STRIPPED := $(BUILD)/userspace/stackbomb/stackbomb.stripped.elf
 
 # milestone-17 user-heap test: exercises malloc/free + sbrk.
 HEAPTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
@@ -496,6 +505,10 @@ $(BADPTR_ELF): $(BADPTR_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(BADPTR_OBJS)
 
+$(STACKBOMB_ELF): $(STACKBOMB_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(STACKBOMB_OBJS)
+
 $(HEAPTEST_ELF): $(HEAPTEST_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(HEAPTEST_OBJS)
@@ -681,6 +694,9 @@ $(BADPOKE_STRIPPED): $(BADPOKE_ELF)
 $(BADPTR_STRIPPED): $(BADPTR_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
+$(STACKBOMB_STRIPPED): $(STACKBOMB_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
 $(HEAPTEST_STRIPPED): $(HEAPTEST_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
@@ -853,6 +869,25 @@ $(BUILD)/ramfs/%.o: assets/ramfs/%
 	    --rename-section .data=.rodata.embedded_user,readonly,data,contents,alloc \
 	    $(notdir $<) $(abspath $@)
 
+# ----------------------------------------------------------------------
+# Embedded TrueType font (chapter 102)
+#
+# The kernel's TTF rasteriser (kernel/device/ttf.c) needs the raw
+# bytes of a TrueType file. We embed DejaVu Sans 2.37 (Bitstream
+# Vera + Arev licenses, see assets/fonts/DejaVuSans.LICENSE) into
+# the kernel image the same way ramfs files are embedded.
+#
+# Symbols exposed: _binary_DejaVuSans_ttf_start / _end.
+# ----------------------------------------------------------------------
+FONT_BLOB_SRC := assets/fonts/DejaVuSans.ttf
+FONT_BLOB_OBJ := $(BUILD)/font/DejaVuSans.ttf.o
+
+$(FONT_BLOB_OBJ): $(FONT_BLOB_SRC)
+	@mkdir -p $(dir $@)
+	cd $(dir $<) && $(OBJCOPY) -I binary -O elf64-littleaarch64 -B aarch64 \
+	    --rename-section .data=.rodata.embedded_user,readonly,data,contents,alloc \
+	    $(notdir $<) $(abspath $@)
+
 # milestone-50 desktop wallpaper.  An arbitrary JPEG (today
 # assets/backgrounds/flowers.jpg) gets cover-fitted to the
 # framebuffer's native resolution at build time, then placed onto
@@ -881,7 +916,7 @@ $(WALLPAPER_BIN): $(WALLPAPER_SRC) scripts/img_to_bgra.py
 	@mkdir -p $(dir $@)
 	python3 scripts/img_to_bgra.py $< $@ $(WALLPAPER_W) $(WALLPAPER_H)
 
-OBJS     := $(S_OBJS) $(C_OBJS) $(RAMFS_OBJS)
+OBJS     := $(S_OBJS) $(C_OBJS) $(RAMFS_OBJS) $(FONT_BLOB_OBJ)
 
 # Disk images (definitions early so `all:` can depend on them).
 # The actual rules are further down where the run targets live.
@@ -989,7 +1024,7 @@ QEMU_SMP ?= 2
 # at /mnt at boot, and looks up /bin/<name> from it as well.
 # (DISK is defined earlier so all: can depend on it.)
 OSFS_FILES := assets/osfs/hello.txt assets/osfs/poem.txt assets/osfs/test.html assets/osfs/test.css assets/osfs/test_layout.html assets/osfs/hn.html assets/osfs/icon.png assets/osfs/icon_palette.png assets/osfs/icon_gray.png assets/osfs/icon_large.png assets/osfs/img_test.html assets/osfs/intrinsic.html $(WALLPAPER_BIN)
-OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(STRACE_STRIPPED)
+OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED)
 
 # Bake the chapter-97 test PNG (16x16 RGBA with a known pixel
 # pattern) at build time.  See scripts/make_test_png.py for the
@@ -1045,6 +1080,7 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    ps=$(PS_STRIPPED) \
 	    top=$(TOP_STRIPPED) \
 	    strace=$(STRACE_STRIPPED) \
+	    stackbomb=$(STACKBOMB_STRIPPED) \
 	    date=$(DATE_STRIPPED) \
 	    beep=$(BEEP_STRIPPED) \
 	    pngdec=$(PNGDEC_STRIPPED) \

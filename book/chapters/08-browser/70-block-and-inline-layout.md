@@ -308,6 +308,14 @@ real text would look like, but it gives stable, predictable
 layouts that are easy to test and easy to reason about. When M63
 gets a real GUI framebuffer we can swap in proper metrics.
 
+(Chapter 102 partially addressed this: the bitmap font was
+replaced with TrueType DejaVu Sans, and a new `gui_measure_text`
+syscall lets the browser ask the kernel for the actual pixel
+width of a string. The layout code in this chapter still uses
+the `fs/2` shortcut for laying out the box tree -- a faithful
+layout pass that consults real font metrics is still future
+work.)
+
 ## Paint command stream
 
 Layout produces a tree of sized boxes. The renderer needs an

@@ -285,6 +285,23 @@ int elf_load_user(const uint8_t *data, size_t size,
         if (k == USER_STACK_PAGES - 1) top_page_pa = pa;
     }
 
+    /* Chapter 101 — install a one-page guard immediately below
+     * the stack base.  No physical backing; the L3 entry is
+     * invalid + tagged with DESC_SW_GUARD.  When a runaway
+     * recursion (or a single fat frame) pokes through the
+     * stack floor, the data-abort handler reads the SW bit and
+     * turns the fault into a "[svc] user stack overflow"
+     * diagnostic instead of a generic register dump.
+     *
+     * The L3 page covering the stack was just allocated by the
+     * loop above, so installing the guard one page below the
+     * stack base hits an existing L3 \u2014 zero extra physical
+     * memory is consumed. */
+    if (address_space_install_guard(as, USER_STACK_GUARD_VA) != 0) {
+        serial_puts("[elf] failed to install user-stack guard\n");
+        return -1;
+    }
+
     /* Build the initial argc/argv/envp frame in the top stack page.
      * On return out->stack_top_va is the SP_EL0 the user thread
      * will start with (it points at argc). */

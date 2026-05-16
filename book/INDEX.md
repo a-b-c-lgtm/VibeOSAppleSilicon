@@ -204,7 +204,7 @@ stack-overflow message.
 99. [A /proc-shaped filesystem, ps, and top](chapters/12-system-services/99-procfs-ps-top.md)
 100. [strace: a syscall tracer in 200 lines](chapters/12-system-services/100-strace.md)
 101. [Guard pages and a friendlier stack overflow](chapters/12-system-services/101-guard-pages.md)
-102. [TrueType fonts and sub-pixel rendering](chapters/12-system-services/102-truetype-fonts.md)
+102. [TrueType fonts in the kernel](chapters/12-system-services/102-truetype-fonts.md)
 
 ### Part XIII — TCP Server and httpd
 
@@ -228,6 +228,8 @@ filesystem servers from Part XVI) sits on the same primitive.
 
 107. [IPC: a tiny message bus for long-running services](chapters/14-userspace-services/107-ipc.md)
 108. [The system clipboard, as a userspace service](chapters/14-userspace-services/108-clipboard.md)
+108a. [Userspace access to window pixel buffers](chapters/14-userspace-services/108a-userspace-window-buffers.md)
+108b. [Moving font rendering into userspace](chapters/14-userspace-services/108b-userspace-font-server.md)
 
 ### Part XV — Browser Maturation
 
@@ -353,10 +355,12 @@ tracks layered on top of "syscalls work."
 | XII  | **78c — intrinsic image sizing + resize race** | **Done** | [Chapter 98b](chapters/12-system-services/98b-intrinsic-image-sizing.md) |
 | XII  | **79 — procfs + ps + top** | **Done** | [Chapter 99](chapters/12-system-services/99-procfs-ps-top.md) |
 | XII  | **80 — strace via /proc/&lt;pid&gt;/trace** | **Done** | [Chapter 100](chapters/12-system-services/100-strace.md) |
-| XII  | 79b — TrueType fonts | Planned | Stub [Chapter 102](chapters/12-system-services/102-truetype-fonts.md) |
-| XII  | 80a — guard pages | Planned | Stub [Chapter 101](chapters/12-system-services/101-guard-pages.md) |
+| XII  | **80a — guard pages** | **Done** | [Chapter 101](chapters/12-system-services/101-guard-pages.md) |
+| XII  | **80b -- TrueType fonts in the kernel** | **Done** | [Chapter 102](chapters/12-system-services/102-truetype-fonts.md) |
 | XIV  | 80b — named IPC + service supervisor | Planned | Stub [Chapter 107](chapters/14-userspace-services/107-ipc.md) |
 | XIV  | 80c — clipboard (userspace, over IPC) | Planned | Stub [Chapter 108](chapters/14-userspace-services/108-clipboard.md) |
+| XIV  | 90d — userspace window-buffer access | Planned | Stub [Chapter 108a](chapters/14-userspace-services/108a-userspace-window-buffers.md) |
+| XIV  | 90e — font rendering moves to userspace | Planned | Stub [Chapter 108b](chapters/14-userspace-services/108b-userspace-font-server.md) |
 | XVI  | 84a — VFS refactor: mount table + `struct fs_ops` vtable | Planned | Design [Chapter 113](chapters/16-filesystem-architecture/113-mount-table-and-vtable.md) |
 | XVI  | 84b — User-space filesystem servers (9P-shaped) | Planned | Design [Chapter 114](chapters/16-filesystem-architecture/114-userspace-filesystem-servers.md) |
 | XIII | 81 — TCP passive open + accept + httpd + loopback | Planned | Stubs [103](chapters/13-tcp-server/103-passive-open-listen.md)–[106](chapters/13-tcp-server/106-end-to-end-loop.md) |

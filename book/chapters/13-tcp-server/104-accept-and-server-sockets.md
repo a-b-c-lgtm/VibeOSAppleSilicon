@@ -1,8 +1,8 @@
-# Chapter 100 — accept() and a server socket API
+# Chapter 104 — accept() and a server socket API
 
 **Status:** Stub. Tracking milestone 93.
 
-The kernel can passively accept connections (chapter 99).
+The kernel can passively accept connections (chapter 103).
 This chapter exposes the server side to userspace through
 a familiar syscall surface.
 
@@ -19,7 +19,7 @@ a familiar syscall surface.
 ## Prerequisites
 
 - Chapter 64 — socket syscalls
-- Chapter 99 — listen state
+- Chapter 103 — listen state
 
 ## Plan
 
@@ -39,6 +39,6 @@ a familiar syscall surface.
 
 ## What this unlocks
 
-- /bin/httpd (chapter 101).
+- /bin/httpd (chapter 105).
 - Future: other tiny servers (a `/bin/dnsd` if we ever
   want to serve DNS).

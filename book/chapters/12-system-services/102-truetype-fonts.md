@@ -1,4 +1,4 @@
-# Chapter 107 — TrueType fonts and sub-pixel rendering
+# Chapter 102 — TrueType fonts and sub-pixel rendering
 
 **Status:** Stub. Tracking milestone 87.
 

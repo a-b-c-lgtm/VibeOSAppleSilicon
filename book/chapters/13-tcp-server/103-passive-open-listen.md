@@ -1,4 +1,4 @@
-# Chapter 99 — Passive open: LISTEN, SYN_RECEIVED, the backlog
+# Chapter 103 — Passive open: LISTEN, SYN_RECEIVED, the backlog
 
 **Status:** Stub. Tracking milestone 92.
 
@@ -40,5 +40,5 @@ other side.
 
 ## What this unlocks
 
-- A kernel-side `accept()` syscall (chapter 100).
-- Eventually `/bin/httpd` (chapter 101).
+- A kernel-side `accept()` syscall (chapter 104).
+- Eventually `/bin/httpd` (chapter 105).

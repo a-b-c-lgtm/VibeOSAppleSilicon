@@ -549,7 +549,7 @@ magnitude.
   call inherits that.
 
 * **Incremental relayout under JavaScript.** Whenever we
-  ship pocket-JS (chapter 14-browser-maturation), DOM
+  ship pocket-JS (chapter 15-browser-maturation), DOM
   mutations that change layout can post requests to the
   same parser-thread pipeline.
 

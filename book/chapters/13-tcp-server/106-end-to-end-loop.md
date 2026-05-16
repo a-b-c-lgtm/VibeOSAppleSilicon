@@ -1,4 +1,4 @@
-# Chapter 102 — End to end: the browser fetches from its own kernel
+# Chapter 106 — End to end: the browser fetches from its own kernel
 
 **Status:** Stub. Tracking milestone 95.
 
@@ -22,7 +22,7 @@ TCP over `127.0.0.1`.
 
 ## Prerequisites
 
-- Chapter 101 — httpd
+- Chapter 105 — httpd
 - Chapter 71 — browser
 
 ## Plan
@@ -42,5 +42,5 @@ TCP over `127.0.0.1`.
 
 - A safer way to develop browser features (no host
   network needed for testing).
-- The Part XIV browser-maturation work has somewhere to
+- The Part XV browser-maturation work has somewhere to
   point its requests.

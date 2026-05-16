@@ -1,8 +1,8 @@
-# Chapter 109 — PLAN: User-space filesystem servers (9P-shaped)
+# Chapter 114 — PLAN: User-space filesystem servers (9P-shaped)
 
 > **Status: PLAN ONLY.** This chapter is the design contract
-> for the second half of Part XV. **Implement only after
-> [Chapter 108](108-mount-table-and-vtable.md) lands** — the
+> for the second half of Part XVI. **Implement only after
+> [Chapter 113](113-mount-table-and-vtable.md) lands** — the
 > mount table and `struct fs_ops` vtable are prerequisites.
 > Trying to add user-space filesystems on top of the current
 > prefix-special-casing ladder would multiply the existing
@@ -19,7 +19,8 @@ fine for filesystems that need block-device access (OSFS-1,
 OSFS-2) or kernel-internal state (procfs walks the thread
 table), but it's wrong for everything else.
 
-We have a system clipboard coming (Chapter 101 stub). We
+We have a system clipboard coming (Chapter 108 stub,
+itself riding on the named-IPC bus from Chapter 107). We
 have audio that probably wants `/dev/audio` or `/dev/snd/`
 shaped paths. We have a future where the browser exposes
 its history as `/sys/browser/history/`. None of these need
@@ -84,7 +85,7 @@ payload, tags for in-flight pipelining.
 
 ## The kernel side: one new fs_ops
 
-The mount-table work in Chapter 108 makes this trivial.
+The mount-table work in Chapter 113 makes this trivial.
 We add one more driver: `userfs_ops`. Its `cookie` is a
 `struct userfs_channel`:
 
@@ -211,8 +212,8 @@ is always in-kernel).
 
 ## Migrating procfs out of the kernel (case study)
 
-Once Chapter 108 has procfs behind `procfs_ops` and
-Chapter 109 has the userfs machinery, we can write
+Once Chapter 113 has procfs behind `procfs_ops` and
+Chapter 114 has the userfs machinery, we can write
 `/bin/procd` as a normal C program that:
 
 - Opens `/dev/kthread_snapshot` (a new in-kernel character
@@ -339,7 +340,7 @@ Once the mount table is exposed via `SYS_MOUNTS` (chapter
 108), `ls /` shows every mounted prefix as a directory.
 `cat <unknown_mount>` falls through to the userspace
 daemon. No `ls`-side or `cat`-side changes needed
-beyond what chapter 108 already requires.
+beyond what chapter 113 already requires.
 
 ### `top` shows daemon stats
 
@@ -377,13 +378,13 @@ Sweep-green after every step.
    daemon that hangs and a daemon that reads itself.
 
 Each step is a book-chapter-sized milestone. Total: 6 new
-chapters in Part XV, on top of the 1–7 chapters in Chapter
-108's implementation plan.
+chapters in Part XVI, on top of the 1–7 chapters in Chapter
+113's implementation plan.
 
 ## Why the order matters
 
-Chapter 108 (mount table) is a pure refactor with no new
-features. Chapter 109 (userspace fs) is a major new
+Chapter 113 (mount table) is a pure refactor with no new
+features. Chapter 114 (userspace fs) is a major new
 feature.
 
 If we shipped 109 first (i.e., added a sixth prefix
@@ -396,8 +397,8 @@ even if 109 slips.
 
 ## When to schedule
 
-Chapter 108 is the prerequisite. Once 108 is done and the
-sweep is green, Chapter 109 can begin. Both together are
+Chapter 113 is the prerequisite. Once 113 is done and the
+sweep is green, Chapter 114 can begin. Both together are
 substantial — probably 3–4 weeks of focused work for the
 implementation chapters. Worth doing because every
 subsequent feature (clipboard, audio, anything

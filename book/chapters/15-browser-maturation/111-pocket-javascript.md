@@ -1,4 +1,4 @@
-# Chapter 105 — A pocket JavaScript: expression evaluator for onclick
+# Chapter 111 — A pocket JavaScript: expression evaluator for onclick
 
 **Status:** Stub. Tracking milestone 98.
 

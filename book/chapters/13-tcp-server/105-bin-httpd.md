@@ -1,4 +1,4 @@
-# Chapter 101 — /bin/httpd: serve /mnt and /data over HTTP
+# Chapter 105 — /bin/httpd: serve /mnt and /data over HTTP
 
 **Status:** Stub. Tracking milestone 94.
 
@@ -21,7 +21,7 @@ needed.
 
 ## Prerequisites
 
-- Chapter 100 — accept
+- Chapter 104 — accept
 - Chapter 66 — URL/HTTP parser (request parser is the same
   shape, easier to lift)
 - Chapter 16 — VFS (we read from `/mnt/`)

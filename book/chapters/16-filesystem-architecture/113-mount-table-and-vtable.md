@@ -1,7 +1,7 @@
-# Chapter 108 — PLAN: A real VFS — mount table and `struct fs_ops`
+# Chapter 113 — PLAN: A real VFS — mount table and `struct fs_ops`
 
 > **Status: PLAN ONLY.** This chapter is the design contract
-> for the first half of Part XV (Filesystem Architecture).
+> for the first half of Part XVI (Filesystem Architecture).
 > No code lands yet. The matching implementation work will
 > be scheduled as one or more milestones after the chapter is
 > reviewed; the goal of this document is to nail down the
@@ -39,7 +39,7 @@ Each of these requires:
 That's 7+ branches in the kernel **and** scattered userspace
 knowledge per filesystem. We have six filesystems today;
 the next one (audio? sysfs? netfs? a user-provided FS via
-chapter 109?) is the one that crosses the line from
+chapter 114?) is the one that crosses the line from
 "annoying" to "going to introduce a bug."
 
 The five places we already drift inconsistently:
@@ -217,7 +217,7 @@ via a new `SYS_MOUNTS` syscall (returns
 `{prefix, flags}` pairs); the save dialog iterates the
 table and offers any mount with `!MOUNT_RO` as a save
 destination. Currently that's `/data/` and `/tmp/`. Future:
-also any user-mounted fs (chapter 109).
+also any user-mounted fs (chapter 114).
 
 ### `userspace/sh/sh.c`
 
@@ -247,12 +247,12 @@ Two small additions:
 
 ```c
 #define SYS_MOUNTS   N  /* enumerate the mount table */
-#define SYS_MOUNT    N  /* PLAN, used by chapter 109 */
-#define SYS_UMOUNT   N  /* PLAN, used by chapter 109 */
+#define SYS_MOUNT    N  /* PLAN, used by chapter 114 */
+#define SYS_UMOUNT   N  /* PLAN, used by chapter 114 */
 ```
 
 `SYS_MOUNT`/`SYS_UMOUNT` are reserved here but defined in
-[Chapter 109](109-userspace-filesystem-servers.md). For the
+[Chapter 114](114-userspace-filesystem-servers.md). For the
 mount-table refactor in isolation, only `SYS_MOUNTS` is
 strictly needed (and only for the save dialog rework).
 
@@ -320,7 +320,7 @@ appreciate these being written down now.)
 - **The `cookie` argument matters.** It's the difference
   between "the tmpfs driver" and "an instance of the
   tmpfs driver." Today there is only one tmpfs, so it
-  feels redundant — but Chapter 109's per-userspace-fs
+  feels redundant — but Chapter 114's per-userspace-fs
   state lives here, and we want the same vtable to work
   for both kernel and userspace filesystems.
 - **Longest-prefix match, not first-match.** With six
@@ -344,7 +344,7 @@ appreciate these being written down now.)
 
 After chapter 99 ships (done) and before any new
 filesystem (audio, sysfs, netfs, or the userspace-fs work
-in Chapter 109). The refactor is a prerequisite for
-Chapter 109 — adding userspace filesystems on top of the
+in Chapter 114). The refactor is a prerequisite for
+Chapter 114 — adding userspace filesystems on top of the
 current prefix ladder would multiply the existing ladder
 problem by every userspace fs we ever mount.

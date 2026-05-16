@@ -203,31 +203,43 @@ stack-overflow message.
 98b. [Intrinsic image sizing and the resize race](chapters/12-system-services/98b-intrinsic-image-sizing.md)
 99. [A /proc-shaped filesystem, ps, and top](chapters/12-system-services/99-procfs-ps-top.md)
 100. [strace: a syscall tracer in 200 lines](chapters/12-system-services/100-strace.md)
-101. [The system clipboard](chapters/12-system-services/101-clipboard.md)
-102. [Guard pages and a friendlier stack overflow](chapters/12-system-services/102-guard-pages.md)
-107. [TrueType fonts and sub-pixel rendering](chapters/12-system-services/107-truetype-fonts.md)
+101. [Guard pages and a friendlier stack overflow](chapters/12-system-services/101-guard-pages.md)
+102. [TrueType fonts and sub-pixel rendering](chapters/12-system-services/102-truetype-fonts.md)
 
 ### Part XIII — TCP Server and httpd
 
 Closing the loop on TCP: passive open, accept, a tiny static
 file server, and the browser fetching from its own kernel.
 
-99.  [Passive open: LISTEN, SYN_RECEIVED, the backlog](chapters/13-tcp-server/99-passive-open-listen.md)
-100. [accept() and a server socket API](chapters/13-tcp-server/100-accept-and-server-sockets.md)
-101. [/bin/httpd: serve /mnt and /data over HTTP](chapters/13-tcp-server/101-bin-httpd.md)
-102. [End to end: the browser fetches from its own kernel](chapters/13-tcp-server/102-end-to-end-loop.md)
+103. [Passive open: LISTEN, SYN_RECEIVED, the backlog](chapters/13-tcp-server/103-passive-open-listen.md)
+104. [accept() and a server socket API](chapters/13-tcp-server/104-accept-and-server-sockets.md)
+105. [/bin/httpd: serve /mnt and /data over HTTP](chapters/13-tcp-server/105-bin-httpd.md)
+106. [End to end: the browser fetches from its own kernel](chapters/13-tcp-server/106-end-to-end-loop.md)
 
-### Part XIV — Browser Maturation
+### Part XIV — Userspace Services
+
+Part XIII taught `bind`/`listen`/`accept` as the foundational
+idiom of inbound connections, on IPv4. This part reuses the
+same shape — minus the network — to build a named-IPC bus,
+and then puts the first long-running userspace service (the
+clipboard) on top of it. The pattern generalises: every
+future daemon (audio mixer, TLS proxy, the 9P-shaped
+filesystem servers from Part XVI) sits on the same primitive.
+
+107. [IPC: a tiny message bus for long-running services](chapters/14-userspace-services/107-ipc.md)
+108. [The system clipboard, as a userspace service](chapters/14-userspace-services/108-clipboard.md)
+
+### Part XV — Browser Maturation
 
 Forms, cookies + Same-Origin Policy, a tiny scriptable
 interpreter, and an honest TLS discussion.
 
-103. [HTML forms: input, button, submit](chapters/14-browser-maturation/103-html-forms.md)
-104. [Cookies and the Same-Origin Policy](chapters/14-browser-maturation/104-cookies-and-sop.md)
-105. [A pocket JavaScript: expression evaluator for onclick](chapters/14-browser-maturation/105-pocket-javascript.md)
-106. [TLS options: honest proxy, or BearSSL](chapters/14-browser-maturation/106-tls-options.md)
+109. [HTML forms: input, button, submit](chapters/15-browser-maturation/109-html-forms.md)
+110. [Cookies and the Same-Origin Policy](chapters/15-browser-maturation/110-cookies-and-sop.md)
+111. [A pocket JavaScript: expression evaluator for onclick](chapters/15-browser-maturation/111-pocket-javascript.md)
+112. [TLS options: honest proxy, or BearSSL](chapters/15-browser-maturation/112-tls-options.md)
 
-### Part XV — Filesystem Architecture
+### Part XVI — Filesystem Architecture
 
 The VFS grew six prefix-special-cased mounts (root ramfs, `/mnt/`,
 `/bin/`, `/tmp/`, `/data/`, `/proc/`) over the course of the book.
@@ -242,8 +254,8 @@ the design so the implementation work that follows is mechanical.
 The userspace application updates (`ls`, `notepad` save dialog,
 `init`, `sh`) are folded into each plan rather than split out.
 
-108. [PLAN: A real VFS — mount table and `struct fs_ops`](chapters/15-filesystem-architecture/108-mount-table-and-vtable.md) *(plan only; prerequisite for chapter 109)*
-109. [PLAN: User-space filesystem servers (9P-shaped)](chapters/15-filesystem-architecture/109-userspace-filesystem-servers.md) *(plan only; implement after chapter 108)*
+113. [PLAN: A real VFS — mount table and `struct fs_ops`](chapters/16-filesystem-architecture/113-mount-table-and-vtable.md) *(plan only; prerequisite for chapter 114)*
+114. [PLAN: User-space filesystem servers (9P-shaped)](chapters/16-filesystem-architecture/114-userspace-filesystem-servers.md) *(plan only; implement after chapter 113)*
 
 ## Appendices
 
@@ -341,11 +353,13 @@ tracks layered on top of "syscalls work."
 | XII  | **78c — intrinsic image sizing + resize race** | **Done** | [Chapter 98b](chapters/12-system-services/98b-intrinsic-image-sizing.md) |
 | XII  | **79 — procfs + ps + top** | **Done** | [Chapter 99](chapters/12-system-services/99-procfs-ps-top.md) |
 | XII  | **80 — strace via /proc/&lt;pid&gt;/trace** | **Done** | [Chapter 100](chapters/12-system-services/100-strace.md) |
-| XII  | 79b — TrueType fonts | Planned | Stub [107](chapters/12-system-services/107-truetype-fonts.md) |
-| XII  | 80b — clipboard + guard pages | Planned | Stubs [101](chapters/12-system-services/101-clipboard.md)–[102](chapters/12-system-services/102-guard-pages.md) |
-| XV   | 84a — VFS refactor: mount table + `struct fs_ops` vtable | Planned | Design [Chapter 108](chapters/15-filesystem-architecture/108-mount-table-and-vtable.md) |
-| XV   | 84b — User-space filesystem servers (9P-shaped) | Planned | Design [Chapter 109](chapters/15-filesystem-architecture/109-userspace-filesystem-servers.md) |
-| XIII | 81 — TCP passive open + accept + httpd + loopback | Planned | Stubs [99](chapters/13-tcp-server/99-passive-open-listen.md)–[102](chapters/13-tcp-server/102-end-to-end-loop.md) |
-| XIV  | 82 — HTML forms + cookies + SOP + pocket-JS | Planned | Stubs [103](chapters/14-browser-maturation/103-html-forms.md)–[105](chapters/14-browser-maturation/105-pocket-javascript.md) |
-| XIV  | 83 — TLS options (host proxy or BearSSL port) | Planned | Stub [106](chapters/14-browser-maturation/106-tls-options.md) |
+| XII  | 79b — TrueType fonts | Planned | Stub [Chapter 102](chapters/12-system-services/102-truetype-fonts.md) |
+| XII  | 80a — guard pages | Planned | Stub [Chapter 101](chapters/12-system-services/101-guard-pages.md) |
+| XIV  | 80b — named IPC + service supervisor | Planned | Stub [Chapter 107](chapters/14-userspace-services/107-ipc.md) |
+| XIV  | 80c — clipboard (userspace, over IPC) | Planned | Stub [Chapter 108](chapters/14-userspace-services/108-clipboard.md) |
+| XVI  | 84a — VFS refactor: mount table + `struct fs_ops` vtable | Planned | Design [Chapter 113](chapters/16-filesystem-architecture/113-mount-table-and-vtable.md) |
+| XVI  | 84b — User-space filesystem servers (9P-shaped) | Planned | Design [Chapter 114](chapters/16-filesystem-architecture/114-userspace-filesystem-servers.md) |
+| XIII | 81 — TCP passive open + accept + httpd + loopback | Planned | Stubs [103](chapters/13-tcp-server/103-passive-open-listen.md)–[106](chapters/13-tcp-server/106-end-to-end-loop.md) |
+| XV   | 82 — HTML forms + cookies + SOP + pocket-JS | Planned | Stubs [109](chapters/15-browser-maturation/109-html-forms.md)–[111](chapters/15-browser-maturation/111-pocket-javascript.md) |
+| XV   | 83 — TLS options (host proxy or BearSSL port) | Planned | Stub [Chapter 112](chapters/15-browser-maturation/112-tls-options.md) |
 | VIII | 65+ — book polish, more sites, TLS bridge | Not started | Stubs |

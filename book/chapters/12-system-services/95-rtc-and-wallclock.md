@@ -690,7 +690,7 @@ after the shell prompt is up.**
   `mtime / ctime`. They'll come straight out of `walltime_now_us`.
 
 * **Browser cookie expiry.** Cookies have absolute-time `Expires`
-  attributes. The cookie jar (chapter 105) needs to compare
+  attributes. The cookie jar (chapter 110) needs to compare
   them against `time(NULL)`.
 
 * **Real timestamps in logs.** Future kernel-side log lines

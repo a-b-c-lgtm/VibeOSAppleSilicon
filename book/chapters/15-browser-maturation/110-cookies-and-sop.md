@@ -1,8 +1,8 @@
-# Chapter 104 — Cookies and the Same-Origin Policy
+# Chapter 110 — Cookies and the Same-Origin Policy
 
 **Status:** Stub. Tracking milestone 97.
 
-Forms (chapter 103) lets users log in. Without cookies
+Forms (chapter 109) lets users log in. Without cookies
 there is no way to *stay* logged in. And without a
 Same-Origin Policy, cookies become a security disaster.
 This chapter does both at once because doing one without
@@ -22,13 +22,13 @@ the other is a trap.
   - Form submission to a different origin is blocked
     *unless* the form's `action=` was already cross-origin
     at parse time (no third-party redirect smuggling).
-  - JavaScript (chapter 105) cannot read cross-origin
+  - JavaScript (chapter 111) cannot read cross-origin
     documents.
 
 ## Prerequisites
 
 - Chapter 84 — persistence on disk
-- Chapter 103 — forms (we need somewhere to send cookies)
+- Chapter 109 — forms (we need somewhere to send cookies)
 - Chapter 91 — wall-clock time (cookie expiry)
 
 ## Plan
@@ -38,7 +38,7 @@ the other is a trap.
 - A `/bin/cookies` user tool to list/delete cookies.
 - The browser address bar shows a small lock when
   the connection is "secure" via the proxy (still not
-  real TLS — see chapter 106).
+  real TLS — see chapter 112).
 
 ## What you'll learn
 

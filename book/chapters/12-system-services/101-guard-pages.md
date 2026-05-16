@@ -1,4 +1,4 @@
-# Chapter 102 — Guard pages and a friendlier stack overflow
+# Chapter 101 — Guard pages and a friendlier stack overflow
 
 **Status:** Stub. Tracking milestone 91.
 

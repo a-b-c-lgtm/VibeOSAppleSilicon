@@ -1,4 +1,4 @@
-# Chapter 103 — HTML forms: input, button, submit
+# Chapter 109 — HTML forms: input, button, submit
 
 **Status:** Stub. Tracking milestone 96.
 
@@ -25,7 +25,7 @@ fetch pipeline.
 ## Prerequisites
 
 - Chapter 71 — browser
-- Chapter 102 — local httpd to submit to (for testability)
+- Chapter 106 — local httpd to submit to (for testability)
 
 ## Plan
 
@@ -34,7 +34,7 @@ fetch pipeline.
   rules as the URL bar).
 - Tab key cycles focus between inputs in DOM order.
 - Enter inside a single-input form submits.
-- httpd in chapter 101 grows a tiny POST handler that
+- httpd in chapter 105 grows a tiny POST handler that
   echoes the parsed form back as HTML, so the regression
   test is round-trippable.
 
@@ -47,5 +47,5 @@ fetch pipeline.
 
 ## What this unlocks
 
-- Login forms (once cookies land in chapter 104).
+- Login forms (once cookies land in chapter 110).
 - A path to richer UI: textarea, select, checkbox.

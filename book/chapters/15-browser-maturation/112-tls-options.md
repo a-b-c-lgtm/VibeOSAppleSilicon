@@ -1,4 +1,4 @@
-# Chapter 106 — TLS options: honest proxy, or BearSSL
+# Chapter 112 — TLS options: honest proxy, or BearSSL
 
 **Status:** Stub. Tracking milestone 99.
 
@@ -26,7 +26,7 @@ two paths forward.
 - Chapter 71 — browser
 - Chapter 91 — wall-clock time (TLS needs notBefore /
   notAfter)
-- Chapter 102 — loopback (we can run a TLS listener on
+- Chapter 106 — loopback (we can run a TLS listener on
   ourselves to test)
 
 ## Plan

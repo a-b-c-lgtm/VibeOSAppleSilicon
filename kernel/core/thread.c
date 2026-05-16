@@ -34,6 +34,7 @@
 #include "exception.h"
 #include "pipe.h"
 #include "pty.h"
+#include "strace.h"
 #include "../arch/address_space.h"
 #include "../arch/atomic.h"
 #include "../arch/cpu.h"
@@ -310,6 +311,7 @@ void thread_init(void)
     boot->sig_pending = 0;
     for (int s = 0; s < 32; s++) boot->sig_handlers[s] = 0;
     boot->sig_restorer = 0;
+    boot->strace     = NULL;
     boot->args[0]    = '\0';
     boot->as         = NULL;
     boot->cwd[0]     = '/';
@@ -363,6 +365,7 @@ struct thread *thread_create(thread_entry_fn entry,
     t->sig_pending = 0;    /* never inherit pending signals — child starts clean */
     for (int s = 0; s < 32; s++) t->sig_handlers[s] = 0;
     t->sig_restorer = 0;
+    t->strace     = NULL;  /* opt-in via sys_trace_me; never inherited */
     /* Chapter 92 — kernel thread inherits the creating CPU as
      * its home.  thread_create is the "spawn here" path; the
      * remote variant is thread_create_on. */
@@ -478,6 +481,7 @@ struct thread *thread_create_on(uint32_t cpu_id,
     t->sig_pending = 0;
     for (int s = 0; s < 32; s++) t->sig_handlers[s] = 0;
     t->sig_restorer = 0;
+    t->strace     = NULL;
     /* Chapter 92 — explicit placement.  home_cpu is the
      * caller-supplied target. */
     t->home_cpu   = cpu_id;
@@ -547,6 +551,7 @@ int thread_secondary_init_idle(const char *name)
     idle->sig_pending = 0;
     for (int s = 0; s < 32; s++) idle->sig_handlers[s] = 0;
     idle->sig_restorer = 0;
+    idle->strace     = NULL;
     /* Chapter 92 — idle's home is the CPU it lives on. */
     idle->home_cpu   = cpu_current_id();
     idle->sp         = 0;   /* filled in by first cswitch_to */
@@ -607,6 +612,7 @@ struct thread *user_thread_create(uint64_t user_entry_va,
     t->sig_pending = 0;    /* user thread starts with no pending signals */
     for (int s = 0; s < 32; s++) t->sig_handlers[s] = 0;
     t->sig_restorer = 0;
+    t->strace     = NULL;
     /* Chapter 92 — user thread runs on the creating CPU.  All
      * existing user_thread_create callers (sys_spawn family,
      * sys_exec) run on CPU 0, so this preserves the chapter 91
@@ -798,6 +804,7 @@ struct thread *user_thread_create_shared_files_on(uint64_t user_entry_va,
     t->sig_pending = 0;
     for (int s = 0; s < 32; s++) t->sig_handlers[s] = 0;
     t->sig_restorer = 0;
+    t->strace     = NULL;
     /* Chapter 92 — pin the new thread to the resolved CPU. */
     t->home_cpu   = target_cpu;
     /* Inherit cwd / env from the creating thread (same logic as
@@ -965,6 +972,28 @@ int thread_snapshot_pid(int pid, struct thread_snap *out)
     return hit;
 }
 
+/* Chapter 100 — render /proc/<pid>/trace.  Holds g_all_lock for
+ * the duration of the render so the target thread cannot exit
+ * and be freed underneath us.  The rendered text is bounded
+ * (PROCFS_MAX_FILE = 8 KiB) and the formatter takes no other
+ * locks, so the window is bounded and small.  Returns -1 if no
+ * such pid exists. */
+long thread_strace_render_pid(int pid, char *out, size_t cap)
+{
+    long n = -1;
+    uint64_t f = irq_save_disable();
+    spin_lock(&g_all_lock);
+    for (struct thread *t = g_all_head; t; t = t->all_next) {
+        if (t->id == pid) {
+            n = strace_render_and_drain(t, out, cap);
+            break;
+        }
+    }
+    spin_unlock(&g_all_lock);
+    irq_restore(f);
+    return n;
+}
+
 int thread_runqueue_len(uint32_t cpu_id)
 {
     int n = 0;
@@ -1129,6 +1158,9 @@ struct thread *thread_fork_user(struct thread *parent,
      * exec() resets them — see sys_exec. */
     for (int s = 0; s < 32; s++) t->sig_handlers[s] = parent->sig_handlers[s];
     t->sig_restorer = parent->sig_restorer;
+    /* Chapter 100 — tracing is NOT inherited.  POSIX strace
+     * follows exec but not fork by default; we match that. */
+    t->strace     = NULL;
 
     /* Inherit args buffer verbatim. */
     {
@@ -1510,6 +1542,7 @@ int thread_waitpid(int target_pid, int *code_out, int options)
             int     child_id = exited->id;
             int     code     = exited->exit_code;
             all_remove(exited);
+            strace_release(exited);
             if (exited->stack_base) kfree(exited->stack_base);
             /* Tear down per-process page tables and any user pages
              * they own.  No-op for kernel threads (as == NULL). */
@@ -1570,6 +1603,7 @@ void thread_exit(int code)
             if (t->parent_id == my_id) {
                 if (t->state == THREAD_EXITED) {
                     all_remove(t);
+                    strace_release(t);
                     if (t->stack_base) kfree(t->stack_base);
                     if (t->as) address_space_destroy(t->as);
                     kfree(t);

@@ -41,6 +41,7 @@
 #include "dns.h"
 #include "wm.h"
 #include "console_in.h"
+#include "strace.h"
 #include "../device/virtio_input.h"
 #include "../device/virtio_tablet.h"
 #include "../device/virtio_snd.h"
@@ -2570,6 +2571,23 @@ void svc_dispatch(struct exception_frame *frame)
     long a4   = (long)frame->x[4];
     long a5   = (long)frame->x[5];
 
+    /* Chapter 100 — syscall tracer.  Reserve a ring slot before
+     * the dispatch so the entry's `args` reflect the values the
+     * handler is about to see.  The pointer is NULL when the
+     * calling thread isn't traced (the common case — strace_enter
+     * is a one-branch no-op).  The slot is back-filled with `ret`
+     * and `completed=1` after the switch returns. */
+    struct strace_entry *_tr = NULL;
+    {
+        struct thread *_tt = thread_current();
+        if (_tt && _tt->strace) {
+            _tr = strace_enter(_tt, (uint32_t)num,
+                               (uint64_t)a0, (uint64_t)a1,
+                               (uint64_t)a2, (uint64_t)a3,
+                               (uint64_t)a4, (uint64_t)a5);
+        }
+    }
+
     long ret;
     switch (num) {
     case SYS_WRITE:  ret = sys_write(a0, a1, a2);    break;
@@ -2717,6 +2735,13 @@ void svc_dispatch(struct exception_frame *frame)
         ret = sys_beep(a0, a1);
         break;
 
+    /* Chapter 100 — enable per-thread syscall tracing on self.
+     * Idempotent: a second call is a no-op.  Cannot be revoked
+     * (yet) — the ring lives until the thread exits.  No args. */
+    case SYS_TRACE_ME:
+        ret = strace_enable(thread_current()) == 0 ? 0 : -ENOMEM_VFS;
+        break;
+
     default:
         serial_puts("[svc] unknown syscall ");
         serial_puthex((uint64_t)num);
@@ -2726,6 +2751,17 @@ void svc_dispatch(struct exception_frame *frame)
     }
 
     frame->x[0] = (uint64_t)ret;
+
+    /* Chapter 100 — stamp the tracer slot we reserved on entry.
+     * The slot pointer is stable across the dispatch because the
+     * traced thread is the only writer to its own ring and is
+     * mid-SVC (cannot re-enter).  Concurrent readers from
+     * /proc/<pid>/trace may have drained past us, in which case
+     * this stamp lands in a slot that's logically free — harmless. */
+    if (_tr) {
+        _tr->ret = (int64_t)ret;
+        _tr->completed = 1;
+    }
 
     /* Signal-delivery tail.  Run AFTER the dispatcher has written
      * the syscall return value, so the saved x[0] in the sigframe

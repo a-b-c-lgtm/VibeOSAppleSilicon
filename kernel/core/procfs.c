@@ -272,6 +272,7 @@ static const char *const PROCFS_ROOT_FILES[] = {
 static const char *const PROCFS_PID_LEAVES[] = {
     "status",
     "cmdline",
+    "trace",
 };
 #define PROCFS_PID_LEAF_COUNT \
     ((int)(sizeof(PROCFS_PID_LEAVES) / sizeof(PROCFS_PID_LEAVES[0])))
@@ -398,6 +399,11 @@ long procfs_render(const char *path, char *out, size_t cap)
     if (*leaf == '\0') return render_pid_dir(pid, out, cap);
     if (str_eq(leaf, "status"))  return render_pid_status(pid, out, cap);
     if (str_eq(leaf, "cmdline")) return render_pid_cmdline(pid, out, cap);
+    /* Chapter 100 — syscall tracer ring.  Renders+drains on each
+     * open; an unattached thread renders the literal banner
+     * "(not traced)\n".  Locking lives in thread.c so we don't
+     * need to expose g_all_lock through this file. */
+    if (str_eq(leaf, "trace"))   return thread_strace_render_pid(pid, out, cap);
     return -1;
 }
 

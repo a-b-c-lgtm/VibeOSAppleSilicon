@@ -227,6 +227,24 @@ interpreter, and an honest TLS discussion.
 105. [A pocket JavaScript: expression evaluator for onclick](chapters/14-browser-maturation/105-pocket-javascript.md)
 106. [TLS options: honest proxy, or BearSSL](chapters/14-browser-maturation/106-tls-options.md)
 
+### Part XV — Filesystem Architecture
+
+The VFS grew six prefix-special-cased mounts (root ramfs, `/mnt/`,
+`/bin/`, `/tmp/`, `/data/`, `/proc/`) over the course of the book.
+This section retires the prefix ladder in favour of a classical
+Unix VFS — a mount table dispatching through a `struct fs_ops`
+vtable — and then uses that abstraction to support user-space
+filesystem servers (a 9P-shaped RPC, so any userspace daemon can
+become a mountable filesystem).
+
+Both chapters are currently **PLAN** documents: they nail down
+the design so the implementation work that follows is mechanical.
+The userspace application updates (`ls`, `notepad` save dialog,
+`init`, `sh`) are folded into each plan rather than split out.
+
+108. [PLAN: A real VFS — mount table and `struct fs_ops`](chapters/15-filesystem-architecture/108-mount-table-and-vtable.md) *(plan only; prerequisite for chapter 109)*
+109. [PLAN: User-space filesystem servers (9P-shaped)](chapters/15-filesystem-architecture/109-userspace-filesystem-servers.md) *(plan only; implement after chapter 108)*
+
 ## Appendices
 
 Appendices fill in reference material the chapters cite but do not
@@ -321,8 +339,12 @@ tracks layered on top of "syscalls work."
 | XII  | **78 — PNG + image cache** | **Done** | [Chapter 97](chapters/12-system-services/97-png-and-image-cache.md) |
 | XII  | **78b — PNG: palette / gray + content-type sniff** | **Done** | [Chapter 98](chapters/12-system-services/98-png-extended.md) |
 | XII  | **78c — intrinsic image sizing + resize race** | **Done** | [Chapter 98b](chapters/12-system-services/98b-intrinsic-image-sizing.md) |
-| XII  | 79 — TrueType fonts | Planned | Stub [107](chapters/12-system-services/107-truetype-fonts.md) |
-| XII  | 80 — procfs + ps + top + strace + clipboard + guard pages | Planned | Stubs [99](chapters/12-system-services/99-procfs-ps-top.md)–[102](chapters/12-system-services/102-guard-pages.md) |
+| XII  | **79 — procfs + ps + top** | **Done** | [Chapter 99](chapters/12-system-services/99-procfs-ps-top.md) |
+| XII  | **80 — strace via /proc/&lt;pid&gt;/trace** | **Done** | [Chapter 100](chapters/12-system-services/100-strace.md) |
+| XII  | 79b — TrueType fonts | Planned | Stub [107](chapters/12-system-services/107-truetype-fonts.md) |
+| XII  | 80b — clipboard + guard pages | Planned | Stubs [101](chapters/12-system-services/101-clipboard.md)–[102](chapters/12-system-services/102-guard-pages.md) |
+| XV   | 84a — VFS refactor: mount table + `struct fs_ops` vtable | Planned | Design [Chapter 108](chapters/15-filesystem-architecture/108-mount-table-and-vtable.md) |
+| XV   | 84b — User-space filesystem servers (9P-shaped) | Planned | Design [Chapter 109](chapters/15-filesystem-architecture/109-userspace-filesystem-servers.md) |
 | XIII | 81 — TCP passive open + accept + httpd + loopback | Planned | Stubs [99](chapters/13-tcp-server/99-passive-open-listen.md)–[102](chapters/13-tcp-server/102-end-to-end-loop.md) |
 | XIV  | 82 — HTML forms + cookies + SOP + pocket-JS | Planned | Stubs [103](chapters/14-browser-maturation/103-html-forms.md)–[105](chapters/14-browser-maturation/105-pocket-javascript.md) |
 | XIV  | 83 — TLS options (host proxy or BearSSL port) | Planned | Stub [106](chapters/14-browser-maturation/106-tls-options.md) |

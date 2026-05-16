@@ -315,6 +315,26 @@ enum {
      * driver and only the most recent caller's audio is heard
      * cleanly. */
     SYS_BEEP        = 79,
+
+    /* Chapter 100 — per-thread syscall tracer.
+     *
+     *   sys_trace_me(void) -> 0 / -ENOMEM
+     *
+     * Allocates a STRACE_RING_CAP-entry ring on the calling
+     * thread (see strace.h).  After this returns, every SVC
+     * that thread issues is recorded into the ring, viewable
+     * as text via `/proc/<pid>/trace`.  Drained on read.
+     *
+     * Idempotent: a second call is a no-op success.  No way to
+     * disable today — the ring is freed when the thread exits.
+     *
+     * Privilege model: ANY thread may trace itself; there is no
+     * way to attach to another pid yet (`ptrace_attach` is a
+     * future chapter).  This means /bin/strace works by
+     * forking, calling sys_trace_me in the child, then exec'ing
+     * the target program; the trace ring survives exec because
+     * exec rebuilds the AS but preserves struct thread fields. */
+    SYS_TRACE_ME    = 80,
 };
 
 /* Chapter 95 — POSIX-shaped wall-clock value.  Layout is part

@@ -137,6 +137,11 @@ enum {
     /* Chapter 96 — synthesise a square wave through the
      * virtio-sound stream.  See beep() wrapper further below. */
     SYS_BEEP        = 79,
+
+    /* Chapter 100 — per-thread syscall tracer.  See trace_me()
+     * wrapper further below; the kernel-side ring is exposed via
+     * /proc/<pid>/trace. */
+    SYS_TRACE_ME    = 80,
 };
 
 /* Chapter 95 — POSIX-shaped wall-clock value.  Layout matches
@@ -633,6 +638,19 @@ static inline int sleep_ms(unsigned long ms)
 static inline int beep(unsigned int freq_hz, unsigned int duration_ms)
 {
     return (int)_svc2(SYS_BEEP, (long)freq_hz, (long)duration_ms);
+}
+
+/* Chapter 100 — enable per-thread syscall tracing on self.  After
+ * this returns 0, every SVC issued by the calling thread is
+ * recorded into a kernel-side ring (size STRACE_RING_CAP); read
+ * the textual trace from `/proc/<getpid()>/trace`.  Idempotent;
+ * no way to disable today (the ring lives until the thread
+ * exits).  Returns 0 on success, -ENOMEM if the ring couldn't
+ * be allocated.  See /bin/strace for the typical caller pattern
+ * (fork → trace_me → execv). */
+static inline int trace_me(void)
+{
+    return (int)_svc0(SYS_TRACE_ME);
 }
 
 /* Allocate an anonymous pipe.  On success, fds[0] is the read

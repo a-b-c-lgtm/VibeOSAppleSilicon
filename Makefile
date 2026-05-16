@@ -70,6 +70,7 @@ C_SRCS   := kernel/core/main.c \
             kernel/core/osfs2_cache.c \
             kernel/core/osfs2_journal.c \
             kernel/core/procfs.c \
+            kernel/core/strace.c \
             kernel/core/console_in.c \
             kernel/core/wm.c \
             kernel/core/net.c \
@@ -234,6 +235,14 @@ TOP_OBJS := $(BUILD)/userspace/crt/crt0.o \
             $(BUILD)/userspace/top/top.o
 TOP_ELF  := $(BUILD)/userspace/top/top.elf
 TOP_STRIPPED := $(BUILD)/userspace/top/top.stripped.elf
+
+# chapter-100 strace: forks a child, calls SYS_TRACE_ME, execs
+# the target, and pumps /proc/<child>/trace into stderr until
+# the child exits.  Tracer machinery itself is in kernel/core/strace.c.
+STRACE_OBJS := $(BUILD)/userspace/crt/crt0.o \
+               $(BUILD)/userspace/strace/strace.o
+STRACE_ELF  := $(BUILD)/userspace/strace/strace.elf
+STRACE_STRIPPED := $(BUILD)/userspace/strace/strace.stripped.elf
 
 # chapter-95 date: prints wall-clock time via SYS_GETTIMEOFDAY.
 DATE_OBJS := $(BUILD)/userspace/crt/crt0.o \
@@ -531,6 +540,10 @@ $(TOP_ELF): $(TOP_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(TOP_OBJS)
 
+$(STRACE_ELF): $(STRACE_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(STRACE_OBJS)
+
 $(DATE_ELF): $(DATE_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(DATE_OBJS)
@@ -699,6 +712,9 @@ $(PS_STRIPPED): $(PS_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(TOP_STRIPPED): $(TOP_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(STRACE_STRIPPED): $(STRACE_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(DATE_STRIPPED): $(DATE_ELF)
@@ -973,7 +989,7 @@ QEMU_SMP ?= 2
 # at /mnt at boot, and looks up /bin/<name> from it as well.
 # (DISK is defined earlier so all: can depend on it.)
 OSFS_FILES := assets/osfs/hello.txt assets/osfs/poem.txt assets/osfs/test.html assets/osfs/test.css assets/osfs/test_layout.html assets/osfs/hn.html assets/osfs/icon.png assets/osfs/icon_palette.png assets/osfs/icon_gray.png assets/osfs/icon_large.png assets/osfs/img_test.html assets/osfs/intrinsic.html $(WALLPAPER_BIN)
-OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED)
+OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(STRACE_STRIPPED)
 
 # Bake the chapter-97 test PNG (16x16 RGBA with a known pixel
 # pattern) at build time.  See scripts/make_test_png.py for the
@@ -1028,6 +1044,7 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    uptime=$(UPTIME_STRIPPED) \
 	    ps=$(PS_STRIPPED) \
 	    top=$(TOP_STRIPPED) \
+	    strace=$(STRACE_STRIPPED) \
 	    date=$(DATE_STRIPPED) \
 	    beep=$(BEEP_STRIPPED) \
 	    pngdec=$(PNGDEC_STRIPPED) \

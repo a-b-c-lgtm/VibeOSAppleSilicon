@@ -142,6 +142,13 @@ struct thread {
      * Pre-chapter 92, every thread implicitly had home_cpu=0
      * because user threads never ran anywhere else. */
     uint32_t           home_cpu;
+    /* Chapter 100 — per-thread syscall-tracer ring.  NULL when
+     * not traced (the common case; the dispatcher branch is
+     * cheap).  Allocated lazily by sys_trace_me; freed in the
+     * two reap sites via strace_release().  Not inherited
+     * across fork/clone — each thread that wants to be traced
+     * must opt in explicitly.  See kernel/core/strace.h. */
+    struct strace_ring *strace;
 };
 
 /* Signal numbers (POSIX-compatible subset).  Only SIGINT is
@@ -434,6 +441,13 @@ int thread_snapshot(struct thread_snap *out, int max);
  * thread_snapshot — caller's formatting work happens after we
  * return. */
 int thread_snapshot_pid(int pid, struct thread_snap *out);
+
+/* Chapter 100 — render /proc/<pid>/trace into `out[cap]` and
+ * drain the target thread's tracer ring.  Holds g_all_lock for
+ * the duration of the render so the target thread cannot be
+ * freed underneath the formatter.  Returns the byte length
+ * written, or -1 if no such pid exists. */
+long thread_strace_render_pid(int pid, char *out, size_t cap);
 
 /* Per-CPU runqueue length, lockless approximation.  Sums every
  * THREAD_READY thread on g_all_head whose home_cpu == cpu_id.

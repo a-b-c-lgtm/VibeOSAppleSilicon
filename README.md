@@ -1,10 +1,31 @@
 # Building a Hobby Operating System on Apple Silicon
 
-This repository is the source code and book for an aarch64 hobby
+This repository is the source code and book for an AArch64 hobby
 operating system that boots natively on Apple Silicon Macs (M1, M2,
-M3, M4 and later) under QEMU's HVF accelerator.
+M3, M4 and later) under QEMU's HVF accelerator. It runs as a
+monolithic kernel on QEMU's `virt` machine, talks to the world over
+virtio-mmio devices, and ships with a GUI desktop, a TCP/IP stack,
+and a small web browser — all written in C and a little AArch64
+assembly, all built in this tree.
 
-## Why aarch64? Why HVF?
+The accompanying book — *Building a Hobby Operating System on Apple
+Silicon* — walks through every milestone in the order it was
+implemented, with each chapter pointing at the exact files and
+regression test that prove the milestone works. Read it as a tour
+of the codebase, or use it as a recipe to build the same OS yourself.
+
+![Desktop screenshot: launcher, notepad editing a text file, gui_term
+running ps, and two browser windows on Hacker News and a PNG colour-swatch
+test page, over a flowers wallpaper with a taskbar and live clock.](assets/screenshots/final_screenshot.png)
+
+The screenshot above is `make run-graphical` on an M2: the launcher
+in the top-left, `notepad` editing a tmpfs file, `gui_term` running
+`ps`, and two `/bin/browser` windows — one on Hacker News, one on a
+PNG colour-swatch test page — all composited by the in-kernel WM
+over a userspace-rendered wallpaper, with the taskbar and live
+clock along the bottom.
+
+## Why AArch64? Why HVF?
 
 Most "build a hobby OS" books target x86-64 because that is what the
 authors learned on. On a MacBook Pro M2 (and every other Apple
@@ -57,57 +78,94 @@ make run
 make run-graphical
 # Or pick a smaller framebuffer:
 make run-graphical FB_RES=1280x800
+
+# Force the TCG software interpreter (e.g. on a non-Apple-Silicon Mac):
+make run-tcg
 ```
 
 Press `Ctrl-A X` (in the terminal hosting the serial) or close the QEMU
 window to quit.
 
+The regression sweep that gates every chapter lives in `scripts/`:
+
+```bash
+for t in scripts/test_*.py; do python3 "$t" || break; done
+```
+
 ## Where to start reading
 
-- [Book index](book/INDEX.md)
+- [Book index](book/INDEX.md) — master table of contents and status
+  table, broken into fifteen parts.
 - [Chapter 1: Why Apple Silicon, why aarch64, why now](book/chapters/01-foundations/01-why-apple-silicon.md)
+  — the design argument in long form.
+- [Chapter 3: First boot](book/chapters/01-foundations/03-first-boot.md)
+  — the smallest thing that prints to the UART.
+
+## What works today
+
+Booting `make run-graphical` drops you onto a desktop with a
+wallpaper, a taskbar with a live clock, and a launcher you can click
+to open windowed apps:
+
+- **GUI desktop** — in-kernel window manager, virtio-gpu framebuffer,
+  virtio-keyboard and virtio-tablet input, focus/drag/close/minimize,
+  taskbar with window list, toast notifications, userspace wallpaper.
+- **GUI applications** — `notepad` (text editor with writable
+  tmpfs save), `paint`, `gui_term` (a terminal in a window),
+  `launcher`, `taskbar`, `browser`.
+- **Shell and userland** — a line-editor shell with kill-ring
+  readline keys, env vars, quoting, `cd`/`pwd`, pipelines,
+  redirection (`<`, `>`, `>>`), background jobs, and the usual
+  small tools (`ls`, `cat`, `grep`, `wc`, `head`, `tail`, `echo`,
+  `env`, `sleep`, `uptime`, `time`).
+- **Filesystems** — a read-only on-disk OSFS plus a writable
+  in-memory `tmpfs`, fronted by a block cache over virtio-blk.
+- **Networking** — virtio-net, full Ethernet/ARP/IPv4 stack,
+  ICMP echo, UDP, a DHCP client, a TCP client with a real state
+  machine, BSD-shaped socket syscalls, a DNS resolver, and a URL
+  / HTTP/1.1 parser. `/bin/httpget http://example.com/` works.
+- **Browser** — `/bin/browser` parses HTML, builds a DOM, parses
+  CSS, runs a CSS-driven layout engine, and renders the result
+  in four modes: `paint` (raw paint commands), `plain`, `ANSI`,
+  and `GUI` (resizable window, address bar, back/forward,
+  click-to-navigate).
+- **SMP and memory** — two cores brought up via PSCI, atomics
+  and spinlocks, IPIs through GICv3 SGIs, a per-CPU runqueue,
+  `mmap` over a unified page cache, userspace threads via
+  `clone`, `CLONE_FILES` with a refcounted FD table, and a
+  dedicated browser parser thread that takes HTML/CSS/layout
+  off the GUI core.
+- **System services** — a real RTC and wall-clock time,
+  virtio-snd boot chime and `beep`, PNG decoding (truecolour,
+  palette, grayscale) with a content-type sniffer feeding the
+  browser image cache, a `/proc`-shaped pseudo-filesystem with
+  `ps` and `top`, and `strace` over `/proc/<pid>/trace`.
 
 ## Project status
 
-The project is mid-port from x86-64 to aarch64.  The original x86-64
-codebase lives unchanged under [VibeOS/](VibeOS/) for reference.
+The codebase tracks the book chapter by chapter. As of chapter 100
+(`/bin/strace` and `/proc/<pid>/trace`), every part through
+XII — System Services and Polish — is shipped end to end and
+gated by a regression test in `scripts/`. The headline gaps still
+open on the roadmap are:
 
-- Milestone 0 (boot + UART) — complete
-- Milestone 1 (exception vectors + MMU + GIC) — complete
-- Milestone 2 (timer + threads + scheduler) — complete
-- Milestone 3 (heap + syscalls + ELF + VFS) — complete
-- Milestone 4 (init/spawn/wait + shell) — complete
-- Milestone 5–7 (virtio-blk, OSFS, block cache) — complete
-- Milestone 8–16 (per-process AS, user heap, argv, printf, ls) — complete
-- Milestone 17–23 (uptime, time, cwd, env, var-expansion, quoting) — complete
-- Milestone 24–37 (bigger fs + tools, redirection, pipes, tmpfs, raw
-  TTY, readline, kill ring, signals) — complete
-- **Milestone 38 (virtio-gpu framebuffer + 8x16 font)** — complete
-- **Milestone 39 (virtio-input keyboard via evdev)** — complete
-- **Milestone 40 (in-kernel WM + 7 GUI syscalls + hellogui demo)** — complete
-- **Milestone 41 (virtio-tablet mouse + WM focus/drag/close + paint demo)** — complete
-- **Milestone 42 (gui_term: terminal-in-a-window via pipe + spawn_pipe + wait)** — complete
-- **Milestone 43 (notepad: GUI text editor + writable-tmpfs save)** — complete
-- **Milestone 44 (launcher: clickable mouse-driven app launcher)** — complete
-- **Milestone 45 (WM z-order bug fix + painter's algorithm hardening)** — complete
-- **Milestone 46 (boot to desktop: auto-spawn launcher + gradient wallpaper)** — complete
-- **Milestone 47 (taskbar + 3 GUI syscalls: list/raise/create-ex + always-on-top)** — complete
-- **Milestone 48 (clock in the taskbar)** — complete
-- **Milestone 49 (toast notifications + child-reap fix)** — complete
-- **Milestone 50 (userspace wallpaper + yield/IRQ race fix)** — complete
-- **Milestone 51 (window minimize / restore via title-bar button + taskbar toggle)** — complete
-- **Milestone 52 (virtio-net driver + in-kernel ARP self-test against SLIRP gateway)** — complete
-- **Milestone 53 (Ethernet + ARP cache + IPv4 framing in `kernel/core/net.{c,h}`)** — complete
-- **Milestone 54 (ICMP echo + UDP + DHCP client; boots to a DHCP-acquired IP)** — complete
-- **Milestone 55 (TCP client: state machine + buffered conn + boot HTTP self-test)** — complete
-- **Milestone 56 (socket syscalls — `FD_SOCKET`, `SYS_SOCKET_CONNECT/STATE/SHUTDOWN` — and `/bin/httpget` userspace tool)** — complete
-- **Milestone 57 (DNS resolver: DHCP option-6 capture, `dns_resolve`, `SYS_RESOLVE`, `httpget hostname` support)** — complete
-- **Milestone 58 (URL + HTTP/1.1 parser in userspace libc + `httpget <url>` form with one-hop redirect; legacy 3-arg form preserved)** — complete
-- **Milestone 59 (HTML5 tokenizer in userspace libc + `/bin/htmltok` driver; first browser brick)** — complete
-- **Milestone 60 (DOM tree builder in userspace libc + `/bin/htmldom` driver; OSFS dir capacity 32 → 64)** — complete
-- **Milestone 61 (CSS parser + selector matcher in userspace libc + `/bin/cssparse` driver)** — complete
-- **Milestone 62 (CSS-driven layout engine in userspace libc + `/bin/layout` driver; cascade with three origins, anonymous-block wrap, margin collapsing, inline wrap with text-align justify, paint command stream)** — complete
-- **Milestone 63 (`/bin/browser`: paint/plain/ANSI/GUI modes; resizable WM windows + `GUI_EVENT_RESIZE` + horizontal scroll for pages wider than the viewport; live re-layout on resize)** — complete
-- Milestone 64+ (image decoding, hit-testing, host TLS bridge) — to port
+- **Part IX — Process Model.** A POSIX-shaped `fork`/`exec`/COW
+  pair with signals and job control. The kernel already does
+  enough of `fork` for `/bin/strace` to attach to a child via
+  fork-then-`SYS_TRACE_ME`-then-`execv`; the chapter sequence
+  for the full process model and the retirement of `spawn` is
+  still being written.
+- **Part X — Persistence.** A writable on-disk filesystem with a
+  small journal so `notepad` saves, shell history, and browser
+  cookies survive reboot. Today writes go to in-memory `tmpfs`.
+- **Part XIII — TCP server and `/bin/httpd`.** Passive open,
+  `accept()`, and the browser fetching from its own kernel.
+- **Part XIV — Browser Maturation.** HTML forms, cookies,
+  same-origin policy, a pocket-sized JS, and a TLS bridge so
+  the browser can speak `https://`.
+- **Part XV — Filesystem Architecture.** A mount table and
+  `struct fs_ops` vtable, then a 9P-shaped userspace filesystem
+  server protocol.
 
-See the [book index](book/INDEX.md) for the full roadmap.
+See the [project status snapshot](book/INDEX.md#project-status-snapshot)
+in the book index for the canonical chapter-by-chapter table.

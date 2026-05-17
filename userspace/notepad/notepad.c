@@ -45,6 +45,7 @@
  *     future GUI apps reuse the same dialog without copy-paste.
  */
 #include "../libc/syscall.h"
+#include "../libc/clipboard.h"
 #include "../libgui/save_dialog.h"
 
 #define WIN_W      720
@@ -73,6 +74,15 @@
 /* Ctrl-letter keystrokes from virtio_input (see chapter 47). */
 #define CTRL_S   0x13
 #define CTRL_Q   0x11
+/* Chapter 108 -- system clipboard.  Line-granular for v1: no
+ * selection model yet, so Ctrl-C copies the current line,
+ * Ctrl-X cuts the current line (copy + delete), Ctrl-V pastes
+ * (newlines in the payload split into separate inserted lines).
+ * Real selection support lands when notepad grows mouse drag
+ * selection in a future chapter. */
+#define CTRL_C   0x03
+#define CTRL_X   0x18
+#define CTRL_V   0x16
 
 /* ---------------- editor state ---------------- */
 
@@ -200,6 +210,75 @@ static void shift_right(char *line, int from, int len_total)
 static void shift_left(char *line, int from, int len_total)
 {
     for (int i = from; i < len_total; i++) line[i] = line[i + 1];
+}
+
+/* Forward decls -- the clipboard helpers below use insert_char,
+ * newline, and set_status; the latter is defined further down
+ * with the rendering helpers. */
+static void insert_char(char c);
+static void newline(void);
+static void set_status(const char *s, int frames);
+
+/* ---------------- chapter 108: clipboard ---------------- */
+
+/* Copy the current line (no trailing newline) to /srv/clipboard.
+ * Sets g_status so the user sees a confirmation; failure is
+ * silent-ish (status shows the error code).  Line-granular is
+ * the v1 scope -- once notepad gets selection support, switch
+ * the source from g_lines[g_cur_row] to the selection range. */
+static void clip_copy_line(void)
+{
+    const char *line = g_lines[g_cur_row];
+    uint32_t    len  = (uint32_t)g_line_len[g_cur_row];
+    int gen = clip_set(CLIP_MIME_TEXT, line, len, NULL);
+    if (gen < 0) { set_status("clip: copy failed", 2); return; }
+    set_status("copied line", 2);
+}
+
+/* Cut = copy + delete-line.  Always leaves at least one line in
+ * the buffer (delete on the last line just clears it). */
+static void clip_cut_line(void)
+{
+    clip_copy_line();
+    /* Delete current row. */
+    if (g_line_count == 1) {
+        g_lines[0][0] = '\0';
+        g_line_len[0] = 0;
+        g_cur_col = 0;
+        g_dirty = 1;
+        return;
+    }
+    for (int r = g_cur_row; r < g_line_count - 1; r++) {
+        for (int i = 0; i <= g_line_len[r + 1]; i++)
+            g_lines[r][i] = g_lines[r + 1][i];
+        g_line_len[r] = g_line_len[r + 1];
+    }
+    g_line_count--;
+    if (g_cur_row >= g_line_count) g_cur_row = g_line_count - 1;
+    if (g_cur_col > g_line_len[g_cur_row]) g_cur_col = g_line_len[g_cur_row];
+    g_dirty = 1;
+}
+
+/* Paste -- insert clipboard payload at the cursor.  Newlines in
+ * the payload become real newline() calls so multi-line cuts
+ * round-trip cleanly.  Bytes outside ASCII printable + \n are
+ * silently dropped (chapter 96 covered why we don't want random
+ * control bytes editing the buffer). */
+static void clip_paste(void)
+{
+    static uint8_t buf[CLIP_DATA_MAX];
+    uint32_t len = 0;
+    char mime[CLIP_MIME_MAX];
+    int gen = clip_get(buf, sizeof(buf), &len, mime);
+    if (gen < 0) { set_status("clip: paste failed", 2); return; }
+    if (len == 0) { set_status("clipboard empty", 2); return; }
+    for (uint32_t i = 0; i < len; i++) {
+        char c = (char)buf[i];
+        if (c == '\r') continue;
+        if (c == '\n') { newline(); continue; }
+        if (c >= 0x20 && c < 0x7F) insert_char(c);
+    }
+    set_status("pasted", 2);
 }
 
 static void insert_char(char c)
@@ -346,7 +425,7 @@ static void render_status(void)
     s_append(line, "/", sizeof(line));
     utoa((unsigned long)g_line_count, num);
     s_append(line, num, sizeof(line));
-    s_append(line, "  Ctrl-S Save  Ctrl-Q Quit", sizeof(line));
+    s_append(line, "  Ctrl-S Save  Ctrl-Q Quit  ^X Cut  ^C Copy  ^V Paste", sizeof(line));
     gui_draw_text(g_win_id, GUTTER, y + 2, line, STATUS_FG, STATUS_BG, 0);
 
     if (g_dirty) {
@@ -573,6 +652,9 @@ int main(int argc, char **argv)
                 render();
                 break;
             }
+            if (c == CTRL_C) { clip_copy_line(); render(); break; }
+            if (c == CTRL_X) { clip_cut_line();  render(); break; }
+            if (c == CTRL_V) { clip_paste();     render(); break; }
             if (c == '\r' || c == '\n') {
                 newline(); render(); break;
             }

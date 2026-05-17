@@ -411,6 +411,14 @@ void virtio_tablet_poll(void)
     if (!g_mmio_base) return;
 
     struct vring_used *u = used_ring();
+    /* Chapter 106b fast path: pump_input_into_wm() lands here on
+     * every cooperative sys_yield.  Skip the MMIO traffic
+     * (INTERRUPT_STATUS read + QUEUE_NOTIFY write both trap to
+     * HVF) when the device hasn't produced new events.  u->idx
+     * lives in shared RAM and is free to read.  See
+     * virtio_input_poll for the same reasoning. */
+    if ((uint16_t)(u->idx - g_used_idx) == 0) return;
+
     uint32_t istat = r32(VIRTIO_MMIO_INTERRUPT_STATUS);
     if (istat) w32(VIRTIO_MMIO_INTERRUPT_ACK, istat);
 

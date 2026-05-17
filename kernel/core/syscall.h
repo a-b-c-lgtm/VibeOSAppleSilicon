@@ -183,6 +183,61 @@ enum {
     /* Milestone 57 — DNS resolver. */
     SYS_RESOLVE         = 63, /* (const char *name, uint32_t *out_ip4_be) -> 0/-errno */
 
+    /* Chapter 104 / M93 — sockets (passive-open server side).
+     *
+     * SYS_SOCKET_LISTEN(port, backlog) -> fd / -errno
+     *   Create a TCP_LISTEN slot bound to `port` and return a
+     *   new fd of kind FD_SOCKET_LISTEN.  read/write on this fd
+     *   return -EINVAL; SYS_SOCKET_ACCEPT is the only way to
+     *   extract a peer connection.  `backlog` is currently
+     *   advisory (the kernel uses a fixed TCP_ACCEPT_QCAP = 8).
+     *   Returns -EADDRINUSE if another listener owns `port`.
+     *
+     * SYS_SOCKET_ACCEPT(listen_fd, peer_ip_out, peer_port_out) -> fd / -errno
+     *   Block until the listener's accept queue has a fully-
+     *   handshaken child, then pop it and return a fresh
+     *   FD_SOCKET fd ready for read/write.  Optionally writes
+     *   the peer's IPv4 address (BE-packed uint32) and TCP port
+     *   to the caller-supplied output pointers; pass NULL for
+     *   "don't care".  Polls the NIC + yields between checks.
+     */
+    SYS_SOCKET_LISTEN   = 64, /* (uint16_t port, int backlog) -> fd / -errno     */
+    SYS_SOCKET_ACCEPT   = 65, /* (int listen_fd, uint32_t *peer_ip_out,
+                                  uint16_t *peer_port_out) -> fd / -errno        */
+
+    /* Chapter 107 — named-IPC service bus.
+     *
+     * SYS_SRV_BIND(const char *path) -> fd / -errno
+     *   Register the calling thread as the listener for
+     *   `/srv/<name>`.  Returns a FD_SRV_LISTEN fd; the only
+     *   valid ops on it are SYS_SRV_ACCEPT and close.  Path
+     *   must start with "/srv/" and contain no further '/'.
+     *   Errors: -EINVAL bad shape, -EADDRINUSE name taken,
+     *   -ENOMEM SRV_MAX_LISTENERS exhausted.
+     *
+     * SYS_SRV_ACCEPT(int listen_fd) -> fd / -errno
+     *   Block until a client connects, then return a fresh
+     *   FD_SRV_CONN fd (service end).  Mirrors
+     *   SYS_SOCKET_ACCEPT shape; -EBADF on a non-listener fd,
+     *   -EINTR on signal.
+     *
+     * SYS_SRV_CONNECT(const char *path) -> fd / -errno
+     *   Open a client-side connection.  Equivalent to
+     *   open(path, O_RDWR), which is the same code path
+     *   under the hood.  -ENOENT if no service is bound,
+     *   -ENOMEM if the listener's backlog is full, -EINTR
+     *   on signal, -EPIPE if the service vanished mid-
+     *   handshake.
+     *
+     * Message framing: each read returns exactly one
+     * datagram, each write enqueues exactly one.  Cap is
+     * SRV_MSG_MAX (64 KiB).  -EMSGSIZE if the caller's
+     * read buffer is too small (message stays queued).
+     */
+    SYS_SRV_BIND        = 81, /* (const char *path) -> fd / -errno  */
+    SYS_SRV_ACCEPT      = 82, /* (int listen_fd) -> fd / -errno     */
+    SYS_SRV_CONNECT     = 83, /* (const char *path) -> fd / -errno  */
+
     /* Chapter 90 — mmap + unified page cache.
      *   sys_mmap(addr, len, prot, flags, fd, offset) -> VA / -errno
      *     Supports MAP_PRIVATE | MAP_ANONYMOUS (anonymous, lazy

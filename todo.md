@@ -1,0 +1,9 @@
+- Clock is wrong
+- ls can't see /bin
+- Need start menu
+- Escape shouldn't close desktop applications
+- gui terminal should show the command run in history
+- gui terminal needs longer history
+- porting gcc
+- build and run applications built with gcc
+- Move window decoration to user space

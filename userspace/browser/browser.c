@@ -67,6 +67,7 @@
 #include "../libc/layout.h"
 #include "../libc/thread.h"
 #include "../libc/png.h"
+#include "../libc/clipboard.h"
 
 /* ----------------------------------------------------------------
  * Tiny utilities (no libc).
@@ -171,6 +172,23 @@ static char *slurp_file(const char *path, size_t *out_len)
     return buf;
 }
 
+/* Hard ceiling on a single HTTP response body.  Real web pages
+ * are O(100 KiB); HN's homepage is ~50 KiB; news.css is ~12 KiB;
+ * the heaviest favicon HN ships is a few KiB.  An 8 MiB cap is
+ * generous enough that no legitimate page hits it, but small
+ * enough that a runaway response (misconfigured upstream loop,
+ * buggy proxy that never sends FIN, accidental tarball URL) is
+ * caught long before the userspace heap explodes.
+ *
+ * Chapter 106b added this after a real-world `--gui` load of
+ * news.ycombinator.com OOM'd at 256 MiB ("oom (grow 268435456)")
+ * with no obvious explanation in the upstream HTML.  Without
+ * the cap drain_fd kept doubling its buffer (16 KiB -> 32 KiB
+ * -> ... -> 128 MiB -> failed grow to 256 MiB).  Whatever was
+ * actually being delivered, the right answer is to stop reading
+ * once the response stops being plausibly HTTP-shaped. */
+#define DRAIN_FD_MAX_BYTES   (8u * 1024u * 1024u)
+
 /* Drain a TCP fd into a malloc'd buffer that grows on demand. */
 static char *drain_fd(int fd, size_t *out_len)
 {
@@ -186,16 +204,29 @@ static char *drain_fd(int fd, size_t *out_len)
     size_t scratch_cap = 8 * 1024;
     char  *scratch = (char *)malloc(scratch_cap);
     if (!scratch) { free(buf); printf("browser: oom (scratch)\n"); return 0; }
+    /* Chapter 106b diag: periodically log progress so a stuck or
+     * runaway read shows in the serial transcript with the byte
+     * count, instead of just appearing as a long silence. */
+    size_t next_log_threshold = 256u * 1024u;
+    int reads = 0;
     for (;;) {
         long r = read(fd, scratch, scratch_cap);
+        reads++;
         if (r < 0) {
             printf("browser: read error %ld\n", r);
             free(scratch); free(buf); return 0;
         }
         if (r == 0) break;
+        if (len + (size_t)r > DRAIN_FD_MAX_BYTES) {
+            printf("browser: response exceeded %u-byte cap "
+                   "(read %lu so far, %d reads); aborting fetch\n",
+                   (unsigned)DRAIN_FD_MAX_BYTES, (unsigned long)len, reads);
+            free(scratch); free(buf); return 0;
+        }
         if (len + (size_t)r > cap) {
             size_t newcap = cap * 2;
             while (newcap < len + (size_t)r) newcap *= 2;
+            if (newcap > DRAIN_FD_MAX_BYTES) newcap = DRAIN_FD_MAX_BYTES;
             char *nb = (char *)malloc(newcap);
             if (!nb) {
                 printf("browser: oom (grow %lu)\n", (unsigned long)newcap);
@@ -206,6 +237,11 @@ static char *drain_fd(int fd, size_t *out_len)
         }
         for (long i = 0; i < r; i++) buf[len + (size_t)i] = scratch[i];
         len += (size_t)r;
+        if (len >= next_log_threshold) {
+            printf("[browser] drain: %lu bytes (%d reads)\n",
+                   (unsigned long)len, reads);
+            next_log_threshold += 256u * 1024u;
+        }
     }
     free(scratch);
     *out_len = len;
@@ -372,9 +408,17 @@ static char *fetch(const char *src, size_t *out_len, char **out_origin_url)
         return http_fetch(src, out_len);
     }
     if (br_starts(src, "https://")) {
+        /* Chapter 106b: canonicalize_url's case (3) already
+         * rewrites https:// to go through g_proxy_prefix, so
+         * fetch() should normally never see a https:// here.
+         * If it does, the user wired BROWSER_PROXY to an empty
+         * string or bypassed canonicalize -- print the same
+         * hint we used to print pre-106b. */
         printf("browser: https:// not yet supported (no TLS).\n");
-        printf("        run scripts/https_proxy.py on the host and use\n");
-        printf("        http://10.0.2.2:8080/<host><path> instead.\n");
+        printf("        the default BROWSER_PROXY points at the in-guest\n");
+        printf("        httpd on 127.0.0.1:80 (auto-spawned by init) --\n");
+        printf("        for external hosts that httpd needs HTTPD_UPSTREAM\n");
+        printf("        set (chapter 106a) and must be respawned by you.\n");
         return 0;
     }
     /* Treat as file path. */
@@ -1555,13 +1599,62 @@ static int g_timing = 0;
 
 /* Default proxy prefix.  When the user types a bare host like
  * "news.ycombinator.com" we prepend this so the request goes
- * through the M58 https-proxy (scripts/https_proxy.py) rather
- * than out to the real internet (which would need TLS we don't
- * have).  Override at startup by setting the BROWSER_PROXY env
+ * out via a HTTP proxy rather than the real internet (which
+ * would need TLS we don't have).
+ *
+ * Chapter 106b flipped the default from the host-side proxy
+ * (http://10.0.2.2:8080/, the chapter-58 scripts/https_proxy.py)
+ * to the in-guest httpd on loopback.  The browser now dials a
+ * stable in-guest address; httpd's chapter-106a forward path
+ * splices the request out to whatever HTTPD_UPSTREAM was set
+ * to when httpd was started (still 10.0.2.2:8080 by default).
+ *
+ * Chapter 106c then changed the default port from 8080 to 80,
+ * matching the httpd instance init now auto-spawns at boot.
+ * Out of the box the desktop is therefore ready to fetch local
+ * pages (e.g. `browser http://127.0.0.1/mnt/test.html`, no
+ * port required) and bare hostnames go through whatever
+ * upstream init's httpd was configured with.  Tests that
+ * spawn their own forwarding httpd on 8080 (proxytest, the
+ * hn_repeat/timings/desktop suite) set BROWSER_PROXY=
+ * http://127.0.0.1:8080/ in the env before invoking browser.
+ *
+ * Why this matters: the browser is now decoupled from QEMU's
+ * networking topology.  We can change the host transport (real
+ * bridge, container, hardware) by re-pointing httpd's upstream;
+ * the browser keeps dialing 127.0.0.1.  See chapters 106b/106c.
+ *
+ * Override at startup by setting the BROWSER_PROXY env
  * variable to something else, e.g. "http://192.168.1.5:9000/". */
-#define BR_DEFAULT_PROXY "http://10.0.2.2:8080/"
+#define BR_DEFAULT_PROXY "http://127.0.0.1:80/"
+
 
 static char g_proxy_prefix[160] = BR_DEFAULT_PROXY;
+
+/* Chapter 106b: read BROWSER_PROXY from the env once at startup.
+ * Called from main() BEFORE any mode dispatch so plain, ansi,
+ * paint, and gui modes all share the same proxy address.  Before
+ * chapter 106b this read lived inside run_gui() only, which meant
+ * `browser https://example.com/` in plain mode never proxied --
+ * fetch() saw the raw https:// and bailed.  See chapter 106b
+ * "Plain mode parity" section. */
+static void load_proxy_from_env(void)
+{
+    char tmp[160];
+    long got = getenv("BROWSER_PROXY", tmp, sizeof(tmp));
+    if (got <= 0) return;
+    int n = 0;
+    while (tmp[n] && n < (int)sizeof(g_proxy_prefix) - 1) {
+        g_proxy_prefix[n] = tmp[n]; n++;
+    }
+    /* Ensure trailing slash so concat works. */
+    if (n > 0 && g_proxy_prefix[n - 1] != '/') {
+        if (n < (int)sizeof(g_proxy_prefix) - 1)
+            g_proxy_prefix[n++] = '/';
+    }
+    g_proxy_prefix[n] = '\0';
+    printf("[browser] proxy: %s\n", g_proxy_prefix);
+}
 
 /* All the per-page state we own.  Loaded by load_page(), freed by
  * free_page(). */
@@ -1572,7 +1665,13 @@ struct br_img_cache_entry {
     struct br_img_cache_entry *next;
 };
 
-#define BR_IMG_CACHE_MAX_ENTRIES   16
+/* Chapter 106b: bumped from 16.  Real pages reference more
+ * unique image URLs than the chapter-97 test fixtures did:
+ * HN's homepage alone is ~30 unique src= values (favicons,
+ * thumbnails, the s.gif spacer, plus a few decorative bits).
+ * 64 leaves headroom for richer pages without re-running into
+ * the spam-loop bug that motivated negative caching. */
+#define BR_IMG_CACHE_MAX_ENTRIES   64
 #define BR_IMG_CACHE_MAX_BYTES     (4u * 1024u * 1024u)   /* 4 MiB */
 
 struct loaded_page {
@@ -1807,8 +1906,34 @@ static int br_resolve_img_src(const char *page_url,
 }
 
 /* Fetch + decode a single image; install in the cache.  On
- * success returns the cache entry; on any failure returns NULL
- * after logging once. */
+ * success returns a positive cache entry (bgra != NULL).  On
+ * any failure (fetch / decode / cap) returns a sentinel entry
+ * (bgra == NULL) so subsequent lookups of the same URL hit the
+ * cache and don't re-fetch.  Returns NULL only when even the
+ * sentinel insert fails (cap full or OOM).
+ *
+ * Chapter 106b added the sentinel path.  Before it, a `<img
+ * src="s.gif">` referenced N times on the same page caused N
+ * fetches per attach -- because png_decode rejects GIF, no
+ * positive entry ever landed, and every walk re-tried.  HN's
+ * homepage was triggering ~30 spurious /news.ycombinator.com/
+ * s.gif fetches per layout. */
+static struct br_img_cache_entry *br_img_cache_install_sentinel(
+    struct loaded_page *p, const char *url)
+{
+    if (p->img_cache_count >= BR_IMG_CACHE_MAX_ENTRIES) return 0;
+    struct br_img_cache_entry *e =
+        (struct br_img_cache_entry *)malloc(sizeof(*e));
+    if (!e) return 0;
+    e->url = br_strdup(url);
+    e->bgra = 0;
+    e->w = 0; e->h = 0;
+    e->next = p->img_cache;
+    p->img_cache = e;
+    p->img_cache_count++;
+    return e;
+}
+
 static struct br_img_cache_entry *br_img_cache_load(struct loaded_page *p,
                                                      const char *url)
 {
@@ -1826,8 +1951,8 @@ static struct br_img_cache_entry *br_img_cache_load(struct loaded_page *p,
     if (origin) free(origin);
     if (!bytes || blen < 8) {
         if (bytes) free(bytes);
-        printf("[browser] image fetch failed for %s\n", url);
-        return 0;
+        printf("[browser] image fetch failed for %s (negative-cached)\n", url);
+        return br_img_cache_install_sentinel(p, url);
     }
 
     uint8_t *bgra = 0;
@@ -1835,8 +1960,8 @@ static struct br_img_cache_entry *br_img_cache_load(struct loaded_page *p,
     int rc = png_decode((const uint8_t *)bytes, blen, &bgra, &w, &h);
     free(bytes);
     if (rc < 0 || !bgra) {
-        printf("[browser] png_decode failed for %s\n", url);
-        return 0;
+        printf("[browser] png_decode failed for %s (negative-cached)\n", url);
+        return br_img_cache_install_sentinel(p, url);
     }
     unsigned bytes_used = (unsigned)w * (unsigned)h * 4u;
     if (p->img_cache_bytes + bytes_used > BR_IMG_CACHE_MAX_BYTES) {
@@ -1845,7 +1970,7 @@ static struct br_img_cache_entry *br_img_cache_load(struct loaded_page *p,
                p->img_cache_bytes, bytes_used,
                (unsigned)BR_IMG_CACHE_MAX_BYTES, url);
         png_free(bgra);
-        return 0;
+        return br_img_cache_install_sentinel(p, url);
     }
 
     struct br_img_cache_entry *e =
@@ -1942,6 +2067,11 @@ static int br_layout_img_size_cb(const char *src, int *out_w, int *out_h,
         return -1;
     struct br_img_cache_entry *e = br_img_cache_lookup(p, abs_url);
     if (!e) return -1;
+    /* Chapter 106b: sentinel entries (negative-cache hits for
+     * failed fetch/decode) have w==h==0 and bgra==NULL.  Tell
+     * layout we don't know a size so it falls back to its
+     * 16x16 placeholder rather than collapsing the box. */
+    if (!e->bgra || e->w <= 0 || e->h <= 0) return -1;
     if (out_w) *out_w = e->w;
     if (out_h) *out_h = e->h;
     return 0;
@@ -2822,24 +2952,14 @@ static int run_gui(const char *initial_url, int initial_viewport)
     s.dirty = 1;
     s.parser = 0;
 
-    /* Read BROWSER_PROXY override before the first load. */
-    {
-        char tmp[160];
-        long got = getenv("BROWSER_PROXY", tmp, sizeof(tmp));
-        if (got > 0) {
-            int n = 0;
-            while (tmp[n] && n < (int)sizeof(g_proxy_prefix) - 1) {
-                g_proxy_prefix[n] = tmp[n]; n++;
-            }
-            /* Ensure trailing slash so concat works. */
-            if (n > 0 && g_proxy_prefix[n - 1] != '/') {
-                if (n < (int)sizeof(g_proxy_prefix) - 1)
-                    g_proxy_prefix[n++] = '/';
-            }
-            g_proxy_prefix[n] = '\0';
-            printf("[browser] proxy: %s\n", g_proxy_prefix);
-        }
-    }
+    /* BROWSER_PROXY env override is now read once at main()
+     * startup, before mode dispatch, so plain / ansi / paint
+     * modes pick up the same value as --gui.  See chapter 106b
+     * for why uniform proxy handling matters: previously only
+     * --gui canonicalised URLs through g_proxy_prefix, so
+     * `browser https://news.ycombinator.com/` in plain mode
+     * hit fetch()'s https-reject branch even though run_gui
+     * would have proxied it.  That divergence is now gone. */
 
     /* Initial load. */
     {
@@ -3103,6 +3223,54 @@ static int run_gui(const char *initial_url, int initial_viewport)
                 if (k == GUI_KEY_HOME)  { s.url_cursor = 0;          s.dirty = 1; break; }
                 if (k == GUI_KEY_END)   { s.url_cursor = s.url_len;  s.dirty = 1; break; }
                 char ch = (char)(k & 0xFF);
+                /* Chapter 108 -- cross-app clipboard.  Ctrl-C/X/V
+                 * on the URL bar talks to /bin/clipboardd via the
+                 * chapter-107 IPC bus.  Filtered to printable ASCII
+                 * on insertion -- URLs can't contain newlines or
+                 * control bytes, so we stop at the first \n / \r
+                 * and silently drop the rest of the payload.  This
+                 * matches the address-bar semantics every desktop
+                 * browser uses (paste a multi-line block, get the
+                 * first line in the bar). */
+                if (ch == 0x03 /* Ctrl-C: copy */) {
+                    (void)clip_set(CLIP_MIME_TEXT,
+                                   s.url_buf, (uint32_t)s.url_len,
+                                   NULL);
+                    break;
+                }
+                if (ch == 0x18 /* Ctrl-X: cut */) {
+                    (void)clip_set(CLIP_MIME_TEXT,
+                                   s.url_buf, (uint32_t)s.url_len,
+                                   NULL);
+                    s.url_buf[0] = '\0';
+                    s.url_len = 0;
+                    s.url_cursor = 0;
+                    s.dirty = 1;
+                    break;
+                }
+                if (ch == 0x16 /* Ctrl-V: paste */) {
+                    static uint8_t cb[CLIP_DATA_MAX];
+                    uint32_t cblen = 0;
+                    char mime[CLIP_MIME_MAX];
+                    int gen = clip_get(cb, sizeof(cb), &cblen, mime);
+                    if (gen >= 0 && cblen > 0) {
+                        for (uint32_t i = 0; i < cblen; i++) {
+                            char pc = (char)cb[i];
+                            if (pc == '\n' || pc == '\r') break;
+                            if ((unsigned char)pc < 0x20 ||
+                                (unsigned char)pc >= 0x7F) continue;
+                            if (s.url_len >= BR_URL_BUF_CAP - 1) break;
+                            for (int j = s.url_len; j > s.url_cursor; j--)
+                                s.url_buf[j] = s.url_buf[j - 1];
+                            s.url_buf[s.url_cursor] = pc;
+                            s.url_len++;
+                            s.url_cursor++;
+                            s.url_buf[s.url_len] = '\0';
+                        }
+                        s.dirty = 1;
+                    }
+                    break;
+                }
                 if (k == 0x1B) {
                     /* ESC: defocus, restore URL bar to current page url. */
                     s.url_focus = 0;
@@ -3351,6 +3519,11 @@ int main(int argc, char **argv)
            mode_gui   ? "gui"   :
            (mode_ansi ? "ansi" : "plain"));
 
+    /* Chapter 106b: load BROWSER_PROXY once for every mode.  See
+     * load_proxy_from_env() near g_proxy_prefix for the rationale
+     * (plain-mode parity with --gui). */
+    load_proxy_from_env();
+
     /* GUI mode owns its own pipeline so it can re-load on every
      * navigation (back/forward, link click, address bar Enter). */
     if (mode_gui)
@@ -3359,6 +3532,21 @@ int main(int argc, char **argv)
     /* Chapter 94 headless benchmark. */
     if (bench_new_w)
         return run_bench_resize(src, viewport, bench_new_w);
+
+    /* Chapter 106b: route the input URL through the same
+     * canonicalisation pipeline as --gui so https:// rewrites,
+     * bare-host shortcuts, and protocol-relative refs all work
+     * in plain / ansi / paint modes too.  src may point at
+     * argv[i], which is in the args buffer the kernel owns; the
+     * malloc'd absolute string is freed below at end-of-main. */
+    char *abs_src = canonicalize_url(src, 0);
+    if (!abs_src) {
+        printf("browser: oom (canonicalize)\n");
+        return 1;
+    }
+    if (!br_streq(abs_src, src))
+        printf("[browser] proxied: %s\n", abs_src);
+    src = abs_src;
 
     unsigned long t_total = uptime_ms();
     unsigned long t_stage = t_total;
@@ -3369,6 +3557,7 @@ int main(int argc, char **argv)
     char  *html_buf = fetch(src, &html_len, &origin);
     if (!html_buf) {
         if (origin) free(origin);
+        free(abs_src);
         return 1;
     }
     BR_TIMING("fetch", t_stage);

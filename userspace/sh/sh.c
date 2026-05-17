@@ -865,6 +865,38 @@ int main(void)
             if (*cmd == '\0') continue;
         }
 
+        /* `&` background suffix (chapter 79b promised this; it
+         * lands here in chapter 106b because the busy-desktop
+         * repro test needs to start `httpd 8080 &` from the
+         * kernel sh before opening gui_term).
+         *
+         * Detection: strip whitespace at end-of-cmd, see if the
+         * very last character is `&`, and that this `&` isn't
+         * inside a `>>` / `<<` / `&&` chain (we don't support
+         * those operators yet -- if anyone ever adds them this
+         * check must move BEFORE their parsing).
+         *
+         * Side effect on the spawn path: skip the post-spawn
+         * `wait(&code)` and instead print `[bg] tid=N` and move
+         * on.  Zombies of bg children are reaped opportunistic-
+         * ally at the top of every prompt loop via the non-
+         * blocking waitpid() pass that already exists for
+         * SIGCHLD bookkeeping (added below). */
+        int bg = 0;
+        {
+            int n = (int)strlen(cmd);
+            while (n > 0 && (cmd[n-1] == ' ' || cmd[n-1] == '\t')) n--;
+            if (n > 0 && cmd[n-1] == '&') {
+                bg = 1;
+                cmd[n-1] = '\0';
+                /* Strip whitespace before the now-removed `&`. */
+                while (n > 1 && (cmd[n-2] == ' ' || cmd[n-2] == '\t')) {
+                    cmd[n-2] = '\0';
+                    n--;
+                }
+            }
+        }
+
         /* Input redirection: `<` (anywhere, whitespace-bounded
          * or glued to next word).  Currently runs AFTER quote
          * expansion, so `echo '<'` is a syntax error rather than
@@ -1209,6 +1241,30 @@ int main(void)
         if (sh_in_fd  >= 0) close(sh_in_fd);
         if (sh_out_fd >= 0) close(sh_out_fd);
         int code = 0;
+        if (bg) {
+            /* Backgrounded by trailing `&`.  Don't wait; print a
+             * job announcement and continue.  The child stays
+             * our parent for now (no setpgid yet); when it exits
+             * it becomes a zombie until the next prompt loop's
+             * non-blocking waitpid() pass reaps it.  We do NOT
+             * set_fg_pid so Ctrl-C still goes to the foreground
+             * (in this branch, the foreground is the SHELL).
+             *
+             * Chapter 106b: this is the minimum-viable backgrounding
+             * needed to spawn `httpd 8080 &` from /bin/sh before
+             * opening a gui_term to drive the browser-in-desktop
+             * regression test.  No `jobs`, `fg`, `bg`, `wait %N`
+             * builtins yet -- and crucially no setpgid, so a
+             * Ctrl-C in the foreground does NOT also kill bg
+             * jobs (good for our test, surprising vs. bash). */
+            write(1, "[bg] tid=", 9);
+            putd(tid);
+            write(1, "\n", 1);
+            g_last_exit = 0;
+            /* Skip the `timed` post-print; backgrounded jobs have
+             * no meaningful wall time at spawn-completion. */
+            continue;
+        }
         /* Foreground process for Ctrl-C: the just-spawned child. */
         set_fg_pid(tid);
         wait(&code);

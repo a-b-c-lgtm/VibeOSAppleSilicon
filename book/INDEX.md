@@ -145,7 +145,10 @@ own kernel, on our own GUI, over our own TCP/IP stack.
 69. [A tiny CSS parser](chapters/08-browser/69-css-parser.md)
 70. [Block and inline layout](chapters/08-browser/70-block-and-inline-layout.md)
 71. [/bin/browser — paint, plain, ANSI, GUI](chapters/08-browser/71-bin-browser.md)
-72. Host-side TLS bridge — *deferred indefinitely; insecure http:// only for now*
+72. Host-side TLS bridge — *delivered in Part XIII as
+    [Chapter 106a](chapters/13-tcp-server/106a-httpd-tls-bridge.md);
+    `/bin/httpd` runs an in-guest forwarding proxy that splices
+    HTTPS requests through `scripts/https_proxy.py` on the host.*
 
 ### Part IX — Finishing the Process Model
 
@@ -214,7 +217,10 @@ file server, and the browser fetching from its own kernel.
 103. [Passive open: LISTEN, SYN_RECEIVED, the backlog](chapters/13-tcp-server/103-passive-open-listen.md)
 104. [accept() and a server socket API](chapters/13-tcp-server/104-accept-and-server-sockets.md)
 105. [/bin/httpd: serve /mnt and /data over HTTP](chapters/13-tcp-server/105-bin-httpd.md)
-106. [End to end: the browser fetches from its own kernel](chapters/13-tcp-server/106-end-to-end-loop.md)
+106. [TCP loopback (lo0 and 127.0.0.0/8)](chapters/13-tcp-server/106-tcp-loopback.md)
+106a. [httpd as a forwarding proxy (TLS bridge)](chapters/13-tcp-server/106a-httpd-tls-bridge.md)
+106b. [The browser uses the in-guest httpd as its proxy](chapters/13-tcp-server/106b-browser-uses-in-guest-httpd.md)
+106c. [End to end: the browser fetches from its own kernel](chapters/13-tcp-server/106c-end-to-end-loop.md)
 
 ### Part XIV — Userspace Services
 
@@ -357,13 +363,19 @@ tracks layered on top of "syscalls work."
 | XII  | **80 — strace via /proc/&lt;pid&gt;/trace** | **Done** | [Chapter 100](chapters/12-system-services/100-strace.md) |
 | XII  | **80a — guard pages** | **Done** | [Chapter 101](chapters/12-system-services/101-guard-pages.md) |
 | XII  | **80b -- TrueType fonts in the kernel** | **Done** | [Chapter 102](chapters/12-system-services/102-truetype-fonts.md) |
-| XIV  | 80b — named IPC + service supervisor | Planned | Stub [Chapter 107](chapters/14-userspace-services/107-ipc.md) |
-| XIV  | 80c — clipboard (userspace, over IPC) | Planned | Stub [Chapter 108](chapters/14-userspace-services/108-clipboard.md) |
+| XIII | **92 -- TCP passive open (LISTEN, SYN_RECEIVED)** | **Done** | [Chapter 103](chapters/13-tcp-server/103-passive-open-listen.md) |
+| XIII | **93 -- accept() syscall + /bin/echod** | **Done** | [Chapter 104](chapters/13-tcp-server/104-accept-and-server-sockets.md) |
+| XIII | **94 -- /bin/httpd static-file HTTP server** | **Done** | [Chapter 105](chapters/13-tcp-server/105-bin-httpd.md) |
+| XIII | 95 -- TCP loopback (lo0, 127.0.0.0/8) | **Done** | [Chapter 106](chapters/13-tcp-server/106-tcp-loopback.md) |
+| XIII | **96 -- httpd as forwarding proxy (TLS bridge)** | **Done** | [Chapter 106a](chapters/13-tcp-server/106a-httpd-tls-bridge.md) |
+| XIII | **97 -- browser uses in-guest httpd as its proxy** | **Done** | [Chapter 106b](chapters/13-tcp-server/106b-browser-uses-in-guest-httpd.md) |
+| XIII | **98 -- end-to-end loop (browser <-> in-guest httpd via lo0)** | **Done** | [Chapter 106c](chapters/13-tcp-server/106c-end-to-end-loop.md) |
+| XIV  | 80b — named IPC + service supervisor | Done | [Chapter 107](chapters/14-userspace-services/107-ipc.md) |
+| XIV  | 80c — clipboard (userspace, over IPC) | Done | [Chapter 108](chapters/14-userspace-services/108-clipboard.md) |
 | XIV  | 90d — userspace window-buffer access | Planned | Stub [Chapter 108a](chapters/14-userspace-services/108a-userspace-window-buffers.md) |
 | XIV  | 90e — font rendering moves to userspace | Planned | Stub [Chapter 108b](chapters/14-userspace-services/108b-userspace-font-server.md) |
 | XVI  | 84a — VFS refactor: mount table + `struct fs_ops` vtable | Planned | Design [Chapter 113](chapters/16-filesystem-architecture/113-mount-table-and-vtable.md) |
 | XVI  | 84b — User-space filesystem servers (9P-shaped) | Planned | Design [Chapter 114](chapters/16-filesystem-architecture/114-userspace-filesystem-servers.md) |
-| XIII | 81 — TCP passive open + accept + httpd + loopback | Planned | Stubs [103](chapters/13-tcp-server/103-passive-open-listen.md)–[106](chapters/13-tcp-server/106-end-to-end-loop.md) |
 | XV   | 82 — HTML forms + cookies + SOP + pocket-JS | Planned | Stubs [109](chapters/15-browser-maturation/109-html-forms.md)–[111](chapters/15-browser-maturation/111-pocket-javascript.md) |
 | XV   | 83 — TLS options (host proxy or BearSSL port) | Planned | Stub [Chapter 112](chapters/15-browser-maturation/112-tls-options.md) |
 | VIII | 65+ — book polish, more sites, TLS bridge | Not started | Stubs |

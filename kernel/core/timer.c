@@ -35,8 +35,34 @@ static uint32_t g_interval_ticks = 0;
  * would lose updates under the resulting cross-CPU race.  The
  * counter is also read from yield()'s sleeper-walk and from
  * SYS_UPTIME_MS, so an atomic load is required to avoid tearing
- * a partial 64-bit read on the slow ARMv8 path. */
+ * a partial 64-bit read on the slow ARMv8 path.
+ *
+ * Chapter 106b — DEPRECATED for wall-time use.  Under SMP every
+ * CPU takes its own timer PPI every TICK_INTERVAL_MS, so a
+ * naive `g_ticks++` per IRQ on N CPUs counts at N× the real
+ * rate.  We now read CNTVCT_EL0 directly in timer_ticks() and
+ * convert to TICK_INTERVAL_MS units.  The `g_ticks` IRQ counter
+ * is kept (for any caller that still cares about "how many
+ * scheduler quanta have elapsed on this CPU" — none today) but
+ * is NOT what timer_ticks() returns. */
 static volatile uint64_t g_ticks = 0;
+
+/* Counter frequency in Hz, captured at init.  Used to convert
+ * CNTVCT_EL0 (free-running, per-CPU but synchronised by HVF /
+ * TCG so the value is monotone-coherent across CPUs) into our
+ * TICK_INTERVAL_MS-quantised "ticks" unit. */
+static uint64_t g_cntfrq = 0;
+/* Pre-computed: ticks-per-our-quantum.  freq * interval_ms / 1000.
+ * Same value as g_interval_ticks above; kept separately so we
+ * never accidentally read 0 if timer_init hasn't run yet. */
+static uint64_t g_ticks_per_quantum = 1;
+
+static inline uint64_t cntvct_el0_read(void)
+{
+    uint64_t v;
+    __asm__ volatile("isb\n\tmrs %0, cntvct_el0" : "=r"(v));
+    return v;
+}
 
 static inline uint64_t cntfrq_el0_read(void)
 {
@@ -62,6 +88,9 @@ void timer_init(uint32_t interval_ms)
      * ticks_per_ms.  Rearrange to avoid losing precision on small
      * intervals: interval_ticks = freq * interval_ms / 1000. */
     g_interval_ticks = (uint32_t)((freq * interval_ms) / 1000ULL);
+    g_cntfrq = freq;
+    g_ticks_per_quantum = (freq * (uint64_t)interval_ms) / 1000ULL;
+    if (g_ticks_per_quantum == 0) g_ticks_per_quantum = 1;
 
     /* Arm the timer: write the down-counter, then enable. */
     cntv_tval_el0_write(g_interval_ticks);
@@ -88,7 +117,23 @@ void timer_rearm(void)
 
 uint64_t timer_ticks(void)
 {
-    return atomic_load64(&g_ticks);
+    /* Chapter 106b: derive wall-time "ticks" (units of
+     * TICK_INTERVAL_MS) from the free-running CNTVCT_EL0 counter
+     * rather than the per-IRQ counter `g_ticks`.  Under SMP both
+     * CPUs took the timer PPI and each incremented g_ticks, so
+     * g_ticks ran at N× wall time and uptime_ms() reported
+     * inflated values (a 30-second wall fetch claimed
+     * 60_000 ms ms).  CNTVCT is monotone, free-running, and
+     * coherent across CPUs on QEMU virt + HVF + TCG, so it gives
+     * a single source of truth.  g_ticks is kept for callers
+     * that still want "how many scheduler quanta did this CPU
+     * see" but is no longer the wall clock.
+     *
+     * Quantisation matches the old behaviour: we round down to
+     * units of TICK_INTERVAL_MS so callers that compared
+     * `timer_ticks()` values see the same coarse granularity. */
+    if (g_ticks_per_quantum <= 1) return 0;
+    return cntvct_el0_read() / g_ticks_per_quantum;
 }
 
 void timer_tick(void)

@@ -8,14 +8,16 @@ Layout (matches kernel/core/osfs.h):
         0x08  file_count: u32 le
         0x0C..end       = 0
 
-    sector 1..2  directory: array of struct osfs_dirent (32 bytes each),
-                 two sectors -> 32 entries max
+    sector 1..8  directory: array of struct osfs_dirent (32 bytes each),
+                 eight sectors -> 128 entries max (chapter 106b bump;
+                 was 4 sectors / 64 entries from M60 through ch106a,
+                 and 2 / 32 before M60)
         char     name[20]      (NUL-padded)
         uint32_t start_sector  (LBA)
         uint32_t size_bytes
         uint32_t reserved      = 0
 
-    sector 3..N  file data, each file starts on a sector boundary.
+    sector 9..N  file data, each file starts on a sector boundary.
 
 Usage:
     scripts/mkosfs.py OUTPUT.img name1=path1 name2=path2 ...
@@ -33,9 +35,11 @@ TOTAL_SECTORS = 32768     # 16 MiB image (room for binaries + a
                           # with header; bump higher if you add
                           # more large data files)
 DIRENT = struct.Struct("<20sIII")
-DIR_SECTORS = 4           # four sectors of dirents -> 64 files (was 2 / 32 pre-M60)
-FIRST_DATA_SECTOR = 5     # superblock = 0, directory = 1..4, data = 5..
-MAX_FILES = (SECTOR * DIR_SECTORS) // DIRENT.size  # 64
+DIR_SECTORS = 8           # eight sectors of dirents -> 128 files
+                          # (was 2 / 32 pre-M60, 4 / 64 through ch106a,
+                          # bumped again in chapter 106b for proxytest)
+FIRST_DATA_SECTOR = 9     # superblock = 0, directory = 1..8, data = 9..
+MAX_FILES = (SECTOR * DIR_SECTORS) // DIRENT.size  # 128
 
 def main():
     if len(sys.argv) < 3:

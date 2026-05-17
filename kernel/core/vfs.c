@@ -30,6 +30,7 @@
 #include "tcp.h"
 #include "net.h"
 #include "procfs.h"
+#include "srv.h"
 #include "../arch/atomic.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -221,12 +222,17 @@ void fd_table_unref(struct fd_table *ft)
             pipe_unref(e->pipe, PIPE_REF_R);
         else if (e->kind == FD_PIPE_W && e->pipe)
             pipe_unref(e->pipe, PIPE_REF_W);
-        else if (e->kind == FD_SOCKET && e->socket_cid >= 0)
+        else if ((e->kind == FD_SOCKET ||
+                  e->kind == FD_SOCKET_LISTEN) && e->socket_cid >= 0)
             tcp_close(e->socket_cid);
         else if (e->kind == FD_PTY_MASTER && e->pty)
             pty_close_master(e->pty);
         else if (e->kind == FD_PTY_SLAVE && e->pty)
             pty_close_slave(e->pty);
+        else if (e->kind == FD_SRV_LISTEN && e->srv_l)
+            srv_unref_listen(e->srv_l);
+        else if (e->kind == FD_SRV_CONN && e->srv_c)
+            srv_unref_conn(e->srv_c, e->srv_is_service);
         e->in_use = 0;
     }
     kfree(ft);
@@ -320,6 +326,28 @@ int vfs_open(const char *name, int flags)
             }
         }
         return -EMFILE;
+    }
+
+    /* /srv/<name> -> chapter 107 named-IPC connect.
+     * open("/srv/foo", O_RDWR) becomes srv_connect("/srv/foo")
+     * internally so apps that don't know about IPC can still
+     * talk to services through read/write/close.  Returns the
+     * client-end fd; the service obtains its end via
+     * SYS_SRV_ACCEPT after SYS_SRV_BIND.  We intentionally
+     * route open() through srv_connect rather than srv_bind:
+     * services use the syscall directly, while open() is the
+     * client API.  The flag argument is parsed but only
+     * O_RDWR makes sense (datagrams are bidirectional). */
+    if (path_starts_with(name, "/srv/")) {
+        int err = 0;
+        struct srv_conn *c = srv_connect(name, &err);
+        if (!c) return err ? err : -ENOENT_VFS;
+        int fd = vfs_alloc_srv_conn_fd(c, /*is_service_end=*/0);
+        if (fd < 0) {
+            srv_unref_conn(c, /*is_service_end=*/0);
+            return fd;
+        }
+        return fd;
     }
 
     /* /proc/<path> -> chapter 99 read-only snapshot pseudo-FS.
@@ -435,8 +463,12 @@ int vfs_open_into(struct thread *t, int fd, const char *name, int flags)
         else if (slot->kind == FD_PIPE_W && slot->pipe) pipe_unref(slot->pipe, PIPE_REF_W);
         else if (slot->kind == FD_PTY_MASTER && slot->pty) pty_close_master(slot->pty);
         else if (slot->kind == FD_PTY_SLAVE  && slot->pty) pty_close_slave(slot->pty);
+        else if (slot->kind == FD_SRV_LISTEN && slot->srv_l) srv_unref_listen(slot->srv_l);
+        else if (slot->kind == FD_SRV_CONN   && slot->srv_c) srv_unref_conn(slot->srv_c, slot->srv_is_service);
         slot->pipe = NULL;
         slot->pty  = NULL;
+        slot->srv_l = NULL;
+        slot->srv_c = NULL;
     }
 
     const char *bare = NULL;
@@ -524,15 +556,56 @@ long vfs_read(int fd, void *buf, size_t len)
          * userspace gets a polling read with periodic yield().
          * We must drive net_poll() ourselves — yield() doesn't
          * pump the NIC, so without this read would never see
-         * inbound bytes. */
+         * inbound bytes.
+         *
+         * Chapter 106b: we tried a 1024-iter spin between yields
+         * here as an "optimisation" (avoid scheduler ping-pong)
+         * but it actively hurt the chapter-106b splice: browser
+         * read() and httpd read() / write() are on different
+         * threads, and the splice requires the OTHER thread to
+         * run between every chunk to produce more bytes.  Holding
+         * the CPU for 1024 polls starved httpd of scheduling
+         * opportunities, turning a 600ms HN fetch into a 10s
+         * stall.  Yield every iteration -- net_poll() is cheap
+         * and the scheduler tax is much smaller than the
+         * cross-thread latency.
+         *
+         * Order of the result checks matters:
+         *   1. n > 0  -- bytes available, return them.
+         *   2. tcp_eof  -- normal end-of-stream.  This branch
+         *      ALSO catches the case where tcp_poll has already
+         *      reaped the conn after a clean close (get_conn
+         *      returns NULL, tcp_recv returns -1, tcp_eof
+         *      returns 1).  Without this ordering, a userspace
+         *      reader that loops read() past the final byte sees
+         *      -EIO instead of 0; chapter 106 surfaced that
+         *      because loopback often delivers the peer's FIN
+         *      and our reap-pass in the SAME net_poll tick that
+         *      hands the last bytes to the user.
+         *   3. n < 0  -- genuine error (RST while conn still
+         *      live).  EIO is the only thing we can offer here. */
         for (;;) {
             (void)net_poll();
             int n = tcp_recv(e->socket_cid, buf, len);
             if (n > 0) return n;
-            if (n < 0) return -EIO;
             if (tcp_eof(e->socket_cid)) return 0;
+            if (n < 0) return -EIO;
             yield();
         }
+    }
+
+    /* Chapter 104: listening sockets are not readable.  The only
+     * way to extract anything from them is SYS_SOCKET_ACCEPT.
+     * Without this guard, a stray read() would fall through to
+     * the ramfs path and dereference ramfs_index = -1. */
+    if (e->kind == FD_SOCKET_LISTEN) return -EINVAL_VFS;
+
+    /* Chapter 107 named-IPC.  Listen fds are read-only via
+     * SYS_SRV_ACCEPT; only FD_SRV_CONN supports read(). */
+    if (e->kind == FD_SRV_LISTEN) return -EINVAL_VFS;
+    if (e->kind == FD_SRV_CONN) {
+        if (!e->srv_c) return -EBADF;
+        return srv_read(e->srv_c, e->srv_is_service, buf, len);
     }
 
     /* Writable tmpfs file (read side). */
@@ -664,10 +737,13 @@ int vfs_close(int fd)
         /* Drop pipe refcount before clearing the slot. */
         if (e->kind == FD_PIPE_R && e->pipe) pipe_unref(e->pipe, PIPE_REF_R);
         else if (e->kind == FD_PIPE_W && e->pipe) pipe_unref(e->pipe, PIPE_REF_W);
-        else if (e->kind == FD_SOCKET && e->socket_cid >= 0)
+        else if ((e->kind == FD_SOCKET ||
+                  e->kind == FD_SOCKET_LISTEN) && e->socket_cid >= 0)
             tcp_close(e->socket_cid);
         else if (e->kind == FD_PTY_MASTER && e->pty) pty_close_master(e->pty);
         else if (e->kind == FD_PTY_SLAVE  && e->pty) pty_close_slave(e->pty);
+        else if (e->kind == FD_SRV_LISTEN && e->srv_l) srv_unref_listen(e->srv_l);
+        else if (e->kind == FD_SRV_CONN   && e->srv_c) srv_unref_conn(e->srv_c, e->srv_is_service);
         else if (e->kind == FD_PROCFS && e->procfs_buf) {
             /* Free the snapshot allocated at vfs_open time. */
             kfree(e->procfs_buf);
@@ -684,6 +760,9 @@ int vfs_close(int fd)
         e->osfs2_ino   = 0;
         e->procfs_buf  = NULL;
         e->procfs_len  = 0;
+        e->srv_l       = NULL;
+        e->srv_c       = NULL;
+        e->srv_is_service = 0;
     }
     return 0;
 }
@@ -721,6 +800,96 @@ int vfs_alloc_socket_fd(int cid)
             e->pipe        = NULL;
             e->socket_cid  = cid;
             e->osfs2_ino   = 0;
+            return fd;
+        }
+    }
+    return -EMFILE;
+}
+
+/* Chapter 104 -- allocate a fresh fd that wraps a TCP_LISTEN
+ * conn slot.  Identical to vfs_alloc_socket_fd except for the
+ * `kind`: the read/write paths reject FD_SOCKET_LISTEN with
+ * -EINVAL, and SYS_SOCKET_ACCEPT requires this kind. */
+int vfs_alloc_listen_fd(int cid)
+{
+    struct thread *t = thread_current();
+    for (int fd = 3; fd < FD_TABLE_SIZE; fd++) {
+        struct fd_entry *e = &t->fdt->fds[fd];
+        if (!e->in_use) {
+            e->in_use      = 1;
+            e->kind        = FD_SOCKET_LISTEN;
+            e->offset      = 0;
+            e->ramfs_index = -1;
+            e->osfs_start  = 0;
+            e->osfs_size   = 0;
+            e->pipe        = NULL;
+            e->socket_cid  = cid;
+            e->osfs2_ino   = 0;
+            return fd;
+        }
+    }
+    return -EMFILE;
+}
+
+/* Chapter 107 — allocate a fresh fd that wraps a /srv/<name>
+ * listener.  Read/write reject FD_SRV_LISTEN; only
+ * SYS_SRV_ACCEPT and close are valid.  Returns the new fd,
+ * or -EMFILE if the table is full. */
+int vfs_alloc_srv_listen_fd(struct srv_listen *ls)
+{
+    if (!ls) return -EINVAL_VFS;
+    struct thread *t = thread_current();
+    for (int fd = 3; fd < FD_TABLE_SIZE; fd++) {
+        struct fd_entry *e = &t->fdt->fds[fd];
+        if (!e->in_use) {
+            e->in_use         = 1;
+            e->kind           = FD_SRV_LISTEN;
+            e->offset         = 0;
+            e->ramfs_index    = -1;
+            e->osfs_start     = 0;
+            e->osfs_size      = 0;
+            e->pipe           = NULL;
+            e->socket_cid     = -1;
+            e->pty            = NULL;
+            e->osfs2_ino      = 0;
+            e->procfs_buf     = NULL;
+            e->procfs_len     = 0;
+            e->srv_l          = ls;
+            e->srv_c          = NULL;
+            e->srv_is_service = 0;
+            return fd;
+        }
+    }
+    return -EMFILE;
+}
+
+/* Chapter 107 — allocate a fresh fd that wraps a /srv
+ * connected conn.  `is_service_end` distinguishes the
+ * accepted (service) side from the connect (client) side;
+ * that bit picks which queue read/write touch.  Returns
+ * the new fd, or -EMFILE. */
+int vfs_alloc_srv_conn_fd(struct srv_conn *c, int is_service_end)
+{
+    if (!c) return -EINVAL_VFS;
+    struct thread *t = thread_current();
+    for (int fd = 3; fd < FD_TABLE_SIZE; fd++) {
+        struct fd_entry *e = &t->fdt->fds[fd];
+        if (!e->in_use) {
+            e->in_use         = 1;
+            e->kind           = FD_SRV_CONN;
+            e->offset         = 0;
+            e->ramfs_index    = -1;
+            e->osfs_start     = 0;
+            e->osfs_size      = 0;
+            e->pipe           = NULL;
+            e->socket_cid     = -1;
+            e->pty            = NULL;
+            e->osfs2_ino      = 0;
+            e->procfs_buf     = NULL;
+            e->procfs_len     = 0;
+            e->srv_l          = NULL;
+            e->srv_c          = c;
+            e->srv_is_service = is_service_end ? 1 : 0;
             return fd;
         }
     }

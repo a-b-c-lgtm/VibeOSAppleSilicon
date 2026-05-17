@@ -513,6 +513,18 @@ void virtio_input_poll(void)
     if (!g_in_mmio_base) return;
 
     struct vring_used *u = used_ring();
+    /* Chapter 106b fast path: every cooperative sys_yield calls
+     * pump_input_into_wm() which lands here.  On a busy desktop
+     * (browser fetching, gui_term/desktop/launcher idling) that's
+     * tens of thousands of calls during a single page load.  The
+     * device only touches the used ring when there's a new key, so
+     * if u->idx hasn't moved we can skip the MMIO traffic
+     * (INTERRUPT_STATUS read + QUEUE_NOTIFY write both trap to
+     * HVF).  u->idx itself lives in shared RAM and is free to
+     * read.  Without this guard, chapter-106b measured ~4s of CPU
+     * burnt per HN fetch in idle MMIO traps. */
+    if ((uint16_t)(u->idx - g_used_idx_seen) == 0) return;
+
     /* Acknowledge any device interrupt level, even though we are not
      * currently consuming the IRQ — this prevents the device from
      * staying flagged forever if we ever wire one up later. */

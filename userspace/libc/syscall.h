@@ -106,6 +106,13 @@ enum {
     /* Milestone 57 — DNS resolver. */
     SYS_RESOLVE         = 63,
 
+    /* Chapter 104 / M93 — sockets (passive-open server side).
+     * listen creates a TCP_LISTEN slot bound to a port; accept
+     * blocks until a fully-handshaken child is on the queue
+     * and returns a fresh socket fd. */
+    SYS_SOCKET_LISTEN   = 64,
+    SYS_SOCKET_ACCEPT   = 65,
+
     /* Chapter 90 — mmap + page cache.  See kernel/core/syscall.h
      * for the full contract; mmap_uapi.h has the prot/flags
      * constants (mirrored below for userspace consumers). */
@@ -145,6 +152,16 @@ enum {
      * wrapper further below; the kernel-side ring is exposed via
      * /proc/<pid>/trace. */
     SYS_TRACE_ME    = 80,
+
+    /* Chapter 107 — named-IPC service bus.  See srv_bind /
+     * srv_accept / srv_connect wrappers further below.  All
+     * three accept ASCII "/srv/<name>" paths; messages are
+     * length-prefixed datagrams capped at SRV_MSG_MAX (64 KiB).
+     * read() / write() / close() on the returned fds use the
+     * normal SYS_READ / SYS_WRITE / SYS_CLOSE wrappers. */
+    SYS_SRV_BIND    = 81,
+    SYS_SRV_ACCEPT  = 82,
+    SYS_SRV_CONNECT = 83,
 };
 
 /* Chapter 95 — POSIX-shaped wall-clock value.  Layout matches
@@ -1100,6 +1117,34 @@ static inline int socket_shutdown(int fd)
     return (int)_svc1(SYS_SOCKET_SHUTDOWN, (long)fd);
 }
 
+/* ----- Chapter 104: server-side sockets ----------------------
+ *
+ * `socket_listen(port, backlog)` returns a *listening* fd bound
+ * to TCP port `port`.  The listening fd is not readable/
+ * writable directly -- pass it to `socket_accept` to harvest
+ * fully-handshaken peer connections.  `backlog` is currently
+ * advisory (the kernel uses a fixed accept-queue capacity);
+ * pick something modest like 4-8.
+ *
+ * `socket_accept(listen_fd, &peer_ip, &peer_port)` blocks
+ * until the next peer finishes its 3-way handshake, then
+ * returns a regular FD_SOCKET fd you can read/write/close.
+ * Either out-pointer may be NULL if you don't care; the
+ * peer IPv4 is delivered packed in network byte order (same
+ * shape `socket_connect` takes).
+ */
+static inline int socket_listen(uint16_t port, int backlog)
+{
+    return (int)_svc2(SYS_SOCKET_LISTEN, (long)port, (long)backlog);
+}
+static inline int socket_accept(int listen_fd, uint32_t *peer_ip_be, uint16_t *peer_port)
+{
+    return (int)_svc3(SYS_SOCKET_ACCEPT,
+                      (long)listen_fd,
+                      (long)peer_ip_be,
+                      (long)peer_port);
+}
+
 /* Resolve a hostname to a packed-BE IPv4 address (the same format
  * `socket_connect` expects).  Returns 0 on success, -errno on
  * failure.  The kernel does the actual UDP/53 round-trip; this
@@ -1108,6 +1153,40 @@ static inline int socket_shutdown(int fd)
 static inline int resolve(const char *name, uint32_t *out_ip4_be)
 {
     return (int)_svc2(SYS_RESOLVE, (long)name, (long)out_ip4_be);
+}
+
+/* ----- Chapter 107: named-IPC service bus -------------------
+ *
+ * A service binds a `/srv/<name>` path with `srv_bind`, then
+ * loops over `srv_accept` to harvest one fd per connecting
+ * client.  Clients dial a service via `srv_connect`, or
+ * equivalently via `open("/srv/<name>", O_RDWR)` (the kernel
+ * routes that case through the same path).
+ *
+ * Wire format: each `write` enqueues exactly one length-
+ * prefixed datagram; each `read` returns exactly one.  Max
+ * message size is 64 KiB.  If the caller's read buffer is
+ * smaller than the next queued message, read returns
+ * -EMSGSIZE and the message stays queued -- retry with a
+ * bigger buffer.
+ *
+ * Lifetime: the conn dies when either end calls close().
+ * The other end then sees read() return 0 (drain first),
+ * write() return -EPIPE.  The listening fd outlives any
+ * individual conn -- close it only when the service shuts
+ * down for good.
+ */
+static inline int srv_bind(const char *path)
+{
+    return (int)_svc1(SYS_SRV_BIND, (long)path);
+}
+static inline int srv_accept(int listen_fd)
+{
+    return (int)_svc1(SYS_SRV_ACCEPT, (long)listen_fd);
+}
+static inline int srv_connect(const char *path)
+{
+    return (int)_svc1(SYS_SRV_CONNECT, (long)path);
 }
 
 #endif

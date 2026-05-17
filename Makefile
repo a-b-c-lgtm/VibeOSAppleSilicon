@@ -71,6 +71,7 @@ C_SRCS   := kernel/core/main.c \
             kernel/core/osfs2_journal.c \
             kernel/core/procfs.c \
             kernel/core/strace.c \
+            kernel/core/srv.c \
             kernel/core/console_in.c \
             kernel/core/wm.c \
             kernel/core/net.c \
@@ -125,6 +126,15 @@ USER_CFLAGS := -ffreestanding -nostdlib -nostartfiles \
 
 USER_LDFLAGS := -T userspace/linker_user.ld -nostdlib --orphan-handling=error \
                 -z noexecstack -z max-page-size=0x1000
+
+# `make` with no target should build everything (kernel + disk image),
+# not just the first ELF rule the file happens to mention.  Without
+# this line make picks $(HELLO_ELF) as .DEFAULT_GOAL (first non-pattern
+# target in the file) and silently skips kernel.elf -- chapter 106b
+# debugging spent an hour rebuilding the WRONG thing because edits to
+# kernel/core/tcp.c looked compiled in but weren't.  See the
+# `all:` rule near the bottom for what gets built.
+.DEFAULT_GOAL := all
 
 HELLO_OBJS := $(BUILD)/userspace/crt/crt0.o \
               $(BUILD)/userspace/hello/hello.o
@@ -356,6 +366,72 @@ HTTPGET_OBJS := $(BUILD)/userspace/crt/crt0.o \
                 $(BUILD)/userspace/httpget/httpget.o
 HTTPGET_ELF  := $(BUILD)/userspace/httpget/httpget.elf
 HTTPGET_STRIPPED := $(BUILD)/userspace/httpget/httpget.stripped.elf
+
+# chapter-104 echod: TCP echo daemon, the server-side counterpart
+# of httpget.  Exercises the new SYS_SOCKET_LISTEN / SYS_SOCKET_ACCEPT
+# syscall surface end-to-end (listen fd, blocking accept, per-peer
+# echo loop).  Single-connection-at-a-time on purpose -- we don't
+# have non-blocking accept yet.
+ECHOD_OBJS := $(BUILD)/userspace/crt/crt0.o \
+              $(BUILD)/userspace/echod/echod.o
+ECHOD_ELF  := $(BUILD)/userspace/echod/echod.elf
+ECHOD_STRIPPED := $(BUILD)/userspace/echod/echod.stripped.elf
+
+# chapter-105 httpd: static-file HTTP/1.0 server, builds on the
+# ch104 accept syscall.  Serves arbitrary VFS paths (GET /mnt/foo
+# opens kernel path /mnt/foo) with Content-Type sniffing and
+# Connection: close framing.
+HTTPD_OBJS := $(BUILD)/userspace/crt/crt0.o \
+              $(BUILD)/userspace/httpd/httpd.o
+HTTPD_ELF  := $(BUILD)/userspace/httpd/httpd.elf
+HTTPD_STRIPPED := $(BUILD)/userspace/httpd/httpd.stripped.elf
+
+# chapter-106 looptest: forks into a TCP echo server (parent) and
+# a client that dials 127.0.0.1 (child).  Demonstrates the new
+# TCP loopback short-circuit -- without ch106 the child's SYN
+# would die in SLIRP, with ch106 the handshake completes inside
+# the guest kernel.
+LOOPTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                 $(BUILD)/userspace/looptest/looptest.o
+LOOPTEST_ELF  := $(BUILD)/userspace/looptest/looptest.elf
+LOOPTEST_STRIPPED := $(BUILD)/userspace/looptest/looptest.stripped.elf
+
+# chapter-107 srvtest: forks into a /srv/echotest service (parent)
+# and an IPC client (child) that round-trips one message via the
+# named-IPC bus.  Smoke test for SYS_SRV_BIND/ACCEPT/CONNECT
+# plus the FD_SRV_CONN read/write framing.
+SRVTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                $(BUILD)/userspace/srvtest/srvtest.o
+SRVTEST_ELF  := $(BUILD)/userspace/srvtest/srvtest.elf
+SRVTEST_STRIPPED := $(BUILD)/userspace/srvtest/srvtest.stripped.elf
+
+# chapter-108 clipboardd: the system clipboard, as a long-running
+# userspace daemon bound to /srv/clipboard via the chapter-107
+# IPC bus.  init's supervisor restarts it if it dies.  Three GUI
+# apps reach for it via Ctrl-C/X/V.
+CLIPBOARDD_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                   $(BUILD)/userspace/clipboardd/clipboardd.o
+CLIPBOARDD_ELF  := $(BUILD)/userspace/clipboardd/clipboardd.elf
+CLIPBOARDD_STRIPPED := $(BUILD)/userspace/clipboardd/clipboardd.stripped.elf
+
+# chapter-108 clip: command-line client for the clipboard.
+# `clip set foo`, `clip get`, `clip gen`, `clip clear`.  The
+# hermetic regression in scripts/test_clipboard.py drives the
+# whole feature through this binary -- no GUI event injection.
+CLIP_OBJS := $(BUILD)/userspace/crt/crt0.o \
+             $(BUILD)/userspace/clip/clip.o
+CLIP_ELF  := $(BUILD)/userspace/clip/clip.elf
+CLIP_STRIPPED := $(BUILD)/userspace/clip/clip.stripped.elf
+
+# chapter-106b proxytest: orchestrates the in-guest proxy chain.
+# Spawns /bin/httpd 8080 --once, sleeps briefly, then spawns
+# /bin/browser <url>.  The browser's default BR_DEFAULT_PROXY
+# now points at 127.0.0.1:8080, so a single `proxytest` invocation
+# at the shell drives the whole chapter-106a+b flow.
+PROXYTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                  $(BUILD)/userspace/proxytest/proxytest.o
+PROXYTEST_ELF  := $(BUILD)/userspace/proxytest/proxytest.elf
+PROXYTEST_STRIPPED := $(BUILD)/userspace/proxytest/proxytest.stripped.elf
 
 # milestone-59 htmltok: HTML5 tokenizer driver.  Reads a file (or
 # /mnt/test.html by default), runs userspace/libc/html.h over it,
@@ -621,6 +697,34 @@ $(HTTPGET_ELF): $(HTTPGET_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(HTTPGET_OBJS)
 
+$(ECHOD_ELF): $(ECHOD_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(ECHOD_OBJS)
+
+$(HTTPD_ELF): $(HTTPD_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(HTTPD_OBJS)
+
+$(LOOPTEST_ELF): $(LOOPTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(LOOPTEST_OBJS)
+
+$(SRVTEST_ELF): $(SRVTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(SRVTEST_OBJS)
+
+$(CLIPBOARDD_ELF): $(CLIPBOARDD_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(CLIPBOARDD_OBJS)
+
+$(CLIP_ELF): $(CLIP_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(CLIP_OBJS)
+
+$(PROXYTEST_ELF): $(PROXYTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(PROXYTEST_OBJS)
+
 $(HTMLTOK_ELF): $(HTMLTOK_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(HTMLTOK_OBJS)
@@ -779,6 +883,27 @@ $(COWTEST_STRIPPED): $(COWTEST_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(HTTPGET_STRIPPED): $(HTTPGET_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(ECHOD_STRIPPED): $(ECHOD_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(HTTPD_STRIPPED): $(HTTPD_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(LOOPTEST_STRIPPED): $(LOOPTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(SRVTEST_STRIPPED): $(SRVTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(CLIPBOARDD_STRIPPED): $(CLIPBOARDD_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(CLIP_STRIPPED): $(CLIP_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(PROXYTEST_STRIPPED): $(PROXYTEST_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(HTMLTOK_STRIPPED): $(HTMLTOK_ELF)
@@ -1024,7 +1149,7 @@ QEMU_SMP ?= 2
 # at /mnt at boot, and looks up /bin/<name> from it as well.
 # (DISK is defined earlier so all: can depend on it.)
 OSFS_FILES := assets/osfs/hello.txt assets/osfs/poem.txt assets/osfs/test.html assets/osfs/test.css assets/osfs/test_layout.html assets/osfs/hn.html assets/osfs/icon.png assets/osfs/icon_palette.png assets/osfs/icon_gray.png assets/osfs/icon_large.png assets/osfs/img_test.html assets/osfs/intrinsic.html $(WALLPAPER_BIN)
-OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED)
+OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(ECHOD_STRIPPED) $(HTTPD_STRIPPED) $(LOOPTEST_STRIPPED) $(SRVTEST_STRIPPED) $(CLIPBOARDD_STRIPPED) $(CLIP_STRIPPED) $(PROXYTEST_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED)
 
 # Bake the chapter-97 test PNG (16x16 RGBA with a known pixel
 # pattern) at build time.  See scripts/make_test_png.py for the
@@ -1093,6 +1218,13 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    sync=$(SYNC_STRIPPED) \
 	    pipetest=$(PIPETEST_STRIPPED) \
 	    httpget=$(HTTPGET_STRIPPED) \
+	    echod=$(ECHOD_STRIPPED) \
+	    httpd=$(HTTPD_STRIPPED) \
+	    looptest=$(LOOPTEST_STRIPPED) \
+	    srvtest=$(SRVTEST_STRIPPED) \
+	    clipboardd=$(CLIPBOARDD_STRIPPED) \
+	    clip=$(CLIP_STRIPPED) \
+	    proxytest=$(PROXYTEST_STRIPPED) \
 	    htmltok=$(HTMLTOK_STRIPPED) \
 	    htmldom=$(HTMLDOM_STRIPPED) \
 	    cssparse=$(CSSPARSE_STRIPPED) \
@@ -1176,12 +1308,25 @@ run: $(KERNEL) $(DISK) $(DATA_DISK)
 # the kernel can paint the boot framebuffer.  Serial still goes to
 # stdio so kernel logs continue to appear in the terminal alongside
 # the graphical window.
+#
+# Chapter 105: this is the daily-driver target, so we bake a SLIRP
+# hostfwd into its QEMU_NETDEV.  That way `httpd 8080 &` inside the
+# guest is immediately reachable from the host as
+# `curl http://127.0.0.1:18080/mnt/hello.txt`.  Without the hostfwd
+# SLIRP silently drops inbound connections (NAT outbound only).
+# Override HTTPD_HOST_PORT / HTTPD_GUEST_PORT if 18080/8080 clash.
+HTTPD_HOST_PORT  ?= 18080
+HTTPD_GUEST_PORT ?= 8080
 .PHONY: run-graphical
 run-graphical: QEMU_AUDIO_BACKEND := coreaudio
 run-graphical: QEMU_SND := -audiodev $(QEMU_AUDIO_BACKEND),id=audio0 -device virtio-sound-device,audiodev=audio0
+run-graphical: QEMU_NETDEV := user,id=n0,hostfwd=tcp::$(HTTPD_HOST_PORT)-:$(HTTPD_GUEST_PORT)
+run-graphical: QEMU_NET    := -netdev $(QEMU_NETDEV) -device virtio-net-device,netdev=n0
 run-graphical: $(KERNEL) $(DISK) $(DATA_DISK)
 	@echo "Running graphical under HVF, $(FB_RES) virtio-gpu scanout, -smp $(QEMU_SMP)."
 	@echo "Close the QEMU window or press Ctrl-A X in the terminal to quit."
+	@echo "Inside guest:  httpd $(HTTPD_GUEST_PORT) &"
+	@echo "From host:     curl http://127.0.0.1:$(HTTPD_HOST_PORT)/mnt/hello.txt"
 	$(QEMU) -M virt,gic-version=3 -cpu host -accel hvf \
 	        -m $(QEMU_MEM) -smp $(QEMU_SMP) -display $(QEMU_DISPLAY) -serial stdio \
 	        $(QEMU_VIRTIO_OPTS) \

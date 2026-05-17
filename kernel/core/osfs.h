@@ -8,10 +8,15 @@
  *       0x08  file_count : u32
  *       0x0C  reserved...
  *
- *   sector 1..4  directory: array of 32-byte entries, four sectors
- *             gives room for OSFS_MAX_FILES (= 64) entries.  Was
- *             2 sectors / 32 entries through M59; bumped in M60
- *             when /bin/htmldom pushed us over the cap.
+ *   sector 1..8  directory: array of 32-byte entries, eight
+ *             sectors gives room for OSFS_MAX_FILES (= 128)
+ *             entries.  Was 2 sectors / 32 entries through M59;
+ *             bumped to 4 / 64 in M60 when /bin/htmldom pushed
+ *             us over the cap, and again to 8 / 128 in chapter
+ *             106b when /bin/proxytest did the same.  The OSFS-1
+ *             format will be retired wholesale in chapter
+ *             113-114's VFS refactor; until then we just keep
+ *             doubling.
  *
  *       struct osfs_dirent {           // 32 bytes
  *           char     name[20];          // NUL-padded, no path
@@ -20,12 +25,13 @@
  *           uint32_t reserved;
  *       };
  *
- *   sectors 3..N  file data, sector-aligned, packed end-to-end.
+ *   sectors 9..N  file data, sector-aligned, packed end-to-end.
  *
  *   sectors N..   file data, sector-aligned, packed end-to-end.
  *
- *   (FIRST_DATA_SECTOR = 1 + DIR_SECTORS = 5 with M60's 4-sector
- *   directory; was 3 through M59.)
+ *   (FIRST_DATA_SECTOR = 1 + DIR_SECTORS = 9 with chapter-106b's
+ *   8-sector directory; was 5 from M60 through chapter 106a, 3
+ *   pre-M60.)
  *
  * Why custom instead of FAT12?
  *   FAT12 has 12-bit packed entries spanning byte boundaries, three
@@ -43,12 +49,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define OSFS_MAX_FILES        64
+#define OSFS_MAX_FILES        128
 #define OSFS_NAME_MAX         20
 #define OSFS_SECTOR_SIZE      512u
 #define OSFS_DIR_SECTOR       1u
-#define OSFS_DIR_SECTORS      4u
-#define OSFS_FIRST_DATA_SECTOR 5u
+#define OSFS_DIR_SECTORS      8u
+#define OSFS_FIRST_DATA_SECTOR 9u
 
 struct osfs_dirent {
     char     name[OSFS_NAME_MAX];

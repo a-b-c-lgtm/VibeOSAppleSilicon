@@ -1,21 +1,33 @@
 /*
- * kernel/core/tcp.h — milestone-55 TCPv4 (RFC 793, with the
- * usual modern simplifications).
+ * kernel/core/tcp.h -- milestone-55 TCPv4 (RFC 793, with the
+ * usual modern simplifications).  Chapter 103 added passive-
+ * open: tcp_listen() / tcp_accept() and the LISTEN /
+ * SYN_RECEIVED states.
  *
- * Client-only for this milestone: we can `connect()` to a
- * remote TCP endpoint, `send()` and `recv()` arbitrary bytes,
- * and `close()` cleanly.  Server-side LISTEN/ACCEPT is
- * milestone 56.
+ * Client side: `tcp_connect()` to a remote endpoint, `tcp_send` /
+ * `tcp_recv` arbitrary bytes, `tcp_close` cleanly.
  *
- * Connection table is fixed-size (4 entries), one per active
- * 4-tuple `(g_ip, local_port, remote_ip, remote_port)`.  Each
- * connection owns 4 KiB of TX buffer + 4 KiB of RX buffer.
+ * Server side (chapter 103): `tcp_listen(port)` returns a
+ * "listener" cid in state TCP_LISTEN.  When a SYN arrives at
+ * that port the kernel allocates a child slot in TCP_SYN_RECEIVED,
+ * sends SYN+ACK, and -- once the peer's final ACK lands --
+ * promotes the child to TCP_ESTABLISHED and pushes its cid onto
+ * the listener's accept queue.  `tcp_accept(listen_cid)` pops the
+ * head of that queue.
+ *
+ * Connection table is fixed-size (TCP_CONN_CAP entries).  Both
+ * listeners and connected (or half-open) conns share the same
+ * pool, so a listener counts as 1 slot, every pending SYN_RECEIVED
+ * counts as 1 slot, and every accepted ESTABLISHED conn counts as
+ * 1 slot.  At TCP_CONN_CAP = 16 this is generous for a single-user
+ * kernel.
  *
  * What's missing on purpose:
- *   - LISTEN / ACCEPT (M56)
  *   - SACK, window scaling, timestamp options
  *   - Nagle (we always push), delayed ACK (we always ACK)
  *   - PMTU discovery (we use a single 1460-byte MSS)
+ *   - SYN cookies (we drop new SYNs when the accept backlog is
+ *     full -- see chapter 103's discussion)
  *   - Sophisticated RTO; we retransmit on a coarse poll budget.
  */
 #ifndef KERNEL_CORE_TCP_H
@@ -55,14 +67,16 @@ struct __attribute__((packed)) tcp_hdr {
 /* ---- public API ---------------------------------------------- */
 
 enum tcp_state {
-    TCP_CLOSED      = 0,
-    TCP_SYN_SENT    = 1,
-    TCP_ESTABLISHED = 2,
-    TCP_FIN_WAIT_1  = 3,
-    TCP_FIN_WAIT_2  = 4,
-    TCP_CLOSE_WAIT  = 5,
-    TCP_LAST_ACK    = 6,
-    TCP_TIME_WAIT   = 7,
+    TCP_CLOSED       = 0,
+    TCP_LISTEN       = 1,   /* chapter 103: passive open, waiting for SYN */
+    TCP_SYN_SENT     = 2,
+    TCP_SYN_RECEIVED = 3,   /* chapter 103: SYN+ACK sent, waiting for ACK */
+    TCP_ESTABLISHED  = 4,
+    TCP_FIN_WAIT_1   = 5,
+    TCP_FIN_WAIT_2   = 6,
+    TCP_CLOSE_WAIT   = 7,
+    TCP_LAST_ACK     = 8,
+    TCP_TIME_WAIT    = 9,
 };
 
 #define TCP_INVALID_CID  (-1)
@@ -74,6 +88,35 @@ enum tcp_state {
  * state and the caller must poll `tcp_state(cid)` until it
  * reaches TCP_ESTABLISHED before sending data. */
 int tcp_connect(const uint8_t dst_ip[NET_IPV4_LEN], uint16_t dst_port);
+
+/* Chapter 103 -- passive open.
+ *
+ * Allocate a listener slot on `local_port` and return its cid.
+ * The slot transitions to TCP_LISTEN immediately and starts
+ * accepting inbound SYNs from any peer.  Returns:
+ *   >= 0  the new listener cid
+ *   -1    the connection table is full
+ *   -2    another conn (listener or established) is already
+ *         using local_port
+ *
+ * Listeners count as one slot in the TCP_CONN_CAP pool.  Every
+ * pending half-open (TCP_SYN_RECEIVED) also counts as one slot,
+ * as does every accepted ESTABLISHED conn after `tcp_accept`
+ * returns it. */
+int tcp_listen(uint16_t local_port);
+
+/* Chapter 103 -- accept the next fully-established inbound conn.
+ *
+ * `listen_cid` must be a cid returned by `tcp_listen`.  Returns:
+ *   >= 0  the cid of a fresh TCP_ESTABLISHED conn, popped from
+ *         the listener's accept queue.  The caller owns it like
+ *         any other conn: use tcp_recv / tcp_send / tcp_close.
+ *   -1    `listen_cid` isn't a valid listener
+ *   -2    accept queue is empty (poll and try again, or yield)
+ *
+ * Non-blocking: returns -2 immediately when the queue is empty.
+ * Pair with `net_poll()` to drive the state machine forward. */
+int tcp_accept(int listen_cid);
 
 /* Append `len` bytes to the connection's send buffer.  Returns
  * the number of bytes queued (may be < `len` if the TX buffer
@@ -102,6 +145,14 @@ int tcp_state(int cid);
  * the local RX buffer is empty.  The standard "connection EOF"
  * test for a HTTP-style request/response. */
 int tcp_eof(int cid);
+
+/* Chapter 104 -- read out the peer's 4-tuple coordinates from a
+ * connected conn.  Used by SYS_SOCKET_ACCEPT to surface "who
+ * connected to me" to userspace.  Either output pointer may be
+ * NULL.  `peer_ip_out` receives a packed big-endian IPv4 (same
+ * format SYS_SOCKET_CONNECT accepts).  Returns 0 on success,
+ * -1 on a bad / non-established cid. */
+int tcp_peer(int cid, uint32_t *peer_ip_be_out, uint16_t *peer_port_out);
 
 /* Drain RX queue + run retransmission timers.  Called from
  * `net_poll` (which itself is called from the boot loop and

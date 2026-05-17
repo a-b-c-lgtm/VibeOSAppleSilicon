@@ -1044,6 +1044,17 @@ void thread_inherit_fds(struct thread *child, struct thread *parent)
         const struct fd_entry *src = &parent->fdt->fds[fd];
         if (!src->in_use) continue;
         if (src->kind == FD_SOCKET) continue;
+        if (src->kind == FD_SOCKET_LISTEN) continue;  /* chapter 104 */
+        /* Chapter 107 — /srv listeners are single-owner like
+         * TCP listeners; the kernel-side registry keys on pid
+         * via srv_listen.owner_pid and an inherited listener
+         * fd would let the child accept on the parent's name
+         * (almost certainly a bug).  /srv connected fds are
+         * also opt-out for v1: refcount bookkeeping on the
+         * conn endpoints would need the same care as TCP
+         * cids, deferred to a later chapter. */
+        if (src->kind == FD_SRV_LISTEN) continue;
+        if (src->kind == FD_SRV_CONN)   continue;
         /* Chapter 99 — FD_PROCFS slots hold a kmalloc'd snapshot
          * buffer that the parent's vfs_close will free.  Copying
          * the pointer naively would double-free at the child's

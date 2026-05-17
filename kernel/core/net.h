@@ -145,6 +145,32 @@ int  net_get_dns(uint8_t out_ip[NET_IPV4_LEN]);
 int  net_poll(void);
 
 /* ----------------------------------------------------------------
+ * Loopback (chapter 106)
+ * ----------------------------------------------------------------
+ *
+ * "Local" addresses are addresses that we should deliver to
+ * ourselves rather than send out the wire.  Two cases qualify:
+ *
+ *   - 127.0.0.0/8         (the classical loopback prefix)
+ *   - our own DHCP IP     (g_ip, when nonzero) -- traffic to
+ *                         ourselves should also stay on the box
+ *
+ * `net_is_local_ip()` is the predicate used by both the TX
+ * short-circuit in `net_ipv4_send_from` and the RX accept gate
+ * in `rx_handle_ipv4` to recognise loopback traffic.
+ *
+ * `net_choose_src()` is the source-address selection helper
+ * used by upper layers (TCP, UDP) when picking the src to
+ * stamp on an outbound segment.  For a local destination it
+ * returns the destination itself (so both sides of the
+ * conversation observe a symmetric 4-tuple); for a real
+ * destination it returns g_ip.  This is what Linux's source-
+ * selection algorithm does for loopback. */
+int  net_is_local_ip(const uint8_t ip[NET_IPV4_LEN]);
+void net_choose_src (const uint8_t dst_ip[NET_IPV4_LEN],
+                     uint8_t out_src[NET_IPV4_LEN]);
+
+/* ----------------------------------------------------------------
  * ARP
  * ---------------------------------------------------------------- */
 

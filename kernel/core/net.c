@@ -56,6 +56,84 @@ static uint8_t g_dns[NET_IPV4_LEN];   /* M57: DNS server (0 = unset) */
  * net_set_dns (which logs the new server). */
 static void print_ipv4(const uint8_t ip[NET_IPV4_LEN]);
 
+/* Forward decl: rx_dispatch is defined further down (in the RX
+ * dispatch section).  We need to call it from the loopback
+ * drain helper to inject queued local-bound frames as if they
+ * arrived from virtio-net.  See chapter 106. */
+static void rx_dispatch(const uint8_t *frame, uint32_t len);
+
+/* ----------------------------------------------------------------
+ * Chapter 106 -- loopback enqueue / drain
+ * ----------------------------------------------------------------
+ *
+ * When net_ipv4_send_from detects a local destination, it builds
+ * the ethernet+ipv4 frame normally and enqueues it here instead
+ * of handing it to virtio_net_tx.  net_poll() drains the queue
+ * by feeding each frame into rx_dispatch.
+ *
+ * Why a queue rather than recursive rx_dispatch from inside the
+ * TX path?  TCP's handshake is a four-segment ping-pong (SYN,
+ * SYN+ACK, ACK, plus the first data ACK), and each segment goes
+ * tcp_tx -> net_ipv4_send_from -> rx_dispatch -> tcp_handle ->
+ * tcp_tx -> ...  Recursing through that chain blows the 16 KiB
+ * kernel stack within two round trips (tcp_tx alone has a
+ * 1500-byte segment buffer on its stack).  Queueing breaks the
+ * recursion into iteration: each net_poll call drains pending
+ * frames until the queue is empty, with one stack frame per
+ * drain iteration.
+ *
+ * Queue capacity is small (16 entries, ~24 KiB BSS) but enough
+ * for any single-connection burst the kernel produces between
+ * net_poll calls.  Drop policy on overflow is silent -- TCP
+ * will retransmit any lost segment via its existing timeout
+ * machinery.
+ *
+ * Drain cap is 256 iterations per net_poll call.  In practice
+ * the queue empties in <10 iterations; the cap is purely to
+ * guarantee forward progress even if some pathological loop
+ * keeps refilling the queue.
+ *
+ * Chapter 106b: bumped to 64 entries (~95 KiB BSS).  At 16
+ * entries, an httpd write of HTTPD_SEND_CHUNK (16 KiB, ~12
+ * MSS-sized segments) plus inbound ACKs overflowed the queue
+ * any time the receiver thread didn't drain between writes.
+ * Lost segments triggered TCP retransmit backoffs (200k poll
+ * iters per RTO), making real-world HN page loads stall at
+ * ~10 seconds per fetch.  64 leaves headroom for several
+ * back-to-back full HTTPD_SEND_CHUNK bursts before the
+ * receiver has to run, which is the worst case the chapter-106b
+ * splice produces. */
+#define LOOPBACK_QUEUE_CAP 64
+#define LOOPBACK_DRAIN_CAP 256
+static uint8_t  g_lo_buf [LOOPBACK_QUEUE_CAP][ETH_HDR_LEN + 1500];
+static uint32_t g_lo_len [LOOPBACK_QUEUE_CAP];
+static int      g_lo_head = 0;
+static int      g_lo_tail = 0;
+
+static int loopback_enqueue(const uint8_t *frame, uint32_t len)
+{
+    int next = (g_lo_tail + 1) % LOOPBACK_QUEUE_CAP;
+    if (next == g_lo_head) return -1;   /* queue full -- drop */
+    if (len > sizeof(g_lo_buf[0])) return -1;
+    n_memcpy(g_lo_buf[g_lo_tail], frame, len);
+    g_lo_len[g_lo_tail] = len;
+    g_lo_tail = next;
+    return 0;
+}
+
+static int loopback_drain(void)
+{
+    int n = 0;
+    while (n < LOOPBACK_DRAIN_CAP && g_lo_head != g_lo_tail) {
+        uint32_t       len   = g_lo_len[g_lo_head];
+        const uint8_t *frame = g_lo_buf[g_lo_head];
+        g_lo_head = (g_lo_head + 1) % LOOPBACK_QUEUE_CAP;
+        rx_dispatch(frame, len);
+        n++;
+    }
+    return n;
+}
+
 static const uint8_t g_bcast_mac[NET_MAC_LEN] = {
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
 };
@@ -244,6 +322,59 @@ static int ip_on_local_subnet(const uint8_t ip[NET_IPV4_LEN])
     return 1;
 }
 
+/* ----------------------------------------------------------------
+ * Chapter 106 -- loopback predicates and source-address selection
+ * ----------------------------------------------------------------
+ *
+ * Two halves of one feature:
+ *
+ *   net_is_local_ip(ip)
+ *      Returns 1 iff `ip` belongs to this host.  Two cases
+ *      qualify -- 127.0.0.0/8 (the classical loopback prefix)
+ *      and our own DHCP-assigned address (g_ip, when nonzero).
+ *      Used by the TX path to recognise "deliver to ourselves"
+ *      traffic and by the RX path to accept loopback frames
+ *      that the TX path injected.
+ *
+ *   net_choose_src(dst, out)
+ *      Source-address selection.  For a local destination we
+ *      return `dst` so that both sides of the resulting
+ *      conversation observe a symmetric 4-tuple -- without
+ *      this rewrite the TCP listener would see SYNs arriving
+ *      from g_ip rather than 127.0.0.1, breaking the 4-tuple
+ *      match on the reply path.  For a real destination we
+ *      return g_ip as before.
+ *
+ * Both are public (declared in net.h) because upper-layer
+ * protocols -- TCP for sure, UDP optionally -- need to consult
+ * net_choose_src() before computing their own pseudo-header
+ * checksums.  Otherwise tcp_tx would compute the checksum with
+ * src=g_ip and we'd rewrite it to src=127.0.0.1 in the IP
+ * header just before injection, and the receiver would drop
+ * the segment as corrupt. */
+int net_is_local_ip(const uint8_t ip[NET_IPV4_LEN])
+{
+    /* 127.0.0.0/8: the entire prefix is loopback. */
+    if (ip[0] == 127) return 1;
+    /* Our own DHCP-assigned address.  Skip while g_ip is zero
+     * (during the DHCP DISCOVER window we don't yet have one,
+     * and 0.0.0.0 is special in its own right -- DHCP DISCOVER
+     * itself uses src=0.0.0.0 dst=255.255.255.255 and must
+     * NOT short-circuit). */
+    int have_ip = (g_ip[0] | g_ip[1] | g_ip[2] | g_ip[3]) != 0;
+    if (have_ip && n_memeq(ip, g_ip, NET_IPV4_LEN)) return 1;
+    return 0;
+}
+
+void net_choose_src(const uint8_t dst_ip[NET_IPV4_LEN],
+                    uint8_t out_src[NET_IPV4_LEN])
+{
+    if (net_is_local_ip(dst_ip))
+        n_memcpy(out_src, dst_ip, NET_IPV4_LEN);
+    else
+        n_memcpy(out_src, g_ip,    NET_IPV4_LEN);
+}
+
 int net_ipv4_send(const uint8_t dst_ip[NET_IPV4_LEN],
                   uint8_t proto,
                   const void *payload, uint32_t payload_len)
@@ -263,6 +394,39 @@ int net_ipv4_send_from(const uint8_t src_ip[NET_IPV4_LEN],
      * VIRTIO_NET_FRAME_MAX, so a single MTU-sized buffer fits. */
     uint8_t frame[ETH_HDR_LEN + 1500];
     if (IPV4_HDR_LEN + payload_len > 1500) return -1;
+
+    /* Chapter 106: loopback short-circuit.
+     *
+     * If the destination is one of our own addresses (127/8 or
+     * the DHCP-assigned g_ip), don't touch virtio-net at all.
+     * Build the same ethernet+ipv4 frame we'd send out the wire,
+     * but hand it to the loopback queue.  net_poll() will drain
+     * the queue into rx_dispatch on the next pump.
+     *
+     * The eth header uses our own MAC for both src and dst.  The
+     * loopback path never crosses an L2 device, so the MAC just
+     * has to satisfy the parser; using our own avoids polluting
+     * the ARP cache with synthetic entries.
+     *
+     * We pass src_ip through verbatim -- it's the caller's job
+     * (via net_choose_src) to have picked a loopback-symmetric
+     * source.  Doing the rewrite here would silently invalidate
+     * any TCP/UDP pseudo-header checksum the caller already
+     * computed.
+     *
+     * Why a queue rather than recursive rx_dispatch?  See the
+     * loopback_enqueue comment above -- recursion would blow
+     * the 16 KiB kernel stack during a TCP handshake. */
+    if (net_is_local_ip(dst_ip)) {
+        eth_hdr_build(frame, g_mac, ETHERTYPE_IPV4);
+        int ip_len = net_ipv4_build_src(frame + ETH_HDR_LEN,
+                                        sizeof(frame) - ETH_HDR_LEN,
+                                        src_ip, dst_ip, proto,
+                                        payload, payload_len);
+        if (ip_len < 0) return -1;
+        return loopback_enqueue(frame,
+                                ETH_HDR_LEN + (uint32_t)ip_len);
+    }
 
     /* Resolve next-hop MAC.
      *
@@ -360,9 +524,16 @@ static void rx_handle_ipv4(const uint8_t *frame, uint32_t len)
      * window we ALSO accept packets addressed to 0.0.0.0 so the
      * lookup matches an incoming OFFER that some servers unicast
      * to the client's MAC with dst-IP=0.0.0.0.  We don't yet
-     * support multicast. */
-    int for_us = n_memeq(h->dst, g_ip, NET_IPV4_LEN) ||
-                 n_memeq(h->dst, g_bcast_ip, NET_IPV4_LEN);
+     * support multicast.
+     *
+     * Chapter 106: also accept loopback destinations -- 127/8 or
+     * our own g_ip -- so the TX short-circuit in net_ipv4_send_from
+     * (which re-injects local-bound frames here) lands in the
+     * upper layers correctly.  net_is_local_ip already encodes
+     * both rules. */
+    int for_us = n_memeq(h->dst, g_ip,       NET_IPV4_LEN) ||
+                 n_memeq(h->dst, g_bcast_ip, NET_IPV4_LEN) ||
+                 net_is_local_ip(h->dst);
     if (!for_us) return;
 
     const uint8_t *payload = frame + ETH_HDR_LEN + IPV4_HDR_LEN;
@@ -391,6 +562,12 @@ static void rx_dispatch(const uint8_t *frame, uint32_t len)
 int net_poll(void)
 {
     int n = virtio_net_drain_rx();
+    /* Chapter 106: drain any loopback frames the TX path queued
+     * up since the last poll.  Done AFTER the wire drain so any
+     * fresh inbound traffic gets a turn first; done BEFORE
+     * tcp_poll so the loopback-driven state transitions land
+     * in the TCP poll's view of the world. */
+    n += loopback_drain();
     tcp_poll();
     return n;
 }

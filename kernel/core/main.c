@@ -254,6 +254,75 @@ static void net_self_test(void)
     } else {
         serial_puts("[net] self-test: DNS resolve failed (network restricted?)\n");
     }
+
+    /* Phase 7 (chapter 103 / M92): passive open.
+     *
+     * Bring up a TCP listener on port 8088, then wait briefly
+     * for an external SYN.  The test harness (scripts/
+     * test_passive_open.py) starts QEMU with
+     *
+     *     -netdev user,id=n0,hostfwd=tcp::18088-:8088
+     *
+     * so SLIRP forwards host port 18088 -> guest port 8088.
+     * The harness connects to localhost:18088, the kernel
+     * accepts, and we log the 4-tuple so the harness can
+     * pattern-match the success line.
+     *
+     * If the harness isn't running (the default run-graphical
+     * boot), the accept loop times out cleanly and we just log
+     * "no inbound connection" before moving on. */
+    serial_puts("[net] self-test: TCP listen on port 8088\n");
+    int lid = tcp_listen(8088);
+    if (lid < 0) {
+        serial_puts("[net] self-test: tcp_listen failed\n");
+    } else {
+        /* Wait up to ~30s wall-time for an inbound SYN.  The
+         * harness on the host-side has to first observe the
+         * "TCP listen" line above on the serial port, then dial
+         * 127.0.0.1:18088 (SLIRP forwards that to us), and the
+         * round-trip can take a beat.  Bigger budget than the
+         * connect-side test (50M) for that reason. */
+        int accepted = -1;
+        for (uint64_t i = 0; i < 2000000000ULL; i++) {
+            if ((i & 0xfffu) == 0) (void)net_poll();
+            int child = tcp_accept(lid);
+            if (child >= 0) { accepted = child; break; }
+            __asm__ volatile("" ::: "memory");
+        }
+        if (accepted < 0) {
+            serial_puts("[net] self-test: no inbound connection (TCP accept timeout)\n");
+            (void)tcp_close(lid);
+        } else {
+            serial_puts("[net] self-test: TCP accepted cid=");
+            serial_puthex((uint64_t)accepted);
+            serial_puts("\n");
+
+            /* Drain anything the peer sends until they close,
+             * then close our side cleanly.  Bounded budget so
+             * we always make forward progress even if the peer
+             * forgets to close. */
+            uint32_t total = 0;
+            uint8_t  scratch[256];
+            for (uint64_t i = 0; i < 200000000ULL; i++) {
+                if ((i & 0xfffu) == 0) (void)net_poll();
+                int n = tcp_recv(accepted, scratch, sizeof(scratch));
+                if (n > 0) total += (uint32_t)n;
+                else if (tcp_eof(accepted)) break;
+                __asm__ volatile("" ::: "memory");
+            }
+            serial_puts("[net] self-test: TCP accept payload bytes=");
+            serial_puthex((uint64_t)total);
+            serial_puts("\n");
+            (void)tcp_close(accepted);
+            (void)tcp_close(lid);
+            /* Brief drain so the FIN exchange settles. */
+            for (uint64_t i = 0; i < 5000000ULL; i++) {
+                if ((i & 0xfffu) == 0) (void)net_poll();
+                __asm__ volatile("" ::: "memory");
+            }
+            serial_puts("[net] self-test: TCP passive close complete\n");
+        }
+    }
 }
 
 static void heap_demo(void)

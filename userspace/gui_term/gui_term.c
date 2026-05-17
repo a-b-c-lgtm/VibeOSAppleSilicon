@@ -38,6 +38,7 @@
  *     style multiplexing.
  */
 #include "../libc/syscall.h"
+#include "../libc/clipboard.h"
 
 #define WIN_W        720
 #define WIN_H        440
@@ -324,6 +325,87 @@ int main(int argc, char **argv)
                 if (scroll_offset != 0) {
                     scroll_offset = 0;
                     render();
+                }
+                /* Chapter 108 -- Ctrl-V pastes the system
+                 * clipboard onto the shell's stdin.  Ctrl-C
+                 * stays SIGINT (line discipline routes 0x03
+                 * to the foreground pgid via the pty); Ctrl-V
+                 * was previously a no-op for the shell, so we
+                 * can repurpose it without breaking anything.
+                 *
+                 * Newlines in the payload are translated to
+                 * \r so the shell's line editor sees them as
+                 * Enter -- matches the KC_ENTER mapping in
+                 * virtio_input.c.  Non-printable bytes (other
+                 * than the newline conversion) are dropped to
+                 * keep stray control sequences from poisoning
+                 * the readline state.  Write is one-shot:
+                 * chapter-39 pipes / chapter-79b ptys handle a
+                 * blocked-on-buffer-full case by parking the
+                 * caller, which on a clipboard of <= 32 KiB
+                 * resolves in a few schedule ticks. */
+                if (ev.arg0 == 0x16 /* Ctrl-V */) {
+                    static uint8_t cb[CLIP_DATA_MAX];
+                    uint32_t cblen = 0;
+                    char mime[CLIP_MIME_MAX];
+                    int gen = clip_get(cb, sizeof(cb), &cblen, mime);
+                    if (gen >= 0 && cblen > 0) {
+                        static uint8_t out_buf[CLIP_DATA_MAX];
+                        uint32_t out_len = 0;
+                        for (uint32_t i = 0; i < cblen; i++) {
+                            uint8_t b = cb[i];
+                            if (b == '\n') b = '\r';
+                            /* Allow \r (Enter), \t (tab), and
+                             * printable ASCII through. */
+                            if (b == '\r' || b == '\t' ||
+                                (b >= 0x20 && b < 0x7F)) {
+                                out_buf[out_len++] = b;
+                            }
+                        }
+                        uint32_t off = 0;
+                        while (off < out_len) {
+                            long w = write(master_fd, out_buf + off,
+                                           out_len - off);
+                            if (w <= 0) break;
+                            off += (uint32_t)w;
+                        }
+                        /* Audit line for the cross-app paste
+                         * regression -- inherits stdout from the
+                         * outer (serial-attached) shell, so this
+                         * is the only signal a host-side test
+                         * can grep for to confirm the keystroke
+                         * actually reached gui_term and pasted
+                         * the expected payload. */
+                        char hdr[64];
+                        const char *p = "[gui_term] pasted ";
+                        int hi = 0;
+                        while (p[hi] && hi < (int)sizeof(hdr) - 12) {
+                            hdr[hi] = p[hi]; hi++;
+                        }
+                        /* small itoa for out_len */
+                        char num[16]; int ni = 0;
+                        if (out_len == 0) num[ni++] = '0';
+                        else {
+                            char tmp[16]; int ti = 0;
+                            uint32_t v = out_len;
+                            while (v && ti < 15) {
+                                tmp[ti++] = '0' + (char)(v % 10);
+                                v /= 10;
+                            }
+                            while (ti > 0) num[ni++] = tmp[--ti];
+                        }
+                        for (int j = 0; j < ni && hi < (int)sizeof(hdr) - 8; j++)
+                            hdr[hi++] = num[j];
+                        const char *t = " bytes\n";
+                        for (int j = 0; t[j] && hi < (int)sizeof(hdr); j++)
+                            hdr[hi++] = t[j];
+                        (void)write(1, hdr, (size_t)hi);
+                    } else {
+                        const char *err = "[gui_term] paste empty/failed\n";
+                        int el = 0; while (err[el]) el++;
+                        (void)write(1, err, (size_t)el);
+                    }
+                    continue;
                 }
                 char buf[3];
                 int  n = key_to_bytes(ev.arg0, buf);

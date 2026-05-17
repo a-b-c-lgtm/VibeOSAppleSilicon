@@ -40,12 +40,19 @@
 #define ENOSPC      28
 #define EROFS       30
 #define EIO          5
+/* Chapter 104: returned by SYS_SOCKET_LISTEN when another
+ * conn already owns the requested port.  Matches POSIX. */
+#define EADDRINUSE  98
 
 /* Forward decl — defined in thread.h, but kept opaque here. */
 struct thread;
 
 /* Forward decl — defined in pipe.h. */
 struct pipe;
+
+/* Forward decls — defined in srv.h (chapter 107). */
+struct srv_listen;
+struct srv_conn;
 
 /* What kind of object an fd refers to.  Determines which read /
  * write / close path runs.  FD_CONSOLE covers fd 0/1/2 by
@@ -59,10 +66,18 @@ enum fd_kind {
     FD_PIPE_W,
     FD_TMPFS_RW,    /* read+write tmpfs file; tmpfs index in ramfs_index */
     FD_SOCKET,      /* TCP socket; tcp_cid in `socket_cid` */
+    FD_SOCKET_LISTEN, /* chapter 104: TCP listening socket;
+                       * tcp_cid in `socket_cid` (a TCP_LISTEN
+                       * conn slot).  Read/write return -EINVAL;
+                       * the only valid op besides close is
+                       * SYS_SOCKET_ACCEPT. */
     FD_PTY_MASTER,  /* gui_term side of a pty (chapter 79b) */
     FD_PTY_SLAVE,   /* /bin/sh side of a pty; goes on fd 0/1/2 */
     FD_OSFS2_FILE,  /* writable OSFS-2 file at /data/...; ino in `osfs2_ino` */
     FD_PROCFS,      /* chapter 99 /proc/... snapshot file; buf in `procfs_buf` */
+    FD_SRV_LISTEN,  /* chapter 107: named-IPC listener; srv_listen in `srv_l` */
+    FD_SRV_CONN,    /* chapter 107: named-IPC connected fd; srv_conn in `srv_c`,
+                     * `srv_is_service` distinguishes the service vs client end */
 };
 
 /* Forward decl — defined in pty.h. */
@@ -104,6 +119,18 @@ struct fd_entry {
      * memcpy from procfs_buf + offset; close kfree's. */
     char      *procfs_buf;
     uint32_t   procfs_len;
+    /* Chapter 107 — named-IPC service bus.  When kind is
+     * FD_SRV_LISTEN, `srv_l` points at the registered
+     * listener and `srv_c` / `srv_is_service` are unused.
+     * When kind is FD_SRV_CONN, `srv_c` points at the
+     * connected conn and `srv_is_service` is 1 for the
+     * accepted (service) end, 0 for the connect (client)
+     * end — that bit picks which queue read/write touches.
+     * Both pointers carry one refcount per fd; vfs_close
+     * routes through srv_unref_listen / srv_unref_conn. */
+    struct srv_listen *srv_l;
+    struct srv_conn   *srv_c;
+    int                srv_is_service;
 };
 
 /* Chapter 93 — refcounted fd table.
@@ -204,6 +231,27 @@ int vfs_open_into(struct thread *t, int fd, const char *name, int flags);
  * read()/write()/close() understand.  Returns the new fd >= 3
  * on success, -EMFILE if the table is full. */
 int vfs_alloc_socket_fd(int cid);
+
+/* Chapter 104 -- allocate a fresh fd that wraps a TCP_LISTEN
+ * cid.  Identical to vfs_alloc_socket_fd except for the kind
+ * (FD_SOCKET_LISTEN), which the read/write paths reject and
+ * which SYS_SOCKET_ACCEPT requires.  Returns the new fd >= 3,
+ * or -EMFILE if the table is full. */
+int vfs_alloc_listen_fd(int cid);
+
+/* Chapter 107 — allocate a fresh fd in the current thread
+ * pointing at a /srv/<name> listener object (returned by
+ * srv_bind).  Read/write paths reject FD_SRV_LISTEN; only
+ * SYS_SRV_ACCEPT and close are valid.  Returns the new fd
+ * >= 3, or -EMFILE if the table is full. */
+int vfs_alloc_srv_listen_fd(struct srv_listen *ls);
+
+/* Chapter 107 — allocate a fresh fd in the current thread
+ * pointing at a /srv connected conn.  `is_service_end` picks
+ * which queue read/write touches: nonzero = accepted (service)
+ * side; zero = connect (client) side.  Returns the new fd
+ * >= 3, or -EMFILE if the table is full. */
+int vfs_alloc_srv_conn_fd(struct srv_conn *c, int is_service_end);
 
 /* Close every fd in thread `t`'s table.  Must be called when a
  * thread exits so pipe refcounts drop and the other side sees

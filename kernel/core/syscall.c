@@ -42,6 +42,7 @@
 #include "wm.h"
 #include "console_in.h"
 #include "strace.h"
+#include "srv.h"
 #include "../device/virtio_input.h"
 #include "../device/virtio_tablet.h"
 #include "../device/virtio_snd.h"
@@ -123,7 +124,27 @@ static long sys_write(long fd, long buf_ptr, long len)
         }
         if (e->in_use && e->kind == FD_SOCKET) {
             if (e->socket_cid < 0) return -EBADF;
-            char chunk[512];
+            /* Chapter 106b: bumped from 512 bytes to 4 KiB.  At
+             * 512 a single 16 KiB httpd write (HTTPD_SEND_CHUNK)
+             * became 32 copy_from_user + tcp_send pairs, each
+             * tcp_send appending a tiny slice to the 32 KiB
+             * tx_buf and tcp_drain_tx segmenting out only what
+             * the peer's window allowed in tiny bursts.  The
+             * loopback queue holds 16 frames; small bursty
+             * writes overflowed it before the receiver thread's
+             * net_poll could drain.  Lost segments triggered
+             * TCP_RTX_THRESH (200k poll iters) backoffs, making
+             * one HN comment-page fetch take ~10 seconds.
+             *
+             * 4 KiB is the right balance: matches HTTPD's
+             * forward-slice / serve_get inner loop granularity
+             * (4 reads per HTTPD_SEND_CHUNK), keeps each
+             * tcp_send appending a chunk big enough for ~3
+             * full-MSS segments at a time, and stays well under
+             * the 16 KiB THREAD_STACK_SIZE budget (the syscall
+             * chain otherwise burns ~3 KiB on tcp_tx's segment
+             * buffer + intermediate frames). */
+            char chunk[4096];
             long total = 0;
             while (total < len) {
                 size_t n = (size_t)(len - total);
@@ -139,6 +160,35 @@ static long sys_write(long fd, long buf_ptr, long len)
                 total += w;
             }
             return total;
+        }
+        /* Chapter 104: listening sockets are not writable.
+         * Symmetric with the read-side guard in vfs_read. */
+        if (e->in_use && e->kind == FD_SOCKET_LISTEN) {
+            return -EINVAL_VFS;
+        }
+        /* Chapter 107: named-IPC.  Connected fds carry length-
+         * prefixed datagrams — each sys_write enqueues exactly
+         * one message.  Listen fds are write-rejected (the only
+         * non-close op is SYS_SRV_ACCEPT). */
+        if (e->in_use && e->kind == FD_SRV_LISTEN) {
+            return -EINVAL_VFS;
+        }
+        if (e->in_use && e->kind == FD_SRV_CONN) {
+            if (!e->srv_c) return -EBADF;
+            if ((uint64_t)len > SRV_MSG_MAX) return -EMSGSIZE;
+            /* Allocate a single kernel-side buffer for the
+             * whole message so srv_write sees one contiguous
+             * datagram.  4 KiB stack would be too generous;
+             * heap is the right shape for the 64 KiB cap. */
+            void *kbuf = kmalloc((size_t)len);
+            if (!kbuf) return -ENOMEM_VFS;
+            if (copy_from_user(kbuf, (uint64_t)buf_ptr, (size_t)len) < 0) {
+                kfree(kbuf);
+                return -EFAULT;
+            }
+            long w = srv_write(e->srv_c, e->srv_is_service, kbuf, (size_t)len);
+            kfree(kbuf);
+            return w;
         }
         if (e->in_use && (e->kind == FD_PTY_MASTER ||
                           e->kind == FD_PTY_SLAVE)) {
@@ -2321,6 +2371,193 @@ static long sys_socket_shutdown(long fd)
     return tcp_close(e->socket_cid);
 }
 
+/* ── Chapter 104 / M93 — passive-open syscalls ──────────────
+ *
+ * SYS_SOCKET_LISTEN(port, backlog) -> fd
+ *   Wraps tcp_listen().  `backlog` is parsed but ignored --
+ *   the kernel uses a fixed TCP_ACCEPT_QCAP for now.  Real
+ *   userspace code should still pass a sensible value (4-8)
+ *   so the call site stays correct when we eventually honour
+ *   it (chapter 105+).
+ *
+ * SYS_SOCKET_ACCEPT(listen_fd, peer_ip_out, peer_port_out) -> fd
+ *   Wraps tcp_accept().  Polls + yields until the listener's
+ *   accept queue is non-empty (no scheduler-blocking primitive
+ *   wired into TCP yet).  Optional outputs surface the peer's
+ *   IPv4 + port for logging / access control.
+ */
+static long sys_socket_listen(long port, long backlog)
+{
+    (void)backlog;   /* honoured implicitly: cap is TCP_ACCEPT_QCAP */
+    if (port <= 0 || port > 65535) return -EINVAL_VFS;
+    int cid = tcp_listen((uint16_t)port);
+    if (cid == -2) return -EADDRINUSE;
+    if (cid <  0)  return -EMFILE;
+    int fd = vfs_alloc_listen_fd(cid);
+    if (fd < 0) { tcp_close(cid); return fd; }
+    return fd;
+}
+
+static long sys_socket_accept(long listen_fd, long peer_ip_uptr, long peer_port_uptr)
+{
+    if (listen_fd < 0 || listen_fd >= FD_TABLE_SIZE) return -EBADF;
+    struct fd_entry *e = &thread_current()->fdt->fds[listen_fd];
+    if (!e->in_use || e->kind != FD_SOCKET_LISTEN) return -EBADF;
+    if (e->socket_cid < 0) return -EBADF;
+
+    /* Spin-yield until tcp_accept returns a child cid.  We must
+     * drive net_poll() ourselves -- yield() doesn't pump the
+     * NIC, so without the explicit poll the accept queue would
+     * never fill on a quiescent system.
+     *
+     * Chapter 106b note: we tried spinning 1024 iters between
+     * yields here as an "optimisation" and it hurt the proxy
+     * splice -- the accepter (httpd) starves the dialer
+     * (browser) of CPU.  Yield every iteration; the scheduler
+     * tax is negligible compared to cross-thread latency.
+     *
+     * Chapter 106b — signal interruption.  Without the
+     * sig_pending check below, a SIGTERM sent to a thread
+     * camped in accept() (e.g. the long-lived httpd that
+     * proxytest --repeat>1 needs to tear down between tests)
+     * would be silently dropped: thread_signal_pid wakes the
+     * thread, but the loop just keeps yielding because the
+     * sig_pending tail in svc_dispatch only runs when a
+     * syscall returns.  Returning -EINTR here lets the signal
+     * tail terminate the process on the way back to userspace,
+     * which is the only thing that makes proxytest --repeat 2
+     * finish in finite time. */
+    int child = -2;
+    for (;;) {
+        (void)net_poll();
+        child = tcp_accept(e->socket_cid);
+        if (child >= 0) break;
+        if (child == -1) return -EBADF;   /* listener went away */
+        if (thread_current()->sig_pending) return -EINTR;
+        /* child == -2 (EAGAIN): yield and retry. */
+        yield();
+    }
+
+    /* Surface peer addr to userspace before we hand back the fd
+     * -- if either copy_to_user fails we'd otherwise leak the
+     * accepted slot and the user would have no way to free it
+     * (we haven't returned the fd yet). */
+    uint32_t peer_ip_be = 0;
+    uint16_t peer_port  = 0;
+    (void)tcp_peer(child, &peer_ip_be, &peer_port);
+    if (peer_ip_uptr) {
+        if (copy_to_user((uint64_t)peer_ip_uptr, &peer_ip_be, sizeof(peer_ip_be)) < 0) {
+            tcp_close(child);
+            return -EFAULT;
+        }
+    }
+    if (peer_port_uptr) {
+        if (copy_to_user((uint64_t)peer_port_uptr, &peer_port, sizeof(peer_port)) < 0) {
+            tcp_close(child);
+            return -EFAULT;
+        }
+    }
+
+    int fd = vfs_alloc_socket_fd(child);
+    if (fd < 0) { tcp_close(child); return fd; }
+    return fd;
+}
+
+/* ── Chapter 107 — named-IPC service bus ──────────────────
+ *
+ *   SYS_SRV_BIND(const char *path) -> fd / -errno
+ *     Register the calling thread as the listener for
+ *     `/srv/<name>`.  Returns a FD_SRV_LISTEN fd whose only
+ *     valid ops are SYS_SRV_ACCEPT and close.
+ *     -EINVAL    path doesn't start with "/srv/" or contains '/'
+ *                after the prefix.
+ *     -EADDRINUSE another service already owns this name.
+ *     -ENOMEM    SRV_MAX_LISTENERS exhausted.
+ *
+ *   SYS_SRV_ACCEPT(int listen_fd) -> fd / -errno
+ *     Block until a client connects.  Returns a fresh
+ *     FD_SRV_CONN fd (service end).
+ *     -EBADF     listen_fd isn't a /srv listener.
+ *     -EINTR     caller got a signal.
+ *
+ *   SYS_SRV_CONNECT(const char *path) -> fd / -errno
+ *     Open a client-side connection to `/srv/<name>`.
+ *     Equivalent to open(path, O_RDWR) — which is in fact
+ *     how `open()` reaches this code via the /srv/ dispatch
+ *     in vfs_open.  Direct call avoids the open() detour.
+ *     Same errno set as srv_connect.
+ */
+
+/* Copy a NUL-terminated string from user space into a small
+ * kernel buffer.  Returns the byte length on success (matches
+ * strlen), or -EFAULT.  Used by SRV_BIND / SRV_CONNECT, both
+ * of which need short bounded paths. */
+static long copy_path_from_user(char *kbuf, size_t cap, long uptr)
+{
+    if (cap == 0) return -EINVAL_VFS;
+    if (uptr == 0) return -EFAULT;
+    size_t i = 0;
+    for (; i + 1 < cap; i++) {
+        char c;
+        if (copy_from_user(&c, (uint64_t)uptr + i, 1) < 0) return -EFAULT;
+        kbuf[i] = c;
+        if (c == '\0') return (long)i;
+    }
+    /* Caller's path didn't fit — terminate and return EINVAL
+     * so the user gets a deterministic error rather than a
+     * silently truncated bind. */
+    kbuf[cap - 1] = '\0';
+    return -EINVAL_VFS;
+}
+
+static long sys_srv_bind(long path_uptr)
+{
+    char path[SRV_NAME_MAX];
+    long r = copy_path_from_user(path, sizeof(path), path_uptr);
+    if (r < 0) return r;
+    int err = 0;
+    struct srv_listen *ls = srv_bind(path, &err);
+    if (!ls) return err ? err : -ENOMEM_VFS;
+    int fd = vfs_alloc_srv_listen_fd(ls);
+    if (fd < 0) {
+        srv_unref_listen(ls);
+        return fd;
+    }
+    return fd;
+}
+
+static long sys_srv_accept(long listen_fd)
+{
+    if (listen_fd < 0 || listen_fd >= FD_TABLE_SIZE) return -EBADF;
+    struct fd_entry *e = &thread_current()->fdt->fds[listen_fd];
+    if (!e->in_use || e->kind != FD_SRV_LISTEN || !e->srv_l) return -EBADF;
+    int err = 0;
+    struct srv_conn *c = srv_accept(e->srv_l, &err);
+    if (!c) return err ? err : -EBADF;
+    int fd = vfs_alloc_srv_conn_fd(c, /*is_service_end=*/1);
+    if (fd < 0) {
+        srv_unref_conn(c, /*is_service_end=*/1);
+        return fd;
+    }
+    return fd;
+}
+
+static long sys_srv_connect(long path_uptr)
+{
+    char path[SRV_NAME_MAX];
+    long r = copy_path_from_user(path, sizeof(path), path_uptr);
+    if (r < 0) return r;
+    int err = 0;
+    struct srv_conn *c = srv_connect(path, &err);
+    if (!c) return err ? err : -ENOENT_VFS;
+    int fd = vfs_alloc_srv_conn_fd(c, /*is_service_end=*/0);
+    if (fd < 0) {
+        srv_unref_conn(c, /*is_service_end=*/0);
+        return fd;
+    }
+    return fd;
+}
+
 /* ── Milestone 57 — DNS ─────────────────────────────────────
  *
  *   SYS_RESOLVE(const char *name, uint32_t *out_ip4_be) -> 0/-errno
@@ -2780,6 +3017,24 @@ void svc_dispatch(struct exception_frame *frame)
         break;
     case SYS_RESOLVE:
         ret = sys_resolve(a0, a1);
+        break;
+
+    case SYS_SOCKET_LISTEN:
+        ret = sys_socket_listen(a0, a1);
+        break;
+    case SYS_SOCKET_ACCEPT:
+        ret = sys_socket_accept(a0, a1, a2);
+        break;
+
+    /* Chapter 107 — named-IPC service bus. */
+    case SYS_SRV_BIND:
+        ret = sys_srv_bind(a0);
+        break;
+    case SYS_SRV_ACCEPT:
+        ret = sys_srv_accept(a0);
+        break;
+    case SYS_SRV_CONNECT:
+        ret = sys_srv_connect(a0);
         break;
 
     case SYS_MMAP:

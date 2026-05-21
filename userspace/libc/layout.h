@@ -281,38 +281,16 @@ struct layout_computed {
  *   PART 2 — small helpers (string + numeric)
  * ============================================================ */
 
-/* Freestanding mem* shims.  GCC emits implicit calls to memset /
- * memcpy when copying or zeroing structs that are big enough
- * (struct layout_paint_cmd is ~80 bytes; struct layout_item is
- * also large), and the userspace libc has no mem* in scope.
- * Defining these in the same header gives the linker something
- * to point at.  All three are marked `static` to avoid colliding
- * with future libc.
+/* Freestanding mem* shims (memcpy / memset / memmove).  GCC
+ * emits implicit calls to these when the optimizer recognises a
+ * struct copy or zero-init bigger than its inlining threshold,
+ * and userspace links without libc.  Centralised in
+ * libc/freestanding.h so headers like cookies.h can include the
+ * same definitions without producing duplicate `static memcpy`
+ * symbols when both headers land in one .c.
  *
  * Documented in /memories/freestanding-c-memset-trap.md. */
-static __attribute__((used)) void *memcpy(void *dst, const void *src, size_t n)
-{
-    unsigned char *d = (unsigned char *)dst;
-    const unsigned char *s = (const unsigned char *)src;
-    for (size_t i = 0; i < n; i++) d[i] = s[i];
-    return dst;
-}
-static __attribute__((used)) void *memset(void *dst, int c, size_t n)
-{
-    unsigned char *d = (unsigned char *)dst;
-    unsigned char  v = (unsigned char)c;
-    for (size_t i = 0; i < n; i++) d[i] = v;
-    return dst;
-}
-static __attribute__((used)) void *memmove(void *dst, const void *src, size_t n)
-{
-    unsigned char *d = (unsigned char *)dst;
-    const unsigned char *s = (const unsigned char *)src;
-    if (d == s || n == 0) return dst;
-    if (d < s) { for (size_t i = 0; i < n; i++) d[i] = s[i]; }
-    else       { for (size_t i = n; i > 0; i--) d[i - 1] = s[i - 1]; }
-    return dst;
-}
+#include "freestanding.h"
 
 static inline int lay_lower(int c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
 
@@ -3556,6 +3534,7 @@ struct layout_paint_cmd {
     int kind;
     int x, y, w, h;
     layout_color_t color;
+    const struct dom_node *dom;    /* source node for this paint item */
     /* TEXT only */
     const char *text;       /* points into the box's text buffer */
     int         text_len;
@@ -3617,6 +3596,7 @@ static inline void layout_paint_box(struct layout_box *b, struct layout_paint_bu
         c.kind = LAY_PAINT_RECT;
         c.x = b->x; c.y = b->y; c.w = b->w; c.h = b->h;
         c.color = st->background;
+        c.dom = b->dom;
         c.text = 0; c.text_len = 0;
         c.font_size_px = 0; c.font_weight = 0; c.font_style = 0;
         c.image_pixels = 0; c.image_w = 0; c.image_h = 0;
@@ -3631,6 +3611,7 @@ static inline void layout_paint_box(struct layout_box *b, struct layout_paint_bu
             struct layout_paint_cmd c;
             c.kind = LAY_PAINT_RECT;
             c.color = st->border_color[side];
+            c.dom = b->dom;
             c.text = 0; c.text_len = 0;
             c.font_size_px = 0; c.font_weight = 0; c.font_style = 0;
             c.image_pixels = 0; c.image_w = 0; c.image_h = 0;
@@ -3659,6 +3640,7 @@ static inline void layout_paint_box(struct layout_box *b, struct layout_paint_bu
         c.kind = LAY_PAINT_TEXT;
         c.x = b->x; c.y = b->y; c.w = b->w; c.h = b->h;
         c.color = st->color;
+        c.dom = b->dom;
         c.text = b->text; c.text_len = b->text_len;
         c.font_size_px = st->font_size_px;
         c.font_weight = st->font_weight;
@@ -3687,6 +3669,7 @@ static inline void layout_paint_box(struct layout_box *b, struct layout_paint_bu
             u.w = b->text_len * gw;
             u.h = (st->font_size_px / 12) > 0 ? (st->font_size_px / 12) : 1;
             u.color = st->color;
+            u.dom = b->dom;
             u.text = 0; u.text_len = 0;
             u.font_size_px = 0; u.font_weight = 0; u.font_style = 0;
             u.image_pixels = 0; u.image_w = 0; u.image_h = 0;
@@ -3711,6 +3694,7 @@ static inline void layout_paint_box(struct layout_box *b, struct layout_paint_bu
             img.kind = LAY_PAINT_IMAGE;
             img.x = b->x; img.y = b->y; img.w = b->w; img.h = b->h;
             img.color = 0;
+            img.dom = b->dom;
             img.text = 0; img.text_len = 0;
             img.font_size_px = 0; img.font_weight = 0; img.font_style = 0;
             img.image_pixels = b->replaced_pixels;
@@ -3722,6 +3706,7 @@ static inline void layout_paint_box(struct layout_box *b, struct layout_paint_bu
             c.kind = LAY_PAINT_RECT;
             c.x = b->x; c.y = b->y; c.w = b->w; c.h = b->h;
             c.color = 0xFFE0E0E0u;     /* light grey */
+            c.dom = b->dom;
             c.text = 0; c.text_len = 0;
             c.font_size_px = 0; c.font_weight = 0; c.font_style = 0;
             c.image_pixels = 0; c.image_w = 0; c.image_h = 0;
@@ -3732,6 +3717,7 @@ static inline void layout_paint_box(struct layout_box *b, struct layout_paint_bu
                 t.x = b->x + 2; t.y = b->y + 2;
                 t.w = b->w - 4; t.h = b->h - 4;
                 t.color = 0xFF606060u;
+                t.dom = b->dom;
                 t.text = b->replaced_alt;
                 t.text_len = lay_strlen(b->replaced_alt);
                 t.font_size_px = st ? st->font_size_px : LAYOUT_BASE_FONT_PX;

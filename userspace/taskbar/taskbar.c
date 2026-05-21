@@ -1,26 +1,39 @@
 /*
- * userspace/taskbar/taskbar.c — milestone-47 desktop shell taskbar.
+ * userspace/taskbar/taskbar.c — milestone-47 desktop shell taskbar,
+ * ported to /srv/wm in chapter 108d.
  *
  * A `screen_w x 28` borderless always-on-top window pinned to the
- * bottom of the framebuffer.  Polls SYS_GUI_LIST_WINDOWS every
- * ~150 ms and renders one cell per other window.  Click on a cell
+ * bottom of the framebuffer.  Polls wm_list_windows every ~150 ms
+ * and renders one cell per other wsd window.  Click on a cell
  * raises that window.  Click on its own area is ignored.
  *
- * Screen dimensions are queried at startup via SYS_GUI_GET_SCREEN_
- * SIZE so the bar correctly stretches the full width and pins to
- * the bottom no matter what scanout resolution the kernel
- * negotiated with virtio-gpu (1280x800, 1920x1080, etc).
+ * Screen dimensions are queried at startup via gui_get_screen_size
+ * (still a kernel-side syscall; it just reads scanout dims).
+ * The bar correctly stretches the full width and pins to the
+ * bottom no matter what scanout resolution the kernel negotiated
+ * with virtio-gpu (1280x800, 1920x1080, etc).
  *
  * The taskbar deliberately does NOT show itself in the cell list
  * (that would be reflexive and visually noisy) and does NOT show
  * any other ALWAYS_ON_TOP windows (taskbars don't list taskbars).
  *
- * Self-cells would also create a feedback loop where the user could
- * "raise" the taskbar, which is meaningless — pinned windows are
- * always on top by definition.
+ * Chapter 108d port notes:
+ *   - wsd owns the per-window FB and compose; wmclient maps the
+ *     FB into our AS so paint primitives stay in-process.
+ *   - wm_create_window_at puts us at (0, scanout_h - BAR_H) without
+ *     perturbing the cascade for cascade-positioned apps.
+ *   - wm_list_windows returns wsd's window table including titles
+ *     so we don't need a separate per-window title RPC.
+ *   - Focus / minimize state wasn't tracked in chapter 108d,
+ *     so cells rendered as plain non-focused entries there.
+ *     chapter 108e moved input/focus routing into wsd and
+ *     finished the click-to-raise path.
  */
 #include "../libc/syscall.h"
 #include "../libc/time.h"
+#include "../libc/printf.h"
+#include "../libgui/draw.h"
+#include "../libgui/wmclient.h"
 
 /* Filled in by main() at startup via gui_get_screen_size().  Used
  * to compute BAR width, BAR Y position, and the right-aligned
@@ -38,12 +51,21 @@ static int32_t g_clock_x = 1280 - 80 - 8;
 #define CELL_GAP        6
 #define CELL_PADX       8
 
+/* Start button geometry.  Sits leftmost on the bar; cell strip
+ * starts after it.  Width matches the "Start" label (~5 chars *
+ * 8 px) with generous padding for an easy click target. */
+#define START_BTN_X     8
+#define START_BTN_Y     4
+#define START_BTN_W     60
+#define START_BTN_H     (BAR_H - 8)
+#define START_BTN_LABEL "Start"
+/* Where cells begin: clear of the start button + a small gap. */
+#define CELLS_X0        (START_BTN_X + START_BTN_W + 8)
+
 #define BG_BGRA         GUI_BGRA(0x18, 0x1C, 0x32)
 #define BG_HI_BGRA      GUI_BGRA(0x22, 0x28, 0x42)
 #define CELL_BGRA       GUI_BGRA(0x30, 0x40, 0x70)
 #define CELL_FOCUS_BGRA GUI_BGRA(0x60, 0x90, 0xE0)
-/* Milestone 51: a minimized window's cell is dimmed so the user
- * can tell at a glance that the window exists but is hidden. */
 #define CELL_MIN_BGRA   GUI_BGRA(0x18, 0x20, 0x38)
 #define CELL_BORDER     GUI_BGRA(0x60, 0x80, 0xC0)
 #define CELL_MIN_BORDER GUI_BGRA(0x40, 0x50, 0x78)
@@ -52,14 +74,19 @@ static int32_t g_clock_x = 1280 - 80 - 8;
 #define TOP_LINE_BGRA   GUI_BGRA(0x60, 0x80, 0xC0)
 #define CLOCK_BG_BGRA   GUI_BGRA(0x10, 0x14, 0x24)
 #define CLOCK_FG_BGRA   GUI_BGRA(0xC0, 0xE0, 0xFF)
+/* Start button palette.  Pressed = the launcher panel is
+ * currently visible; idle = the launcher is hidden.  Hover
+ * lights up either state on cursor enter (lazy: we only
+ * recolour on click since the taskbar doesn't poll cursor
+ * position between WM_LIST ticks). */
+#define START_BG_IDLE    GUI_BGRA(0x30, 0x60, 0x30)
+#define START_BG_ACTIVE  GUI_BGRA(0x60, 0xB0, 0x60)
+#define START_BORDER     GUI_BGRA(0x80, 0xC0, 0x80)
+#define START_FG_BGRA    GUI_BGRA(0xF0, 0xF0, 0xF0)
 
 #define GLYPH_W   8
 #define GLYPH_H   16
 
-/* The clock occupies the rightmost CLOCK_W pixels of the bar.  Plus
- * a CLOCK_PAD pixel gap from the right edge.  HH:MM:SS = 8 glyphs =
- * 64 px, plus ~16 px padding on each side = 96 px total.  X is
- * computed at runtime once g_screen_w is known. */
 #define CLOCK_PAD     8
 #define CLOCK_W       80
 #define CLOCK_X       (g_clock_x)
@@ -68,75 +95,105 @@ static int32_t g_clock_x = 1280 - 80 - 8;
 
 #define MAX_WINDOWS  16
 
-static int g_self_id = -1;
+static struct wm_window g_win;
 
-/* A small cache of cells from the last frame.  Used by the click
- * handler to map (x, y) back to a window id without re-querying.
- * `focused` and `minimized` mirror what was in gui_window_info
- * the last time we rendered, so the click handler can pick the
- * right verb (minimize/restore/raise) without another syscall. */
-struct cell {
-    int      win_id;
-    int32_t  x, y, w, h;
-    int      focused;
-    int      minimized;
+/* chapter 108e — per-cell state captured at last render so
+ * the click handler can resolve "the user clicked at x="
+ * back to a win_id WITHOUT re-listing (the list could have
+ * changed between the click arriving and our handling it,
+ * and the user clicked at THESE pixels, not at the future
+ * pixels).  Also lets needs_redraw() detect a minimize-state
+ * flip on an unchanged window count. */
+struct cell_record {
+    uint32_t win_id;
+    int      minimized;   /* 0/1 — also tells us which style to use */
 };
-static struct cell g_cells[MAX_WINDOWS];
-static int         g_n_cells = 0;
+static struct cell_record g_cells[MAX_WINDOWS];
+static int g_cell_count = 0;
+
+/* Cached launcher window state, refreshed each WM_LIST tick.
+ * Used by the Start button: click toggles between minimize
+ * (if visible) and restore (if hidden).  win_id == 0 means
+ * "launcher not yet visible in WM_LIST" — Start button greys
+ * out in that case rather than firing a no-op RPC. */
+static uint32_t g_launcher_id        = 0;
+static int      g_launcher_minimized = 0;
 
 /* ---------------- helpers ---------------- */
 
-/* (unused for now — we truncate by glyph count instead of measuring
- * the string length.  Kept around for the M48 follow-up that adds a
- * right-aligned clock.) */
 __attribute__((unused))
 static size_t s_strlen(const char *s) { size_t n = 0; while (s[n]) n++; return n; }
 
+static int s_eq(const char *a, const char *b)
+{
+    while (*a && *b) { if (*a++ != *b++) return 0; }
+    return *a == *b;
+}
+
 /* ---------------- rendering ---------------- */
 
-static void draw_cell(int idx, const struct gui_window_info *info)
+static void draw_start_button(void)
 {
-    struct cell *c = &g_cells[idx];
-    int x = CELL_PADX + idx * (CELL_W + CELL_GAP);
+    /* Pressed-in look when the launcher panel is currently
+     * visible -- the same affordance as a Start button on
+     * Windows.  Greys out (idle palette) when the launcher
+     * doesn't exist yet (g_launcher_id == 0). */
+    int pressed = (g_launcher_id != 0) && !g_launcher_minimized;
+    uint32_t fill = pressed ? START_BG_ACTIVE : START_BG_IDLE;
+    draw_fill_rect(&g_win.fb, START_BTN_X, START_BTN_Y,
+                   START_BTN_W, START_BTN_H, fill);
+    draw_hline(&g_win.fb, START_BTN_X, START_BTN_Y,
+               START_BTN_W, START_BORDER);
+    draw_hline(&g_win.fb, START_BTN_X, START_BTN_Y + START_BTN_H - 1,
+               START_BTN_W, START_BORDER);
+    draw_vline(&g_win.fb, START_BTN_X, START_BTN_Y,
+               START_BTN_H, START_BORDER);
+    draw_vline(&g_win.fb, START_BTN_X + START_BTN_W - 1, START_BTN_Y,
+               START_BTN_H, START_BORDER);
+    int tw = draw_measure_text(START_BTN_LABEL);
+    int tx = START_BTN_X + (START_BTN_W - tw) / 2;
+    int ty = START_BTN_Y + (START_BTN_H - GLYPH_H) / 2;
+    draw_text(&g_win.fb, tx, ty, START_BTN_LABEL,
+              START_FG_BGRA, fill, 0);
+}
+
+static int point_in_start_button(int cx, int cy)
+{
+    return cx >= START_BTN_X && cx < START_BTN_X + START_BTN_W
+        && cy >= START_BTN_Y && cy < START_BTN_Y + START_BTN_H;
+}
+
+static void draw_cell(int idx, const struct wm_win_desc *info)
+{
+    int x = CELLS_X0 + idx * (CELL_W + CELL_GAP);
     int y = 4;
     int w = CELL_W;
     int h = BAR_H - 8;
-    int minimized = (info->flags & GUI_WIN_FLAG_MINIMIZED) ? 1 : 0;
-    c->win_id    = info->id;
-    c->x = x; c->y = y; c->w = w; c->h = h;
-    c->focused   = info->focused;
-    c->minimized = minimized;
+    /* chapter 108e — when a window is minimized, draw its
+     * cell in the dim CELL_MIN_* palette so the user can
+     * see at a glance which apps are hidden and which are
+     * visible.  The cell is still clickable; clicking a
+     * minimized cell sends WM_WIN_RESTORE to wsd. */
+    int is_min = (info->flags & GUI_WIN_FLAG_MINIMIZED) != 0;
+    uint32_t fill   = is_min ? CELL_MIN_BGRA   : CELL_BGRA;
+    uint32_t border = is_min ? CELL_MIN_BORDER : CELL_BORDER;
+    uint32_t fg     = is_min ? TEXT_MIN_BGRA   : TEXT_BGRA;
 
-    /* Pick body, border, and text colours.  Minimized wins over
-     * focused: a window can't be both hidden AND have keyboard
-     * focus (the WM transfers focus on minimize), but we'd rather
-     * fail safely if the kernel ever returns that combination. */
-    uint32_t fill   = info->focused ? CELL_FOCUS_BGRA : CELL_BGRA;
-    uint32_t border = CELL_BORDER;
-    uint32_t fg     = TEXT_BGRA;
-    if (minimized) {
-        fill   = CELL_MIN_BGRA;
-        border = CELL_MIN_BORDER;
-        fg     = TEXT_MIN_BGRA;
-    }
-    gui_fill_rect(g_self_id, x, y, w, h, fill);
-    gui_fill_rect(g_self_id, x,         y,         w, 1, border);
-    gui_fill_rect(g_self_id, x,         y + h - 1, w, 1, border);
-    gui_fill_rect(g_self_id, x,         y,         1, h, border);
-    gui_fill_rect(g_self_id, x + w - 1, y,         1, h, border);
+    draw_fill_rect(&g_win.fb, x, y, w, h, fill);
+    draw_hline(&g_win.fb, x,         y,         w, border);
+    draw_hline(&g_win.fb, x,         y + h - 1, w, border);
+    draw_vline(&g_win.fb, x,         y,         h, border);
+    draw_vline(&g_win.fb, x + w - 1, y,         h, border);
 
-    /* Truncate label to fit. Chapter 102 -- with the proportional
-     * kernel font we can't count fixed-width cells. Build the
-     * label one character at a time, measuring after each, and
-     * stop before we'd overflow the available width. */
+    /* Truncate label to fit. */
     char label[32];
     int avail_w = w - 2 * 6;
     int li = 0;
     while (li < 31 && info->title[li]) {
         label[li] = info->title[li];
         label[li + 1] = '\0';
-        if (gui_measure_text(label) > avail_w) {
-            label[li] = '\0';     /* drop this last char */
+        if (draw_measure_text(label) > avail_w) {
+            label[li] = '\0';
             break;
         }
         li++;
@@ -145,44 +202,72 @@ static void draw_cell(int idx, const struct gui_window_info *info)
 
     int tx = x + 6;
     int ty = y + (h - GLYPH_H) / 2;
-    gui_draw_text(g_self_id, tx, ty, label, fg, fill, 0);
+    draw_text(&g_win.fb, tx, ty, label, fg, fill, 0);
 }
 
-static void render(const struct gui_window_info *infos, int n)
+static void render(const struct wm_win_desc *infos, int n)
 {
     /* Background. */
-    gui_fill_rect(g_self_id, 0, 0, g_screen_w, BAR_H, BG_BGRA);
+    draw_fill_rect(&g_win.fb, 0, 0, g_screen_w, BAR_H, BG_BGRA);
     /* 1px highlight along the top edge. */
-    gui_fill_rect(g_self_id, 0, 0, g_screen_w, 1, TOP_LINE_BGRA);
+    draw_hline(&g_win.fb, 0, 0, g_screen_w, TOP_LINE_BGRA);
 
-    g_n_cells = 0;
-    for (int i = 0; i < n && g_n_cells < MAX_WINDOWS; i++) {
-        const struct gui_window_info *info = &infos[i];
-        if (info->id == g_self_id) continue;
+    /* Refresh the launcher cache BEFORE drawing the Start
+     * button so its pressed/idle state reflects the current
+     * tick. */
+    g_launcher_id = 0;
+    g_launcher_minimized = 0;
+    for (int i = 0; i < n; i++) {
+        if (s_eq(infos[i].title, "launcher")) {
+            g_launcher_id        = infos[i].win_id;
+            g_launcher_minimized =
+                (infos[i].flags & GUI_WIN_FLAG_MINIMIZED) != 0;
+            break;
+        }
+    }
+    draw_start_button();
+
+    int n_cells = 0;
+    for (int i = 0; i < n && n_cells < MAX_WINDOWS; i++) {
+        const struct wm_win_desc *info = &infos[i];
+        /* Skip ourselves and any ALWAYS_ON_TOP / PIN_TO_BOTTOM
+         * windows: taskbars don't list taskbars, and the
+         * wallpaper isn't an entry the user wants to raise.
+         * Skip empty-title windows too -- they're either the
+         * kernel-shadow input windows the wmclient owns or
+         * apps that never called wm_set_title and have nothing
+         * to label.  Skip the launcher too: the Start button
+         * to our left is its single dedicated affordance, and
+         * a second entry in the cell strip would be redundant
+         * (and visually noisy when the launcher is hidden). */
+        if (info->win_id == g_win.id) continue;
         if (info->flags & GUI_WIN_FLAG_ALWAYS_ON_TOP) continue;
         if (info->flags & GUI_WIN_FLAG_PIN_TO_BOTTOM) continue;
-        draw_cell(g_n_cells, info);
-        g_n_cells++;
+        if (info->title[0] == 0) continue;
+        if (s_eq(info->title, "launcher")) continue;
+        draw_cell(n_cells, info);
+        /* chapter 108e — remember which win_id this cell
+         * paints, so the click handler can resolve a click
+         * x-coordinate back to the right window. */
+        g_cells[n_cells].win_id    = info->win_id;
+        g_cells[n_cells].minimized =
+            (info->flags & GUI_WIN_FLAG_MINIMIZED) != 0;
+        n_cells++;
     }
+    g_cell_count = n_cells;
 
-    gui_flush(g_self_id);
+    /* One damage covering the whole bar up to the clock; the
+     * clock keeps its own damage call.  Includes the Start
+     * button (which sits at x=8). */
+    wm_window_dirty(&g_win, 0, 0, (uint32_t)g_clock_x, BAR_H);
 }
 
 /* ---------------- main loop ---------------- */
 
 static int g_known_count = -1;       /* count from last render */
-static int g_known_focus = -1;
-static int g_known_minmask = 0;      /* bitmask of minimized cell ids */
 static int g_last_clock_sec = -1;    /* last second value rendered */
 
-/* Format civil time `ct` into "HH:MM:SS" at *out (UTC).  Used by
- * the taskbar clock for a stable 8-glyph render.  Pre-chapter-95
- * this was an uptime-since-boot formatter that wrapped at 100h;
- * now it shows the wall clock the kernel read from PL031.
- *
- * UTC is deliberate for the floor — chapter 95 doesn't ship a
- * timezone story.  When `/data/timezone` lands we'll add an
- * offset before this call. */
+/* Format civil time `ct` into "HH:MM:SS" at *out (UTC). */
 static void format_clock(const struct civil_time *ct, char out[9])
 {
     static const char digits[] = "0123456789";
@@ -199,9 +284,6 @@ static void format_clock(const struct civil_time *ct, char out[9])
 
 static void draw_clock(void)
 {
-    /* Pull wall time, fall back to uptime-derived seconds if
-     * the syscall ever fails (it shouldn't — gettimeofday only
-     * returns -EFAULT on a bad pointer, and ours is on stack). */
     struct timeval tv;
     int rc = gettimeofday(&tv);
     long secs_total = (rc == 0) ? (long)tv.tv_sec
@@ -214,86 +296,76 @@ static void draw_clock(void)
     format_clock(&ct, buf);
 
     /* Body. */
-    gui_fill_rect(g_self_id, CLOCK_X, CLOCK_Y, CLOCK_W, CLOCK_H,
-                  CLOCK_BG_BGRA);
-    gui_fill_rect(g_self_id, CLOCK_X,             CLOCK_Y,
-                  CLOCK_W, 1, CELL_BORDER);
-    gui_fill_rect(g_self_id, CLOCK_X,             CLOCK_Y + CLOCK_H - 1,
-                  CLOCK_W, 1, CELL_BORDER);
-    gui_fill_rect(g_self_id, CLOCK_X,             CLOCK_Y,
-                  1,        CLOCK_H, CELL_BORDER);
-    gui_fill_rect(g_self_id, CLOCK_X + CLOCK_W - 1, CLOCK_Y,
-                  1,        CLOCK_H, CELL_BORDER);
+    draw_fill_rect(&g_win.fb, CLOCK_X, CLOCK_Y, CLOCK_W, CLOCK_H,
+                   CLOCK_BG_BGRA);
+    draw_hline(&g_win.fb, CLOCK_X,             CLOCK_Y,
+               CLOCK_W, CELL_BORDER);
+    draw_hline(&g_win.fb, CLOCK_X,             CLOCK_Y + CLOCK_H - 1,
+               CLOCK_W, CELL_BORDER);
+    draw_vline(&g_win.fb, CLOCK_X,             CLOCK_Y,
+               CLOCK_H, CELL_BORDER);
+    draw_vline(&g_win.fb, CLOCK_X + CLOCK_W - 1, CLOCK_Y,
+               CLOCK_H, CELL_BORDER);
 
-    /* Centred glyphs. Chapter 102 -- measure the formatted clock
-     * string with the proportional font instead of `8 * 8`. */
-    int tx = CLOCK_X + (CLOCK_W - gui_measure_text(buf)) / 2;
+    int tx = CLOCK_X + (CLOCK_W - draw_measure_text(buf)) / 2;
     int ty = CLOCK_Y + (CLOCK_H - GLYPH_H) / 2;
-    gui_draw_text(g_self_id, tx, ty, buf, CLOCK_FG_BGRA, CLOCK_BG_BGRA, 0);
+    draw_text(&g_win.fb, tx, ty, buf, CLOCK_FG_BGRA, CLOCK_BG_BGRA, 0);
+
+    wm_window_dirty(&g_win, (uint32_t)CLOCK_X, (uint32_t)CLOCK_Y,
+                    CLOCK_W, CLOCK_H);
 
     g_last_clock_sec = (int)secs_total;
 }
 
-static int needs_redraw(const struct gui_window_info *infos, int n)
+static int needs_redraw(const struct wm_win_desc *infos, int n)
 {
-    /* Count visible (non-self, non-pinned, non-wallpaper) entries. */
-    int visible = 0;
-    int focus_id = -1;
-    int minmask = 0;
+    /* Build the would-be cell list (filtered, in the order
+     * render() would walk them) and compare to what we last
+     * painted.  Triggers a redraw when:
+     *   - a window appeared / disappeared
+     *   - a window's minimized bit flipped (chapter 108e)
+     *   - the order changed (a raise reorders WM_LIST)
+     *   - the launcher's visibility flipped (drives the
+     *     Start button's pressed/idle look) */
+    uint32_t now_launcher_id        = 0;
+    int      now_launcher_minimized = 0;
+    struct cell_record now[MAX_WINDOWS];
+    int n_now = 0;
     for (int i = 0; i < n; i++) {
-        if (infos[i].id == g_self_id) continue;
-        if (infos[i].flags & GUI_WIN_FLAG_ALWAYS_ON_TOP) continue;
-        if (infos[i].flags & GUI_WIN_FLAG_PIN_TO_BOTTOM) continue;
-        visible++;
-        if (infos[i].focused) focus_id = infos[i].id;
-        if (infos[i].flags & GUI_WIN_FLAG_MINIMIZED) {
-            /* OR each id into a bitmask so we can detect any
-             * change in WHICH windows are minimized, not just
-             * how many.  Window ids are 0..WM_MAX_WINDOWS-1
-             * (currently 16) so they fit in a 32-bit mask. */
-            minmask |= (1 << infos[i].id);
+        const struct wm_win_desc *info = &infos[i];
+        if (s_eq(info->title, "launcher")) {
+            now_launcher_id        = info->win_id;
+            now_launcher_minimized =
+                (info->flags & GUI_WIN_FLAG_MINIMIZED) != 0;
         }
+        if (n_now >= MAX_WINDOWS) continue;
+        if (info->win_id == g_win.id) continue;
+        if (info->flags & GUI_WIN_FLAG_ALWAYS_ON_TOP) continue;
+        if (info->flags & GUI_WIN_FLAG_PIN_TO_BOTTOM) continue;
+        if (info->title[0] == 0) continue;
+        if (s_eq(info->title, "launcher")) continue;
+        now[n_now].win_id    = info->win_id;
+        now[n_now].minimized =
+            (info->flags & GUI_WIN_FLAG_MINIMIZED) != 0;
+        n_now++;
     }
-    if (visible != g_known_count ||
-        focus_id != g_known_focus ||
-        minmask  != g_known_minmask) {
-        g_known_count   = visible;
-        g_known_focus   = focus_id;
-        g_known_minmask = minmask;
+    if (now_launcher_id        != g_launcher_id ||
+        now_launcher_minimized != g_launcher_minimized) {
         return 1;
+    }
+    if (n_now != g_known_count) {
+        g_known_count = n_now;
+        return 1;
+    }
+    for (int i = 0; i < n_now; i++) {
+        if (now[i].win_id    != g_cells[i].win_id)    return 1;
+        if (now[i].minimized != g_cells[i].minimized) return 1;
     }
     return 0;
 }
 
-static void handle_click(int cx, int cy)
-{
-    for (int i = 0; i < g_n_cells; i++) {
-        struct cell *c = &g_cells[i];
-        if (cx < c->x || cx >= c->x + c->w) continue;
-        if (cy < c->y || cy >= c->y + c->h) continue;
-        /* Tri-state behaviour matching common desktop conventions:
-         *   - focused, not minimized → minimize (hide it).
-         *   - minimized            → restore + raise + focus.
-         *   - background, visible  → raise + focus (no toggle).
-         * Restore is done via gui_raise_window which now auto-
-         * unhides as a side effect; that keeps the taskbar code
-         * to one syscall per click in the common path. */
-        if (c->minimized) {
-            gui_raise_window(c->win_id);
-        } else if (c->focused) {
-            gui_set_minimized(c->win_id, 1);
-        } else {
-            gui_raise_window(c->win_id);
-        }
-        return;
-    }
-}
-
 int main(void)
 {
-    /* Discover screen size before creating the bar window so we
-     * stretch the full width and sit flush against the bottom
-     * regardless of the framebuffer's actual resolution. */
     uint32_t sw = 0, sh = 0;
     if (gui_get_screen_size(&sw, &sh) == 0 && sw > 0 && sh > 0) {
         g_screen_w = sw;
@@ -302,82 +374,104 @@ int main(void)
     g_bar_y  = (int32_t)g_screen_h - BAR_H;
     g_clock_x = (int32_t)g_screen_w - CLOCK_W - CLOCK_PAD;
 
-    g_self_id = gui_create_window_ex(
-        g_screen_w, BAR_H, "taskbar",
-        GUI_WIN_FLAG_NO_DECORATION | GUI_WIN_FLAG_ALWAYS_ON_TOP,
-        BAR_X, g_bar_y);
-    if (g_self_id < 0) {
-        write(1, "[taskbar] gui_create_window_ex failed\n", 39);
+    if (wm_create_window_at(g_screen_w, BAR_H,
+                            GUI_WIN_FLAG_NO_DECORATION
+                            | GUI_WIN_FLAG_ALWAYS_ON_TOP,
+                            (uint32_t)BAR_X, (uint32_t)g_bar_y,
+                            "taskbar", &g_win) < 0) {
+        write(1, "[taskbar] wm_create_window_at failed\n", 37);
         return 1;
     }
+    /* wm_create_window_at already published the title to wsd
+     * (since we passed it in the create call), so taskbar
+     * cells from other apps will see us in WM_LIST -- which
+     * is fine, taskbar's own render filter (see render())
+     * skips self by win_id. */
 
     /* Initial paint with empty list. */
-    gui_fill_rect(g_self_id, 0, 0, g_screen_w, BAR_H, BG_BGRA);
-    gui_fill_rect(g_self_id, 0, 0, g_screen_w, 1, TOP_LINE_BGRA);
+    draw_fill_rect(&g_win.fb, 0, 0, g_screen_w, BAR_H, BG_BGRA);
+    draw_hline(&g_win.fb, 0, 0, g_screen_w, TOP_LINE_BGRA);
     draw_clock();
-    gui_flush(g_self_id);
+    wm_window_dirty(&g_win, 0, 0, (uint32_t)g_clock_x, BAR_H);
 
-    struct gui_window_info infos[16];
+    struct wm_win_desc infos[MAX_WINDOWS];
 
     for (;;) {
-        /* Drain events FIRST so the cell snapshot from the previous
-         * render still reflects what the user clicked on.  If we
-         * called list_windows before draining, the click that just
-         * arrived would have already moved focus to the taskbar
-         * itself (the WM focuses any clicked window on left-down),
-         * making the freshly-rendered cell think the launched
-         * window had lost focus.  That broke the milestone-51
-         * "click-focused-cell-to-minimize" toggle: handle_click
-         * would see c->focused == 0 and fall through to a no-op
-         * raise instead of calling gui_set_minimized. */
-        struct gui_event ev;
-        int saw_event = 0;
-        while (gui_poll_event(&ev)) {
-            saw_event = 1;
-            if (ev.type == GUI_EVENT_KEY && ev.arg0 == 27) {
-                gui_destroy_window(g_self_id);
-                return 0;
-            }
-            if (ev.type == GUI_EVENT_CLOSE) {
-                gui_destroy_window(g_self_id);
-                return 0;
-            }
-            if (ev.type == GUI_EVENT_MOUSE_DOWN &&
-                (ev.arg2 & GUI_BTN_LEFT)) {
-                handle_click((int)ev.arg0, (int)ev.arg1);
-                /* After raise/minimize the window list will report
-                 * a different focused/minimized id, so force a
-                 * redraw next iteration. */
-                g_known_count = -1;
-            }
-        }
-
-        int n = gui_list_windows(infos, 16);
+        int n = wm_list_windows(infos, MAX_WINDOWS);
         if (n < 0) n = 0;
         int redraw = needs_redraw(infos, n);
         if (redraw) {
             render(infos, n);
         }
 
-        /* Tick the clock once per WALL-clock second.  If we
-         * redraw cells we also have to redraw the clock since
-         * render() repaints everything except the clock area.
-         *
-         * The comparison source MUST match what draw_clock
-         * stores into g_last_clock_sec — wall-clock seconds
-         * since chapter 95.  Using uptime here (as we did
-         * pre-95) would never match the wall-clock value
-         * draw_clock writes, so the clock would repaint every
-         * poll iteration. */
+        /* Tick the clock once per WALL-clock second. */
         struct timeval tv_tick;
         long secs = (gettimeofday(&tv_tick) == 0)
                   ? (long)tv_tick.tv_sec
                   : (long)(uptime_ms() / 1000ul);
         if (redraw || (int)secs != g_last_clock_sec) {
             draw_clock();
-            gui_flush(g_self_id);
         }
 
-        if (!saw_event) sleep_ms(150);
+        /* chapter 108e — drain whatever pointer events the
+         * kernel shadow has queued for us since the last
+         * tick.  A MOUSE_DOWN with LEFT inside one of our
+         * cells maps back to that cell's win_id (captured at
+         * paint time in g_cells[]) and we ship a
+         * WM_WIN_RESTORE.  wsd treats restore on an already-
+         * visible window as a no-op, so a click on a non-
+         * minimized cell is harmless (and gives the user a
+         * "click to raise" affordance basically for free,
+         * even though wsd's restore handler also calls
+         * z_raise + gui_raise_window). */
+        struct gui_event ev;
+        while (wm_poll_event(&ev) > 0) {
+            if (ev.type != GUI_EVENT_MOUSE_DOWN) continue;
+            if (!(ev.arg2 & GUI_BTN_LEFT))       continue;
+            int cx = (int)ev.arg0;
+            int cy = (int)ev.arg1;
+
+            /* Start button takes priority over the cell strip
+             * (it sits to the left of where cells begin, so a
+             * cell hit is impossible inside its rect, but
+             * checking it first keeps the dispatch ordering
+             * explicit).  Click toggles the launcher between
+             * visible and hidden; if the launcher hasn't yet
+             * registered with wsd (g_launcher_id == 0), the
+             * click is a no-op rather than a wild-pointer RPC. */
+            if (point_in_start_button(cx, cy)) {
+                if (g_launcher_id == 0) {
+                    printf("[taskbar] start click but launcher "
+                           "not yet in WM_LIST\n");
+                    continue;
+                }
+                if (g_launcher_minimized) {
+                    printf("[taskbar] start -> show launcher "
+                           "win_id=%u\n", (unsigned)g_launcher_id);
+                    (void)wm_window_restore_id(g_launcher_id);
+                } else {
+                    printf("[taskbar] start -> hide launcher "
+                           "win_id=%u\n", (unsigned)g_launcher_id);
+                    (void)wm_window_minimize_id(g_launcher_id);
+                }
+                continue;
+            }
+
+            /* Clicks outside the cell strip (e.g. on the
+             * clock) are ignored. */
+            if (cy < 4 || cy >= BAR_H - 4) continue;
+            if (cx < CELLS_X0)             continue;
+            int idx = (cx - CELLS_X0) / (CELL_W + CELL_GAP);
+            if (idx < 0 || idx >= g_cell_count) continue;
+            int cell_x0 = CELLS_X0 + idx * (CELL_W + CELL_GAP);
+            if (cx >= cell_x0 + CELL_W)    continue;   /* hit the gap */
+            uint32_t target = g_cells[idx].win_id;
+            if (target == 0 || target == g_win.id) continue;
+            printf("[taskbar] cell %d clicked -> restore win_id=%u\n",
+                   idx, (unsigned)target);
+            (void)wm_window_restore_id(target);
+        }
+
+        sleep_ms(150);
     }
 }

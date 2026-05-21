@@ -1,23 +1,34 @@
 #!/usr/bin/env python3
-"""scripts/test_minimize.py — milestone-51 smoke test.
+"""scripts/test_minimize.py — wsd minimize/restore regression
+test, originally chapter 108e.
 
-Boots fully headless.  Verifies the new "minimize / restore"
-plumbing end-to-end:
+Exercises the userspace (wsd-side) minimize / restore plumbing:
 
-  1. The auto-spawned launcher window is visible after boot.
-  2. Clicking the launcher's title-bar minimize button (the new
-     grey "_" button immediately left of the red close X) hides
-     it: the launcher's body pixels become wallpaper pixels.
-  3. The launcher's taskbar cell is still present (minimize !=
-     destroy) and rendered DIM (CELL_MIN_BGRA = 0x18,0x20,0x38).
-  4. Clicking the dim taskbar cell restores the launcher: body
-     pixels become white again.
-  5. With launcher restored AND focused, clicking its taskbar
-     cell minimizes it again (focused-cell -> minimize toggle).
+  1. Boot to desktop.  Summon the launcher via the Start
+     button (the launcher itself is NO_DECORATION and so does
+     NOT exercise the title-bar minimize button; we use it
+     just to spawn notepad).
+  2. Click the launcher's "notepad" button.  Notepad is a
+     decorated window at the wsd cascade origin (100, 100),
+     720x440, with the wsd-painted 24-px title bar.
+  3. Click notepad's title-bar minimize button.  wsd flips
+     `hidden=1`, drops kernel-WM focus via gui_set_minimized,
+     and full-recomposes.  Notepad's body pixels become
+     wallpaper pixels.
+  4. The taskbar (which polls WM_LIST every 150 ms) sees the
+     new GUI_WIN_FLAG_MINIMIZED bit and re-renders the
+     "notepad" cell in the dim CELL_MIN_BGRA palette.
+  5. Click the dim taskbar cell.  Taskbar maps the click x
+     back to a cell index, looks up the win_id stashed at
+     paint time, and sends WM_WIN_RESTORE.  wsd clears
+     `hidden`, re-raises, and full-recomposes; notepad body
+     pixels return.
 
-We exercise both the title-bar minimize button (kernel WM path)
-and the taskbar's tri-state click handler (userspace + kernel
-SYS_GUI_SET_MINIMIZED + SYS_GUI_RAISE_WINDOW auto-restore).
+History note: prior to the Start-menu rewrite of the launcher
+this test drove the launcher's own title-bar minimize button.
+The launcher no longer has a title bar (NO_DECORATION) so we
+moved the test to notepad, which still has decorations and so
+still exercises the exact wsd code path the test cares about.
 """
 import json, os, select, socket, subprocess, sys, time
 
@@ -29,30 +40,73 @@ DUMP_PATH   = "/tmp/osdev-fb-min.ppm"
 FB_W = 1280
 FB_H = 800
 
-# Launcher window geometry — known from userspace/launcher/launcher.c
-# and the WM's first-cascade slot.
-LAUNCHER_X, LAUNCHER_Y = 80, 60
-LAUNCHER_W, LAUNCHER_H = 240, 180
-WM_TITLE_H              = 24
-WM_BORDER               = 1
-WM_CLOSE_BTN_W          = 20
-WM_MIN_BTN_W            = 20
-WM_BTN_GAP              = 2
+# Taskbar / Start button (must match userspace/taskbar/taskbar.c).
+TASKBAR_H          = 28
+START_BTN_X        = 8
+START_BTN_Y_OFFSET = 4
+START_BTN_W        = 60
+START_BTN_H        = TASKBAR_H - 8
 
-# A pixel deep inside the launcher's content body (white BG).
-BODY_SX, BODY_SY = 200, 90
+# Launcher panel: NO_DECORATION, 240x232, pinned just above
+# the taskbar at x = 0.
+LAUNCHER_W, LAUNCHER_H = 240, 232
+LAUNCHER_X             = 0
+LAUNCHER_Y             = FB_H - TASKBAR_H - LAUNCHER_H
 
-# Title-bar minimize-button center.
-DECO_W = LAUNCHER_W + 2 * WM_BORDER
-MIN_BTN_X0 = LAUNCHER_X + DECO_W - WM_CLOSE_BTN_W - 2 - WM_BTN_GAP - WM_MIN_BTN_W
-MIN_BTN_CX = MIN_BTN_X0 + WM_MIN_BTN_W // 2     # = 288
-MIN_BTN_CY = LAUNCHER_Y + 2 + (WM_TITLE_H - 4) // 2  # = 72
+# Launcher button layout (userspace/launcher/launcher.c):
+#   BTN_TOP = 16, button h = 36, gap = 8.
+# Button 0: y = 16, button 1: y = 60, button 2: y = 104, ...
+# Order is: gui_term, paint, notepad, browser  (button index 2).
+LAUNCHER_BTN_TOP  = 16
+LAUNCHER_BTN_H    = 36
+LAUNCHER_BTN_GAP  = 8
+LAUNCHER_NOTEPAD_IDX = 2
+NOTEPAD_BTN_CX = LAUNCHER_X + LAUNCHER_W // 2
+NOTEPAD_BTN_CY = (LAUNCHER_Y + LAUNCHER_BTN_TOP
+                  + LAUNCHER_NOTEPAD_IDX *
+                    (LAUNCHER_BTN_H + LAUNCHER_BTN_GAP)
+                  + LAUNCHER_BTN_H // 2)
 
-# Taskbar cell-0 center: cell at x=8, y=4 inside a bar that sits at
-# y = FB_H - 28 = 772.  Cell is 180x20 → center (8+90, 776+10) =
-# (98, 786).
-TASKBAR_CELL0_CX = 98
-TASKBAR_CELL0_CY = 786
+# Notepad window geometry — userspace/notepad/notepad.c
+# (WIN_W/WIN_H) at wsd cascade base (WM_CASCADE_BASE_X/Y).
+NOTEPAD_X, NOTEPAD_Y = 100, 100
+NOTEPAD_W, NOTEPAD_H = 720, 440
+
+# wsd decoration constants — userspace/wsd/wsd.c.
+WSD_TITLE_H     = 24
+WSD_CLOSE_BTN_W = 20
+WSD_MIN_BTN_W   = 20
+WSD_BTN_GAP     = 2
+WSD_BTN_INSET   = 2
+
+# Close button: cb_x = bar_x + bar_w - WSD_CLOSE_BTN_W - WSD_BTN_INSET.
+# Minimize button: mb_x = cb_x - WSD_BTN_GAP - WSD_MIN_BTN_W.
+_CB_X = NOTEPAD_X + NOTEPAD_W - WSD_CLOSE_BTN_W - WSD_BTN_INSET
+_MB_X = _CB_X - WSD_BTN_GAP - WSD_MIN_BTN_W
+MIN_BTN_CX = _MB_X + WSD_MIN_BTN_W // 2
+MIN_BTN_CY = NOTEPAD_Y + WSD_BTN_INSET + (WSD_TITLE_H - 2 * WSD_BTN_INSET) // 2
+
+# Body sample — well below notepad's title bar, inside the
+# warm off-white background.  Avoid the status bar at the
+# bottom (STATUS_H ~ 20).
+BODY_SX = NOTEPAD_X + 60
+BODY_SY = NOTEPAD_Y + WSD_TITLE_H + 100
+
+# Notepad BG_BGRA = GUI_BGRA(0xF8, 0xF8, 0xF0) = warm off-white.
+NOTEPAD_BG_RGB = (0xF8, 0xF8, 0xF0)
+
+# Taskbar cells start at CELLS_X0 = 8 + 60 + 8 = 76.  Cell 0
+# width 180, so cx range [76, 256].  Sample well right of the
+# "notepad" label so we land on plain cell fill, not text.
+CELLS_X0             = 76
+TASKBAR_CELL0_CX     = CELLS_X0 + 12          # near label, still clickable
+TASKBAR_CELL0_CY     = FB_H - TASKBAR_H + 14  # bar_y + 14
+TASKBAR_CELL_FILL_SX = CELLS_X0 + 160         # right edge, plain fill
+TASKBAR_CELL_FILL_SY = TASKBAR_CELL0_CY
+
+# Taskbar palette — userspace/taskbar/taskbar.c.
+CELL_MIN_RGB    = (0x18, 0x20, 0x38)
+CELL_NORMAL_RGB = (0x30, 0x40, 0x70)
 
 ABS_MAX = 0x7FFF
 
@@ -122,6 +176,11 @@ def left_click(qmp, x, y):
     qsend(qmp, {"execute": "input-send-event", "arguments": {"events": [
         {"type": "btn", "data": {"down": False, "button": "left"}}]}})
 
+def click_start_button(qmp):
+    cx = START_BTN_X + START_BTN_W // 2
+    cy = (FB_H - TASKBAR_H) + START_BTN_Y_OFFSET + START_BTN_H // 2
+    left_click(qmp, cx, cy)
+
 def drain(s, deadline):
     out = b""
     while time.time() < deadline:
@@ -171,9 +230,6 @@ def pixel_at(ppm, x, y):
 def near(a, b, tol=10):
     return all(abs(int(x) - int(y)) <= tol for x, y in zip(a, b))
 
-def is_whiteish(p, threshold=200):
-    return p[0] >= threshold and p[1] >= threshold and p[2] >= threshold
-
 def main():
     q = boot()
     try:
@@ -186,88 +242,79 @@ def main():
             print("FAIL: shell prompt not reached")
             print(boot_log[-1500:].decode("ascii", "replace"))
             return 1
-        if b"launching /bin/launcher" not in boot_log and \
-           b"[launcher]" not in boot_log:
-            # Best-effort: launcher still spawns even if init's banner
-            # changes.  We'll detect it via screendump in a moment.
-            pass
         print("PASS: shell prompt reached")
+        time.sleep(0.6)
 
-        time.sleep(0.6)     # let launcher + taskbar render
+        # Step 1: summon the launcher via Start, then click its
+        # "notepad" button to spawn the decorated window we'll
+        # actually test against.
+        click_start_button(qmp)
+        wait_for(ser, b"[taskbar] start -> show launcher", 3.0)
+        time.sleep(0.35)
+        left_click(qmp, NOTEPAD_BTN_CX, NOTEPAD_BTN_CY)
+        wait_for(ser, b"[wm] window created", 5.0)
+        time.sleep(0.8)
+
         screendump(qmp, DUMP_PATH)
         ppm = read_ppm(DUMP_PATH)
 
-        # Step 1: launcher visible.
+        # Notepad must be visible (BG pixel = warm off-white).
         body0 = pixel_at(ppm, BODY_SX, BODY_SY)
-        if not is_whiteish(body0):
-            print(f"FAIL: launcher BG not white at boot — "
-                  f"({BODY_SX},{BODY_SY}) = {body0}")
+        if not near(body0, NOTEPAD_BG_RGB, tol=15):
+            print(f"FAIL: notepad BG not visible after spawn — "
+                  f"({BODY_SX},{BODY_SY}) = {body0}, "
+                  f"expected ~{NOTEPAD_BG_RGB}")
             return 1
-        print(f"PASS: launcher visible at boot (body = {body0})")
+        print(f"PASS: notepad visible after spawn (body = {body0})")
 
-        # Step 2: click the title-bar minimize button.
-        print(f"  clicking minimize button at ({MIN_BTN_CX}, {MIN_BTN_CY})")
+        # Step 2: click notepad's title-bar minimize button.
+        print(f"  clicking minimize button at "
+              f"({MIN_BTN_CX}, {MIN_BTN_CY})")
         left_click(qmp, MIN_BTN_CX, MIN_BTN_CY)
-        time.sleep(0.4)
+        time.sleep(0.5)
         screendump(qmp, DUMP_PATH)
         ppm = read_ppm(DUMP_PATH)
         body1 = pixel_at(ppm, BODY_SX, BODY_SY)
-        if is_whiteish(body1):
-            print(f"FAIL: launcher still visible after minimize — "
+        if near(body1, NOTEPAD_BG_RGB, tol=15):
+            print(f"FAIL: notepad still visible after minimize — "
                   f"({BODY_SX},{BODY_SY}) = {body1}")
             return 1
-        print(f"PASS: minimize hid launcher (body now = {body1})")
+        print(f"PASS: minimize hid notepad body (body now = {body1})")
 
-        # Step 3: taskbar cell still there but DIM.  Sample inside
-        # cell 0 well right of the "launcher" label.
-        cell_pix = pixel_at(ppm, 170, 786)
-        # CELL_MIN_BGRA = (24, 32, 56) in RGB.
-        if not near(cell_pix, (24, 32, 56), tol=15):
+        # Step 3: taskbar cell now in dim CELL_MIN palette.
+        cell_pix = pixel_at(ppm, TASKBAR_CELL_FILL_SX, TASKBAR_CELL_FILL_SY)
+        if not near(cell_pix, CELL_MIN_RGB, tol=15):
             print(f"FAIL: minimized cell not dim — "
-                  f"(170,786) = {cell_pix}, expected ~(24,32,56)")
+                  f"({TASKBAR_CELL_FILL_SX},{TASKBAR_CELL_FILL_SY}) "
+                  f"= {cell_pix}, expected ~{CELL_MIN_RGB}")
             return 1
-        print(f"PASS: launcher cell rendered dim (pixel = {cell_pix})")
+        print(f"PASS: notepad cell rendered dim (pixel = {cell_pix})")
 
         # Step 4: click the (dim) taskbar cell to restore.
         print(f"  clicking taskbar cell at "
               f"({TASKBAR_CELL0_CX}, {TASKBAR_CELL0_CY})")
         left_click(qmp, TASKBAR_CELL0_CX, TASKBAR_CELL0_CY)
-        time.sleep(0.4)
+        time.sleep(0.6)
         screendump(qmp, DUMP_PATH)
         ppm = read_ppm(DUMP_PATH)
         body2 = pixel_at(ppm, BODY_SX, BODY_SY)
-        if not is_whiteish(body2):
-            print(f"FAIL: launcher not restored — "
-                  f"({BODY_SX},{BODY_SY}) = {body2}")
+        if not near(body2, NOTEPAD_BG_RGB, tol=15):
+            print(f"FAIL: notepad not restored — "
+                  f"({BODY_SX},{BODY_SY}) = {body2}, "
+                  f"expected ~{NOTEPAD_BG_RGB}")
             return 1
-        print(f"PASS: taskbar cell click restored launcher (body = {body2})")
+        print(f"PASS: taskbar cell click restored notepad (body = {body2})")
 
-        # Sanity: cell should now be in focused colour
-        # (CELL_FOCUS_BGRA = (96, 144, 224) in RGB).
-        cell_pix2 = pixel_at(ppm, 170, 786)
-        if not near(cell_pix2, (96, 144, 224), tol=20):
-            print(f"  note: restored cell pixel = {cell_pix2} "
-                  f"(expected near (96,144,224) for focused)")
+        # Cell should be back to the plain (non-minimized) fill.
+        cell_pix2 = pixel_at(ppm, TASKBAR_CELL_FILL_SX, TASKBAR_CELL_FILL_SY)
+        if not near(cell_pix2, CELL_NORMAL_RGB, tol=20):
+            print(f"  note: restored cell pixel = {cell_pix2}, "
+                  f"expected near {CELL_NORMAL_RGB}")
         else:
-            print(f"PASS: restored cell rendered FOCUSED "
+            print(f"PASS: restored cell back to normal "
                   f"(pixel = {cell_pix2})")
 
-        # Step 5: click the focused cell to minimize again.
-        print(f"  clicking focused cell at "
-              f"({TASKBAR_CELL0_CX}, {TASKBAR_CELL0_CY}) to minimize")
-        left_click(qmp, TASKBAR_CELL0_CX, TASKBAR_CELL0_CY)
-        time.sleep(0.4)
-        screendump(qmp, DUMP_PATH)
-        ppm = read_ppm(DUMP_PATH)
-        body3 = pixel_at(ppm, BODY_SX, BODY_SY)
-        if is_whiteish(body3):
-            print(f"FAIL: focused-cell click did not minimize — "
-                  f"({BODY_SX},{BODY_SY}) = {body3}")
-            return 1
-        print(f"PASS: focused-cell click minimized launcher "
-              f"(body = {body3})")
-
-        print("\nMILESTONE 51: ALL TESTS PASSED")
+        print("\nMINIMIZE REGRESSION: ALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

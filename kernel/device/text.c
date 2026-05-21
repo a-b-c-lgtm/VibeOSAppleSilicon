@@ -105,29 +105,15 @@ void text_draw_glyph(const struct bitmap_font *font,
     uint32_t w = font->cell_width;
     uint32_t h = font->cell_height;
 
-    /* For bitmap-kind fonts the cell is exactly the bitmap, and the
-     * "pen origin" semantics differ from TTF (no baseline). Handle
-     * both by computing a baseline from the font kind. */
-    uint32_t baseline_y;
-    if (font->kind == BITMAP_FONT_KIND_BITMAP) {
-        /* The bitmap font has no real baseline -- the bitmap is the
-         * whole cell. We pretend the baseline is the bottom edge so
-         * top_bearing == cell_height (font.c sets this) places the
-         * bitmap at (x, y..y+h-1) exactly as before. */
-        baseline_y = y + h;
-        if (!transparent_bg) {
-            /* Original behaviour: clear the whole cell first. */
-            fb_fill_rect(x, y, w, h, bg);
-        }
-    } else {
-        /* TTF: x/y from callers are the cell's top-left; the
-         * baseline is `cell_ascent_px` below the top, but we don't
-         * expose cell_ascent_px here, so derive from top_bearing of
-         * an arbitrary tall glyph. The cheaper approximation: use
-         * `cell_height - 4` as the baseline, which matches DejaVu
-         * Sans @ 16 px (ascent ~13, descent ~3). The 4 px bottom
-         * margin matches what the bitmap font used. */
-        baseline_y = y + h - 4;
+    /* Chapter 108b: there's only one font kind in the kernel now
+     * (the bitmap font).  The cell IS the bitmap, so we pretend
+     * the baseline is the bottom edge and font.c's font_get_glyph
+     * sets top_bearing = cell_height so the bitmap lands at
+     * (x, y..y+h-1) exactly as before. */
+    uint32_t baseline_y = y + h;
+    if (!transparent_bg) {
+        /* Original behaviour: clear the whole cell first. */
+        fb_fill_rect(x, y, w, h, bg);
     }
 
     blit_glyph_alpha(x, baseline_y, &gi, fg, bg, transparent_bg);

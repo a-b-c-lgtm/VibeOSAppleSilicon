@@ -22,3 +22,9 @@ build/
 *.swp
 *.swo
 *~
+
+# Chapter 112g: fetched at build time from the host system CA store
+# (see scripts/fetch_public_roots.sh).  Not committed because it is
+# large, host-specific, and changes every time the host updates its
+# root list.
+vendor/testcerts/public-roots.pem

@@ -77,6 +77,19 @@
  * note `chapter-44-css-table-layout.md` and the M64 browser
  * notes for the diagnostic trail. */
 
+/* chapter 108e follow-up #4 — one entry on an address_space's
+ * WM-window VA freelist (see address_space::wm_freelist).  The
+ * list is singly-linked, sorted by `va` ascending, with no two
+ * adjacent entries that touch (coalesced on insert).  A range
+ * holds (va, n_pages) of contiguous user VA that was once
+ * occupied by DESC_SW_WM_WINDOW descriptors and is now free
+ * for reuse by the next install. */
+struct wm_va_range {
+    struct wm_va_range *next;
+    uint64_t            va;
+    uint64_t            n_pages;
+};
+
 struct address_space {
     uint64_t  l1_pa;        /* PA of the L1 page (4 KiB)             */
     uint64_t *l1_va;        /* same page, identity-mapped VA         */
@@ -100,6 +113,25 @@ struct address_space {
      */
     struct vma *vmas;
     uint64_t    mmap_brk;
+
+    /* chapter 108e follow-up #4 — WM-window VA freelist.
+     *
+     * Without this, address_space_install_wm_window burns a
+     * fresh slab of bump-pointer VA on every call and
+     * address_space_uninstall_wm_window never gives it back.
+     * After ~50-100 resizes (each = uninstall + install for both
+     * owner and mapper) the bump pointer hits USER_MMAP_MAX and
+     * the install fails with EBUSY/-1, which propagates up as
+     * "browser body shows wallpaper" because wsd ends up with
+     * w->fb_va = 0 after a partial-success resize.
+     *
+     * The freelist holds (va, n_pages) ranges that were freed
+     * by address_space_uninstall_wm_window.  Install consults
+     * the freelist first (best-fit; split if larger) and only
+     * falls back to mmap_brk_alloc if no fit is found.  Adjacent
+     * ranges are coalesced on uninstall so a long sequence of
+     * same-size resizes can ride a single freelist node. */
+    struct wm_va_range *wm_freelist;
 
     /* Chapter 91 — reference count.
      *
@@ -226,6 +258,48 @@ uint64_t address_space_lookup_pte(const struct address_space *as,
  * ignores bits 55..58 when DESC_VALID is clear, so we get a free
  * communication channel between AS-create time and fault time. */
 #define DESC_SW_GUARD       (1ULL << 57)
+
+/* Chapter 108a — software bit 58 marks "this page is a WM window
+ * pixel buffer mapped into userspace; the WM owns the physical
+ * page and the AS must NOT pmem_free it on teardown."  Behaves
+ * like DESC_SW_PAGECACHE in spirit but has its own dedicated
+ * bit so future page-cache work doesn't accidentally route WM
+ * pages through page_cache_release.  Also: cloned address
+ * spaces (fork/COW) SKIP these mappings entirely \u2014 a child
+ * gets a fresh blank window, not a shared view of the parent's
+ * pixels, matching the chapter-108a "fork doesn't inherit
+ * mapped windows" rule. */
+#define DESC_SW_WM_WINDOW   (1ULL << 58)
+
+/* Chapter 108a \u2014 install N physical pages owned by the WM into
+ * the user range, contiguously in VA.  Each entry of
+ * `page_pas[i]` is a 4 KiB-aligned PA that came from
+ * pmem_alloc_page (or any equivalent source) and is owned by
+ * the caller for the lifetime of the mapping.
+ *
+ * On success: writes the start VA into *va_out, returns 0.  The
+ * mapping is RW from EL0, non-executable, and tagged with
+ * DESC_SW_WM_WINDOW so AS teardown skips it (the WM keeps the
+ * pages) and fork() does NOT inherit it.
+ *
+ * On failure: returns -1 with no side effects (no L3 entries
+ * installed; nothing leaked).  Failures are bump-allocator
+ * overflow or L3-allocation OOM.  Caller still owns the pages
+ * in page_pas[] and is responsible for freeing them. */
+int address_space_install_wm_window(struct address_space *as,
+                                    const uint64_t *page_pas,
+                                    uint64_t n_pages,
+                                    uint64_t *va_out);
+
+/* Chapter 108a \u2014 tear down a previously-installed WM window
+ * mapping.  Walks the N L3 entries starting at `va`, asserts each
+ * one carries DESC_SW_WM_WINDOW (returning -1 otherwise so caller
+ * notices misuse), and zeroes the descriptor.  Does NOT free the
+ * physical pages \u2014 the WM owns them.  Flushes the TLB once at
+ * the end.  Returns 0 on success, -1 if `va` doesn't name a
+ * contiguous run of WM-window descriptors. */
+int address_space_uninstall_wm_window(struct address_space *as,
+                                      uint64_t va, uint64_t n_pages);
 
 /* Activate this AS by writing TTBR0_EL1 and flushing the TLB.  If
  * `as` is NULL, restores the boot L1 (kernel-thread context). */

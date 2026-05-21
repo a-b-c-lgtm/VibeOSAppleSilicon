@@ -87,6 +87,8 @@
  */
 
 #include "save_dialog.h"
+#include "draw.h"
+#include "wmclient.h"
 #include "../libc/syscall.h"
 
 /* ---------------- sizing ---------------- */
@@ -349,9 +351,11 @@ static void dir_pop(void)
 
 /* ---------------- rendering ---------------- */
 
-static void render(int win_id, int win_w, int win_h,
+static void render(struct wm_window *win, int win_w, int win_h,
                    gui_render_cb render_under, void *ud)
 {
+    struct gui_fb *fb = &win->fb;
+
     /* 1. Underlying window. */
     if (render_under) render_under(ud);
 
@@ -359,20 +363,20 @@ static void render(int win_id, int win_w, int win_h,
     int dlg_y = (win_h - DLG_H) / 2;
 
     /* 2. Frame: 2px navy border around panel. */
-    gui_fill_rect(win_id, (uint32_t)(dlg_x - 2), (uint32_t)(dlg_y - 2),
-                  DLG_W + 4, DLG_H + 4, DLG_FRAME);
+    draw_fill_rect(fb, dlg_x - 2, dlg_y - 2,
+                   DLG_W + 4, DLG_H + 4, DLG_FRAME);
     /* Title bar. */
-    gui_fill_rect(win_id, (uint32_t)dlg_x, (uint32_t)dlg_y,
-                  DLG_W, DLG_TITLE_H, DLG_TITLE_BG);
+    draw_fill_rect(fb, dlg_x, dlg_y,
+                   DLG_W, DLG_TITLE_H, DLG_TITLE_BG);
     const char *title = (g_mode == MODE_NEW_FOLDER)
         ? "Save As - New Folder"
         : "Save As";
-    gui_draw_text(win_id, (uint32_t)(dlg_x + DLG_PAD),
-                  (uint32_t)(dlg_y + 4),
-                  title, DLG_TITLE_FG, DLG_TITLE_BG, 0);
+    draw_text(fb, dlg_x + DLG_PAD,
+              dlg_y + 4,
+              title, DLG_TITLE_FG, DLG_TITLE_BG, 0);
     /* Body background. */
-    gui_fill_rect(win_id, (uint32_t)dlg_x, (uint32_t)(dlg_y + DLG_TITLE_H),
-                  DLG_W, DLG_H - DLG_TITLE_H, DLG_BG);
+    draw_fill_rect(fb, dlg_x, dlg_y + DLG_TITLE_H,
+                   DLG_W, DLG_H - DLG_TITLE_H, DLG_BG);
 
     int y = dlg_y + DLG_TITLE_H + DLG_PAD;
 
@@ -380,8 +384,8 @@ static void render(int win_id, int win_w, int win_h,
     char where[160];
     s_copy(where, "Save in: ", sizeof(where));
     s_append(where, g_dir, sizeof(where));
-    gui_draw_text(win_id, (uint32_t)(dlg_x + DLG_PAD), (uint32_t)y,
-                  where, DLG_FG, DLG_BG, 0);
+    draw_text(fb, dlg_x + DLG_PAD, y,
+              where, DLG_FG, DLG_BG, 0);
     y += GLYPH_H + 6;
 
     /* 3. File list box. */
@@ -389,22 +393,22 @@ static void render(int win_id, int win_w, int win_h,
     int list_y = y;
     int list_w = DLG_W - 2 * DLG_PAD;
     int list_h = DLG_LIST_H + 4;
-    gui_fill_rect(win_id, (uint32_t)list_x, (uint32_t)list_y,
-                  list_w, list_h, DLG_LIST_BG);
+    draw_fill_rect(fb, list_x, list_y,
+                   list_w, list_h, DLG_LIST_BG);
     /* 1px frame around list. */
-    gui_fill_rect(win_id, (uint32_t)list_x, (uint32_t)list_y,
-                  list_w, 1, DLG_DIM);
-    gui_fill_rect(win_id, (uint32_t)list_x,
-                  (uint32_t)(list_y + list_h - 1), list_w, 1, DLG_DIM);
-    gui_fill_rect(win_id, (uint32_t)list_x, (uint32_t)list_y,
-                  1, list_h, DLG_DIM);
-    gui_fill_rect(win_id, (uint32_t)(list_x + list_w - 1),
-                  (uint32_t)list_y, 1, list_h, DLG_DIM);
+    draw_fill_rect(fb, list_x, list_y,
+                   list_w, 1, DLG_DIM);
+    draw_fill_rect(fb, list_x,
+                   list_y + list_h - 1, list_w, 1, DLG_DIM);
+    draw_fill_rect(fb, list_x, list_y,
+                   1, list_h, DLG_DIM);
+    draw_fill_rect(fb, list_x + list_w - 1,
+                   list_y, 1, list_h, DLG_DIM);
 
     if (g_count == 0) {
-        gui_draw_text(win_id, (uint32_t)(list_x + 6), (uint32_t)(list_y + 4),
-                      "(empty -- type a name below)",
-                      DLG_DIM, DLG_LIST_BG, 0);
+        draw_text(fb, list_x + 6, list_y + 4,
+                  "(empty -- type a name below)",
+                  DLG_DIM, DLG_LIST_BG, 0);
     } else {
         for (int i = 0; i < DIR_LIST_VISIBLE; i++) {
             int idx = g_top + i;
@@ -413,13 +417,13 @@ static void render(int win_id, int win_w, int win_h,
             uint32_t row_bg = DLG_LIST_BG;
             if (idx == g_sel) {
                 row_bg = DLG_SEL_BG;
-                gui_fill_rect(win_id, (uint32_t)(list_x + 1),
-                              (uint32_t)(row_y - 1),
-                              list_w - 2, GLYPH_H, DLG_SEL_BG);
+                draw_fill_rect(fb, list_x + 1,
+                               row_y - 1,
+                               list_w - 2, GLYPH_H, DLG_SEL_BG);
             }
             uint32_t row_fg = (g_kinds[idx] == ENTRY_FILE) ? DLG_FG : DLG_DIR_FG;
-            gui_draw_text(win_id, (uint32_t)(list_x + 6), (uint32_t)row_y,
-                          g_entries[idx], row_fg, row_bg, 0);
+            draw_text(fb, list_x + 6, row_y,
+                      g_entries[idx], row_fg, row_bg, 0);
             const char *suffix = NULL;
             char        sz[40];
             if (g_kinds[idx] == ENTRY_PARENT) {
@@ -434,9 +438,9 @@ static void render(int win_id, int win_w, int win_h,
             }
             /* Right-align the suffix. Chapter 102 -- measure the
              * proportional rendered width instead of `chars * 8`. */
-            int sz_x = list_x + list_w - 6 - gui_measure_text(suffix);
-            gui_draw_text(win_id, (uint32_t)sz_x, (uint32_t)row_y,
-                          suffix, DLG_DIM, row_bg, 0);
+            int sz_x = list_x + list_w - 6 - draw_measure_text(suffix);
+            draw_text(fb, sz_x, row_y,
+                      suffix, DLG_DIM, row_bg, 0);
         }
     }
     y = list_y + list_h + 12;
@@ -445,32 +449,32 @@ static void render(int win_id, int win_w, int win_h,
      * measure the label so the field x-position is independent of
      * the kernel font's glyph pitch. */
     const char *label = (g_mode == MODE_NEW_FOLDER) ? "Folder:  " : "Filename:";
-    gui_draw_text(win_id, (uint32_t)(dlg_x + DLG_PAD), (uint32_t)y,
-                  label, DLG_FG, DLG_BG, 0);
-    int field_x = dlg_x + DLG_PAD + gui_measure_text(label) + 8;
+    draw_text(fb, dlg_x + DLG_PAD, y,
+              label, DLG_FG, DLG_BG, 0);
+    int field_x = dlg_x + DLG_PAD + draw_measure_text(label) + 8;
     int field_y = y - 2;
     int field_w = DLG_W - DLG_PAD - (field_x - dlg_x);
     uint32_t fbg = (g_mode == MODE_NEW_FOLDER) ? DLG_NF_BG : DLG_FIELD_BG;
-    gui_fill_rect(win_id, (uint32_t)field_x, (uint32_t)field_y,
-                  field_w, DLG_FIELD_H, fbg);
-    gui_fill_rect(win_id, (uint32_t)field_x, (uint32_t)field_y,
-                  field_w, 1, DLG_DIM);
-    gui_fill_rect(win_id, (uint32_t)field_x,
-                  (uint32_t)(field_y + DLG_FIELD_H - 1),
-                  field_w, 1, DLG_DIM);
-    gui_fill_rect(win_id, (uint32_t)field_x, (uint32_t)field_y,
-                  1, DLG_FIELD_H, DLG_DIM);
-    gui_fill_rect(win_id, (uint32_t)(field_x + field_w - 1),
-                  (uint32_t)field_y, 1, DLG_FIELD_H, DLG_DIM);
-    gui_draw_text(win_id, (uint32_t)(field_x + 4), (uint32_t)(field_y + 3),
-                  g_field, DLG_FG, fbg, 0);
+    draw_fill_rect(fb, field_x, field_y,
+                   field_w, DLG_FIELD_H, fbg);
+    draw_fill_rect(fb, field_x, field_y,
+                   field_w, 1, DLG_DIM);
+    draw_fill_rect(fb, field_x,
+                   field_y + DLG_FIELD_H - 1,
+                   field_w, 1, DLG_DIM);
+    draw_fill_rect(fb, field_x, field_y,
+                   1, DLG_FIELD_H, DLG_DIM);
+    draw_fill_rect(fb, field_x + field_w - 1,
+                   field_y, 1, DLG_FIELD_H, DLG_DIM);
+    draw_text(fb, field_x + 4, field_y + 3,
+              g_field, DLG_FG, fbg, 0);
     /* Field cursor (block). Chapter 102 -- position via measured
      * width of the prefix up to the cursor. */
     int prefix_px = 0;
     if (g_field_cur > 0) {
         char saved = g_field[g_field_cur];
         g_field[g_field_cur] = '\0';
-        prefix_px = gui_measure_text(g_field);
+        prefix_px = draw_measure_text(g_field);
         g_field[g_field_cur] = saved;
     }
     int cur_px = field_x + 4 + prefix_px;
@@ -479,59 +483,60 @@ static void render(int win_id, int win_w, int win_h,
     int cur_w = GLYPH_W;
     if (g_field_cur < g_field_len) {
         char one[2] = { g_field[g_field_cur], '\0' };
-        int w_one = gui_measure_text(one);
+        int w_one = draw_measure_text(one);
         if (w_one > 0) cur_w = w_one;
     }
     if (cur_px < field_x + field_w - cur_w) {
-        gui_fill_rect(win_id, (uint32_t)cur_px, (uint32_t)(field_y + 3),
-                      (uint32_t)cur_w, GLYPH_H, DLG_CUR_BG);
+        draw_fill_rect(fb, cur_px, field_y + 3,
+                       (uint32_t)cur_w, GLYPH_H, DLG_CUR_BG);
         if (g_field_cur < g_field_len) {
             char one[2] = { g_field[g_field_cur], '\0' };
-            gui_draw_text(win_id, (uint32_t)cur_px, (uint32_t)(field_y + 3),
-                          one, fbg, DLG_CUR_BG, 0);
+            draw_text(fb, cur_px, field_y + 3,
+                      one, fbg, DLG_CUR_BG, 0);
         }
     }
     y = field_y + DLG_FIELD_H + 12;
 
     /* 5. Overwrite warning (only meaningful in normal save mode). */
     if (g_mode == MODE_NORMAL && find_match() >= 0) {
-        gui_draw_text(win_id, (uint32_t)(dlg_x + DLG_PAD), (uint32_t)y,
-                      "(will overwrite)", DLG_WARN_FG, DLG_BG, 0);
+        draw_text(fb, dlg_x + DLG_PAD, y,
+                  "(will overwrite)", DLG_WARN_FG, DLG_BG, 0);
     }
 
     /* 6. Hint lines at the bottom of the dialog. */
     int hint2_y = dlg_y + DLG_H - GLYPH_H - DLG_PAD;
     int hint1_y = hint2_y - GLYPH_H;
     if (g_mode == MODE_NEW_FOLDER) {
-        gui_draw_text(win_id, (uint32_t)(dlg_x + DLG_PAD), (uint32_t)hint1_y,
-                      "Type folder name, then Enter to create.",
-                      DLG_DIM, DLG_BG, 0);
-        gui_draw_text(win_id, (uint32_t)(dlg_x + DLG_PAD), (uint32_t)hint2_y,
-                      "ESC: cancel new-folder",
-                      DLG_DIM, DLG_BG, 0);
+        draw_text(fb, dlg_x + DLG_PAD, hint1_y,
+                  "Type folder name, then Enter to create.",
+                  DLG_DIM, DLG_BG, 0);
+        draw_text(fb, dlg_x + DLG_PAD, hint2_y,
+                  "ESC: cancel new-folder",
+                  DLG_DIM, DLG_BG, 0);
     } else {
-        gui_draw_text(win_id, (uint32_t)(dlg_x + DLG_PAD), (uint32_t)hint1_y,
-                      "Up/Down: pick   Enter: open dir / save",
-                      DLG_DIM, DLG_BG, 0);
-        gui_draw_text(win_id, (uint32_t)(dlg_x + DLG_PAD), (uint32_t)hint2_y,
-                      "Ctrl-N: new folder   ESC: cancel",
-                      DLG_DIM, DLG_BG, 0);
+        draw_text(fb, dlg_x + DLG_PAD, hint1_y,
+                  "Up/Down: pick   Enter: open dir / save",
+                  DLG_DIM, DLG_BG, 0);
+        draw_text(fb, dlg_x + DLG_PAD, hint2_y,
+                  "Ctrl-N: new folder   ESC: cancel",
+                  DLG_DIM, DLG_BG, 0);
     }
 
-    /* 7. Flush. */
-    gui_flush(win_id);
+    /* 7. Single whole-window damage.  Cheaper than tracking
+     * per-rect dirty regions; wsd clips internally. */
+    wm_window_dirty(win, 0, 0, (uint32_t)win_w, (uint32_t)win_h);
 }
 
 /* ---------------- public entry point ---------------- */
 
-int gui_save_dialog(int win_id,
+int gui_save_dialog(struct wm_window *win,
                     int win_w, int win_h,
                     const char *dir_prefix,
                     const char *initial_name,
                     gui_render_cb render_under, void *ud,
                     char *out_path, size_t cap)
 {
-    if (win_id < 0 || cap < 32 || !dir_prefix || !out_path) return -1;
+    if (!win || win->id == 0 || cap < 32 || !dir_prefix || !out_path) return -1;
     int n = (int)s_strlen(dir_prefix);
     if (n == 0 || n >= MAX_DIR) return -1;
     if (dir_prefix[n - 1] != '/') return -1;
@@ -556,15 +561,15 @@ int gui_save_dialog(int win_id,
         g_top = g_sel - DIR_LIST_VISIBLE + 1;
 
     /* First paint. */
-    render(win_id, win_w, win_h, render_under, ud);
+    render(win, win_w, win_h, render_under, ud);
 
     /* Modal event loop. */
     for (;;) {
         struct gui_event ev;
-        if (!gui_poll_event(&ev)) { yield(); continue; }
+        if (!wm_poll_event(&ev)) { yield(); continue; }
         if (ev.type == GUI_EVENT_CLOSE) {
             /* Window itself is closing — treat as cancel; the
-             * caller will see win_id is gone shortly. */
+             * caller will see win->id is gone shortly. */
             return 0;
         }
         if (ev.type != GUI_EVENT_KEY) continue;
@@ -722,7 +727,7 @@ int gui_save_dialog(int win_id,
         }
 
         if (dirty) {
-            render(win_id, win_w, win_h, render_under, ud);
+            render(win, win_w, win_h, render_under, ud);
         }
     }
 }

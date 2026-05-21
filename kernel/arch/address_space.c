@@ -66,6 +66,16 @@ extern uint64_t l1_pgtable[512];
  * sharing them \u2014 chapter 90 floor: mmaps do not survive fork.
  * The child can re-mmap if it wants the same content. */
 #define DESC_SW_PAGECACHE (1ULL << 56)
+/* Chapter 108a \u2014 bit 58 marks "this page is a WM window pixel
+ * buffer mapped into userspace; the WM owns it, the AS does not."
+ * Teardown SKIPS pmem-free entirely (the WM holds the pages until
+ * the window is destroyed); fork SKIPS the mapping (a child
+ * starts with no inherited window).  Symbolic name is also
+ * exposed via address_space.h so the WM can sanity-check the
+ * descriptors it installs. */
+#ifndef DESC_SW_WM_WINDOW
+#define DESC_SW_WM_WINDOW (1ULL << 58)
+#endif
 /* Chapter 101 — software-defined bit 57 marks "this is an
  * intentional guard page (invalid, no backing)."  The MMU
  * ignores software bits when DESC_VALID is clear, so the entry
@@ -109,6 +119,11 @@ struct address_space *address_space_create(void)
     /* Chapter 90 — mmap region starts empty too. */
     as->vmas     = NULL;
     as->mmap_brk = USER_MMAP_BASE;
+    /* chapter 108e follow-up #4 — WM-window VA freelist starts
+     * empty.  First install hits the bump-pointer path; only
+     * after the first uninstall does the freelist get any
+     * candidate ranges. */
+    as->wm_freelist = NULL;
     /* Chapter 91 — single owner at creation.  SYS_CLONE bumps
      * this when it spawns another thread into the same AS. */
     as->refcount = 1;
@@ -156,7 +171,16 @@ static void teardown_user_range(struct address_space *as)
             uint64_t l3_ent = l3[j];
             if ((l3_ent & DESC_VALID) == 0) continue;
             uint64_t pg_pa = l3_ent & ~0xFFFULL & ((1ULL << 48) - 1);
-            if (l3_ent & DESC_SW_PAGECACHE) {
+            if (l3_ent & DESC_SW_WM_WINDOW) {
+                /* Chapter 108a — the WM owns this page.  Drop the
+                 * descriptor but do NOT pmem-free the backing
+                 * frame; the window keeps it until destroy time
+                 * (or sys_gui_unmap_window).  AS teardown is the
+                 * normal path here when a process holding a
+                 * mapped window exits: wm_destroy_owner will run
+                 * shortly after and reclaim the pages. */
+                (void)pg_pa;
+            } else if (l3_ent & DESC_SW_PAGECACHE) {
                 page_cache_release(pg_pa);
             } else {
                 pmem_dec_and_free(pg_pa);
@@ -166,7 +190,7 @@ static void teardown_user_range(struct address_space *as)
     }
 }
 
-/* Chapter 90 \u2014 free the vma list. Page-table cleanup is handled
+/* Chapter 90 — free the vma list. Page-table cleanup is handled
  * separately by teardown_user_range; this just releases the
  * vma struct themselves. */
 static void teardown_vmas(struct address_space *as)
@@ -180,6 +204,22 @@ static void teardown_vmas(struct address_space *as)
     as->vmas = NULL;
 }
 
+/* chapter 108e follow-up #4 — free the WM-window VA freelist.
+ * Page-table cleanup is already handled by teardown_user_range
+ * (the freelist entries describe ranges that have NO L3 entries
+ * — uninstall already zeroed them).  This just releases the
+ * tracking nodes themselves. */
+static void teardown_wm_freelist(struct address_space *as)
+{
+    struct wm_va_range *r = as->wm_freelist;
+    while (r) {
+        struct wm_va_range *n = r->next;
+        kfree(r);
+        r = n;
+    }
+    as->wm_freelist = NULL;
+}
+
 void address_space_destroy(struct address_space *as)
 {
     if (!as) return;
@@ -190,6 +230,7 @@ void address_space_destroy(struct address_space *as)
     if (atomic_sub_return32(&as->refcount, 1) > 0) return;
     teardown_user_range(as);
     teardown_vmas(as);
+    teardown_wm_freelist(as);
     pmem_free_page(as->l2_pa);
     pmem_free_page(as->l1_pa);
     kfree(as);
@@ -430,6 +471,12 @@ struct address_space *address_space_clone(const struct address_space *src)
             /* Chapter 90: skip page-cache pages (mmaps don't
              * survive eager clone either). */
             if (src_ent & DESC_SW_PAGECACHE) continue;
+            /* Chapter 108a: WM window mappings are also skipped
+             * by eager clone, for the same reason
+             * address_space_clone_cow skips them \u2014 the WM owns
+             * the pages, the child should re-request its own
+             * window if it wants one. */
+            if (src_ent & DESC_SW_WM_WINDOW) continue;
 
             uint64_t va     = USER_VA_BASE
                             + ((uint64_t)i << L2_SHIFT)
@@ -540,6 +587,16 @@ struct address_space *address_space_clone_cow(struct address_space *src)
              * limit in chapter 90; future chapters will copy
              * vmas + bump page_cache refcounts. */
             if (src_ent & DESC_SW_PAGECACHE) continue;
+            /* Chapter 108a: WM window mappings are also skipped.
+             * Same reasoning: they reference physical pages owned
+             * by the kernel-side WM, not by this AS.  A child that
+             * wanted its own window would gui_create_window +
+             * gui_window_fb to get a fresh mapping; inheriting
+             * the parent's would be wrong (two processes drawing
+             * into the same physical page with no synchronisation)
+             * AND would break the WM's per-window ownership
+             * accounting (which is keyed off owner_pid). */
+            if (src_ent & DESC_SW_WM_WINDOW) continue;
 
             uint64_t va     = USER_VA_BASE
                             + ((uint64_t)i << L2_SHIFT)
@@ -986,5 +1043,262 @@ int address_space_handle_mmap_fault(struct address_space *as,
      * to the user.  No TLBI needed: the slot was previously
      * unmapped (translation fault), so no stale entry exists. */
     __asm__ volatile("dsb ishst" ::: "memory");
+    return 0;
+}
+
+/* ------------------------------------------------------------------
+ * Chapter 108a \u2014 WM-owned window mappings.
+ *
+ * The WM allocates one or more 4 KiB physical pages per window
+ * and asks the AS layer to expose them at a fresh user VA range
+ * with EL0-RW + DESC_SW_WM_WINDOW.  These mappings:
+ *   - Are eager-installed (no fault path, since the WM already
+ *     has the pages in hand).
+ *   - Are skipped by AS teardown (the WM keeps the pages until
+ *     it explicitly unmaps the window).
+ *   - Are skipped by fork() in both clone modes.
+ *   - Carry no per-page refcount and don't interact with the
+ *     page cache.
+ *
+ * Address VAs come from the same `mmap_brk` bump pointer used
+ * by sys_mmap so the two never collide.  No support for a fixed
+ * VA — caller takes whatever the bump pointer gives.
+ *
+ * chapter 108e follow-up #4 — uninstall now feeds the freed
+ * (va, n_pages) range into as->wm_freelist (sorted by va,
+ * coalesced).  Install consults the freelist FIRST for a
+ * best-fit candidate before falling back to mmap_brk_alloc.
+ * Without this, a long sequence of resizes leaks VA space
+ * (bump pointer has no reclaim) and eventually hits
+ * USER_MMAP_MAX, breaking owner reinstall during resize.
+ * ------------------------------------------------------------------ */
+
+/* Take `n_pages` of VA off the WM-window freelist.  Returns the
+ * starting VA, or 0 if no entry can satisfy the request.
+ *
+ * Strategy: best-fit (smallest range that fits) to keep large
+ * gaps available for future big windows.  When the chosen
+ * range exceeds the request, we trim from the LOW side and
+ * keep the high-side remainder on the list — this keeps the
+ * list sorted by va with minimal pointer churn. */
+static uint64_t wm_freelist_take(struct address_space *as,
+                                 uint64_t n_pages)
+{
+    struct wm_va_range *best = NULL;
+    struct wm_va_range **best_link = NULL;
+    struct wm_va_range **link = &as->wm_freelist;
+    while (*link) {
+        struct wm_va_range *r = *link;
+        if (r->n_pages >= n_pages) {
+            if (!best || r->n_pages < best->n_pages) {
+                best = r;
+                best_link = link;
+            }
+        }
+        link = &r->next;
+    }
+    if (!best) return 0;
+    uint64_t va = best->va;
+    if (best->n_pages == n_pages) {
+        /* Exact fit — unlink and free the node. */
+        *best_link = best->next;
+        kfree(best);
+    } else {
+        /* Trim from the low side; keep the high-side remainder. */
+        best->va      += n_pages * PAGE_SIZE;
+        best->n_pages -= n_pages;
+    }
+    return va;
+}
+
+/* Insert (va, n_pages) into the WM-window freelist, coalescing
+ * with adjacent entries (low-side and/or high-side neighbours).
+ * Returns 0 on success or -1 if the tracking node couldn't be
+ * allocated AND no existing entry was adjacent (so no merge
+ * could absorb the range).  On -1 the VA range is effectively
+ * lost (we don't have anywhere to track it), but the L3 entries
+ * are still zeroed by the caller — leakage of VA, not memory.
+ *
+ * Coalescing rules:
+ *   prev->va + prev->n_pages*4K == va           → merge with prev
+ *   va + n_pages*4K == next->va                 → merge with next
+ *   both                                        → merge all three
+ *   neither                                     → insert new node
+ */
+static int wm_freelist_release(struct address_space *as,
+                               uint64_t va, uint64_t n_pages)
+{
+    if (!n_pages) return 0;
+    uint64_t end_va = va + n_pages * PAGE_SIZE;
+
+    struct wm_va_range *prev = NULL;
+    struct wm_va_range *cur  = as->wm_freelist;
+    while (cur && cur->va < va) {
+        prev = cur;
+        cur  = cur->next;
+    }
+    /* `cur` is the first entry with va >= our va (or NULL).
+     * `prev` is its predecessor (or NULL if we're inserting
+     * at the head). */
+    int merge_prev = (prev && prev->va + prev->n_pages * PAGE_SIZE == va);
+    int merge_next = (cur  && end_va == cur->va);
+
+    if (merge_prev && merge_next) {
+        /* Bridge: prev absorbs us AND cur. */
+        prev->n_pages += n_pages + cur->n_pages;
+        prev->next     = cur->next;
+        kfree(cur);
+        return 0;
+    }
+    if (merge_prev) {
+        prev->n_pages += n_pages;
+        return 0;
+    }
+    if (merge_next) {
+        /* Slide cur down to start at our va. */
+        cur->va       = va;
+        cur->n_pages += n_pages;
+        return 0;
+    }
+    /* No adjacency — allocate a fresh node and link it in. */
+    struct wm_va_range *r = (struct wm_va_range *)kmalloc(sizeof(*r));
+    if (!r) return -1;
+    r->va      = va;
+    r->n_pages = n_pages;
+    r->next    = cur;
+    if (prev) prev->next     = r;
+    else      as->wm_freelist = r;
+    return 0;
+}
+
+int address_space_install_wm_window(struct address_space *as,
+                                    const uint64_t *page_pas,
+                                    uint64_t n_pages,
+                                    uint64_t *va_out)
+{
+    if (!as || !page_pas || !n_pages || !va_out) return -1;
+
+    /* Try the freelist first.  Falls through to mmap_brk_alloc
+     * if no entry is large enough (or the freelist is empty,
+     * which is the steady state for the first install in any
+     * AS).  `from_freelist` tracks the source so the rollback
+     * path below can return the range to the right pool. */
+    int from_freelist = 0;
+    uint64_t va_base = wm_freelist_take(as, n_pages);
+    if (va_base != 0) {
+        from_freelist = 1;
+    } else {
+        va_base = mmap_brk_alloc(as, n_pages);
+        if (!va_base) return -1;
+    }
+
+    /* Walk the pages and install each L3 entry.  L3 page-table
+     * pages get allocated on demand inside l3_for.  If any
+     * allocation fails we have to back out everything installed
+     * so far AND give back the VA reservation. */
+    for (uint64_t i = 0; i < n_pages; i++) {
+        uint64_t va = va_base + i * PAGE_SIZE;
+        uint64_t pa = page_pas[i];
+        if (pa & 0xFFFULL) goto rollback;       /* not page-aligned */
+        uint64_t *l3 = l3_for(as, va);
+        if (!l3) goto rollback;
+        /* Build the descriptor by hand so we can OR in
+         * DESC_SW_WM_WINDOW without going through
+         * build_user_desc (which only knows about pagecache). */
+        uint64_t desc = ATTR_NORMAL | DESC_AF | DESC_SH_INNER |
+                        DESC_AP_RW_EL0 |
+                        DESC_PXN | DESC_UXN |
+                        DESC_VALID | DESC_PAGE |
+                        (pa & ~0xFFFULL) |
+                        DESC_SW_WM_WINDOW;
+        l3[L3_INDEX(va)] = desc;
+        as->user_pages_alloced++;
+        continue;
+    rollback:
+        /* Unwind already-installed entries.  Same shape as
+         * uninstall_wm_window's inner loop but we don't TLBI
+         * here — these are fresh mappings that haven't been
+         * cached yet.  Then return the VA reservation to whichever
+         * pool we took it from. */
+        for (uint64_t k = 0; k < i; k++) {
+            uint64_t kva = va_base + k * PAGE_SIZE;
+            uint64_t *ent = l3_entry_lookup(as, kva);
+            if (ent) { *ent = 0; }
+            if (as->user_pages_alloced) as->user_pages_alloced--;
+        }
+        if (from_freelist) {
+            /* Best-effort release back to the freelist.  If the
+             * tracking-node kmalloc fails here we lose the VA
+             * range entirely — uncommon (kmalloc just succeeded
+             * for the take's potential split), and the only
+             * cost is some bump-pointer-equivalent slack. */
+            (void)wm_freelist_release(as, va_base, n_pages);
+        } else {
+            as->mmap_brk -= n_pages * PAGE_SIZE;
+        }
+        return -1;
+    }
+
+    /* Make the new descriptors visible to the MMU before user
+     * code can touch the range.  No TLBI: the VAs were unmapped
+     * a moment ago (translation fault) so there's no stale
+     * entry to invalidate. */
+    __asm__ volatile("dsb ishst" ::: "memory");
+
+    *va_out = va_base;
+    return 0;
+}
+
+int address_space_uninstall_wm_window(struct address_space *as,
+                                      uint64_t va, uint64_t n_pages)
+{
+    if (!as || !n_pages) return -1;
+    if (va & 0xFFFULL) return -1;
+
+    /* Phase 1: verify the entire run is WM-owned before touching
+     * anything.  If any descriptor is missing or doesn't carry
+     * DESC_SW_WM_WINDOW the caller is using us wrong (probably
+     * mixed up window ids); refuse rather than corrupt their
+     * AS. */
+    for (uint64_t i = 0; i < n_pages; i++) {
+        uint64_t pva = va + i * PAGE_SIZE;
+        uint64_t *ent = l3_entry_lookup(as, pva);
+        if (!ent) return -1;
+        uint64_t e = *ent;
+        if ((e & DESC_VALID) == 0) return -1;
+        if ((e & DESC_SW_WM_WINDOW) == 0) return -1;
+    }
+
+    /* Phase 2: zero each descriptor.  No pmem_free \u2014 the WM
+     * owns the pages.  No page_cache_release \u2014 these were
+     * never cache entries.  Just drop the mapping. */
+    for (uint64_t i = 0; i < n_pages; i++) {
+        uint64_t pva = va + i * PAGE_SIZE;
+        uint64_t *ent = l3_entry_lookup(as, pva);
+        if (!ent) continue;                 /* impossible per phase 1 */
+        *ent = 0;
+        if (as->user_pages_alloced) as->user_pages_alloced--;
+    }
+
+    /* Phase 3: flush stale TLB.  Unlike install, the user MAY
+     * have touched these VAs (most likely scenario: app called
+     * gui_window_fb, painted, then unmap on exit).  A local
+     * vmalle1 is sufficient on this single-CPU build. */
+    __asm__ volatile(
+        "dsb ishst       \n"
+        "tlbi vmalle1    \n"
+        "dsb ish         \n"
+        "isb             \n"
+        ::: "memory");
+
+    /* Phase 4 (chapter 108e follow-up #4) — return the VA range to
+     * the freelist so a future install can reuse it.  Without
+     * this, the bump pointer just grows monotonically and a long
+     * sequence of resize-uninstall/install cycles eventually
+     * exhausts USER_MMAP_MAX, breaking owner reinstall during
+     * sys_win_fb_resize.  Best-effort: a kmalloc failure inside
+     * release just drops the range entirely — same VA loss as
+     * the pre-fix behaviour, but only on actual OOM. */
+    (void)wm_freelist_release(as, va, n_pages);
     return 0;
 }

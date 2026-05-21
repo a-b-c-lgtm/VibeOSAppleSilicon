@@ -4,10 +4,14 @@
 Boots the system fully headless, with NO keyboard input.  Asserts:
   1. init logs that it spawned both /bin/launcher and /bin/sh
   2. the WM logs a window-create from launcher
-  3. a screendump shows the launcher window painted in the
-     upper-left of the framebuffer (a verified pixel inside its
-     light-grey body region)
-  4. the wallpaper is the new gradient (top brighter than bottom)
+  3. the launcher is HIDDEN at boot (chapter 109e UX: launcher
+     is now a Start-menu panel anchored above the taskbar and
+     is minimized immediately after its first render; the
+     taskbar's Start button toggles visibility) — so the pixel
+     where the launcher *used to* land at boot must show the
+     wallpaper, not the launcher's light-grey body.
+  4. the wallpaper itself is rendered (non-trivial pixels in
+     the open framebuffer area).
 """
 import json, os, select, socket, subprocess, sys, time
 
@@ -149,16 +153,32 @@ def main():
         print(f"  saved screendump: {DUMP_PATH}")
 
         ppm = read_ppm(DUMP_PATH)
-        # Launcher BG is 0xE8ECF0 (light grey-blue).  It lives at
-        # (80, 60) with a 24px title bar, so the content area starts
-        # at absolute y=84.  Buttons start at content-y=16 (absolute
-        # y=100), so the 16px top-margin spans absolute y=84..100.
-        # Sample at (200, 90) — well inside the BG margin.
-        body = pixel_at(ppm, 200, 90)
-        if body[0] < 220 or body[1] < 220 or body[2] < 220:
-            print(f"FAIL: launcher body at (200,90) = {body}, expected light-grey BG")
+        # chapter 109e: the launcher is now a Start-menu panel,
+        # anchored above the taskbar at (0, FB_H - 28 - 232) =
+        # (0, 540), and is MINIMIZED on boot (the taskbar's
+        # Start button toggles it).  So the pixel that used to
+        # be checked for the launcher body (130, 130) is now in
+        # open framebuffer area and should show the wallpaper.
+        # We do a light sanity-check: not pure black (would mean
+        # the framebuffer was never painted) and the launcher's
+        # light-grey BG (0xE8, 0xEC, 0xF0) is specifically NOT
+        # what we see (because the launcher is hidden).
+        body = pixel_at(ppm, 130, 130)
+        is_launcher_bg = (body[0] >= 220 and body[1] >= 220
+                          and body[2] >= 220
+                          and abs(body[0] - body[1]) <= 12
+                          and abs(body[1] - body[2]) <= 12)
+        if is_launcher_bg:
+            print(f"FAIL: launcher appears visible at boot (pixel "
+                  f"at (130,130) = {body}) -- should be hidden "
+                  f"until Start button is clicked")
             return 1
-        print(f"PASS: launcher body painted (pixel at (200,90) = {body})")
+        if sum(body) < 12:
+            print(f"FAIL: framebuffer at (130,130) is pure black "
+                  f"({body}); wallpaper did not paint")
+            return 1
+        print(f"PASS: launcher hidden at boot (pixel at (130,130) "
+              f"= {body}, not launcher BG)")
 
         # Verify the wallpaper is actually rendered (not pure-black
          # framebuffer).  Originally this asserted "top brighter

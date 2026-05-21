@@ -205,8 +205,25 @@ static inline void mutex_unlock(mutex_t *m)
  *   Note: the worker's stack region (mmap'd in thread_spawn)
  *   is NOT unmapped after join.  See banner-level floor caveat. */
 
-#define THREAD_STACK_BYTES   (16 * 4096)   /* 64 KiB; same as kernel
-                                              user stack default */
+#define THREAD_STACK_BYTES   (64 * 4096)   /* 256 KiB.  Sized to fit
+                                              the browser parser
+                                              thread's layout
+                                              recursion (~200 frames
+                                              deep on a 35-comment
+                                              Hacker News thread,
+                                              each frame ~600 B
+                                              between malloc'd
+                                              inline_buf, css resolve,
+                                              and emit_children).
+                                              The mmap is lazy-faulted
+                                              so the cost in physical
+                                              memory is what's
+                                              actually touched.  Same
+                                              spirit as M64's main-
+                                              thread bump (16→64 KiB)
+                                              when the GUI thread
+                                              first hit the same
+                                              symptom on deep DOMs. */
 
 static inline int thread_spawn(clone_entry_t entry, void *arg)
 {

@@ -43,11 +43,34 @@
  *     Notepad is the first multi-translation-unit userspace app
  *     in the tree; see Makefile NOTEPAD_OBJS.  The split lets
  *     future GUI apps reuse the same dialog without copy-paste.
+ *
+ * Chapter 108d changes:
+ *   - Ported off the kernel-WM syscalls (gui_create_window /
+ *     gui_fill_rect / gui_draw_text / gui_flush / gui_poll_event /
+ *     gui_destroy_window) onto the wsd-backed libgui primitives.
+ *     The kernel WM no longer composes pixels in chapter 108d --
+ *     wsd does -- so apps draw into their own per-window FB
+ *     (struct wm_window::fb), push damage rects with
+ *     wm_window_dirty, and pull keyboard events from
+ *     wm_poll_event.  Notepad is created via
+ *     wm_create_window_input so the kernel still owns input
+ *     hit-testing and routes keystrokes to the per-pid queue.
  */
 #include "../libc/syscall.h"
 #include "../libc/clipboard.h"
+#include "../libgui/draw.h"
+#include "../libgui/wmclient.h"
 #include "../libgui/save_dialog.h"
 
+/* chapter 108e -- WIN_W/WIN_H are now just the CREATE-time
+ * defaults.  COLS/ROWS that used to be derived macros are
+ * runtime helpers below (after g_win is declared) that read
+ * the live FB dims; that way a grip-resize via
+ * GUI_EVENT_RESIZE + wm_window_remap_fb immediately changes
+ * the visible viewport without any other code changes.
+ * The underlying line buffer stays MAX_LINES x MAX_LINE_LEN
+ * -- resize never reflows text, it just exposes more (or
+ * less) of the existing rows. */
 #define WIN_W      720
 #define WIN_H      440
 
@@ -56,9 +79,6 @@
 
 #define GUTTER     6
 #define STATUS_H   20    /* one row of glyphs + a little padding */
-
-#define COLS       ((WIN_W - 2 * GUTTER) / GLYPH_W)            /* 88 */
-#define ROWS       (((WIN_H) - 2 * GUTTER - STATUS_H) / GLYPH_H)
 
 #define MAX_LINES      256
 #define MAX_LINE_LEN   256
@@ -93,7 +113,27 @@ static int   g_cur_row = 0;
 static int   g_cur_col = 0;
 static int   g_top_row = 0;
 static int   g_dirty   = 0;
-static int   g_win_id  = -1;
+static struct wm_window g_win;
+
+/* chapter 108e -- LIVE FB-derived dimensions.  These
+ * helpers replace the old WIN_W/WIN_H/COLS/ROWS macros at
+ * every render-time call site.  Reading off g_win.fb means
+ * a wsd resize that lands via wm_window_remap_fb (in the
+ * GUI_EVENT_RESIZE handler) is reflected on the very next
+ * render() with no other coupling. */
+static inline int notepad_cur_w(void) { return (int)g_win.fb.w; }
+static inline int notepad_cur_h(void) { return (int)g_win.fb.h; }
+static inline int notepad_cols(void)
+{
+    int c = (notepad_cur_w() - 2 * GUTTER) / GLYPH_W;
+    return c < 1 ? 1 : c;
+}
+static inline int notepad_rows(void)
+{
+    int r = (notepad_cur_h() - 2 * GUTTER - STATUS_H) / GLYPH_H;
+    return r < 1 ? 1 : r;
+}
+
 static char  g_path[MAX_PATH];
 static char  g_status[128];
 static int   g_status_until_render = 0;   /* one-shot status overrides */
@@ -405,16 +445,19 @@ static void cur_end(void)  { g_cur_col = g_line_len[g_cur_row]; }
 
 static void scroll_to_cursor(void)
 {
+    int rows = notepad_rows();
     if (g_cur_row < g_top_row) g_top_row = g_cur_row;
-    if (g_cur_row >= g_top_row + ROWS) g_top_row = g_cur_row - ROWS + 1;
+    if (g_cur_row >= g_top_row + rows) g_top_row = g_cur_row - rows + 1;
     if (g_top_row < 0) g_top_row = 0;
 }
 
 static void render_status(void)
 {
     /* The status bar lives in a STATUS_H tall strip at the bottom. */
-    uint32_t y = (uint32_t)(WIN_H - STATUS_H);
-    gui_fill_rect(g_win_id, 0, y, WIN_W, STATUS_H, STATUS_BG);
+    int win_w = notepad_cur_w();
+    int win_h = notepad_cur_h();
+    int y = win_h - STATUS_H;
+    draw_fill_rect(&g_win.fb, 0, y, win_w, STATUS_H, STATUS_BG);
 
     char line[128];
     s_copy(line, " ", sizeof(line));
@@ -426,43 +469,48 @@ static void render_status(void)
     utoa((unsigned long)g_line_count, num);
     s_append(line, num, sizeof(line));
     s_append(line, "  Ctrl-S Save  Ctrl-Q Quit  ^X Cut  ^C Copy  ^V Paste", sizeof(line));
-    gui_draw_text(g_win_id, GUTTER, y + 2, line, STATUS_FG, STATUS_BG, 0);
+    draw_text(&g_win.fb, GUTTER, y + 2, line, STATUS_FG, STATUS_BG, 0);
 
     if (g_dirty) {
         /* Modified marker on the right edge of the status bar. */
-        uint32_t mx = (uint32_t)(WIN_W - GUTTER - 2 * GLYPH_W);
-        gui_draw_text(g_win_id, mx, y + 2, "*", MOD_FG, STATUS_BG, 0);
+        int mx = win_w - GUTTER - 2 * GLYPH_W;
+        draw_text(&g_win.fb, mx, y + 2, "*", MOD_FG, STATUS_BG, 0);
     }
 
     if (g_status[0] && g_status_until_render > 0) {
         /* Overlay one-shot status on top of the bar. */
-        gui_fill_rect(g_win_id, 0, y, WIN_W, STATUS_H, STATUS_BG);
-        gui_draw_text(g_win_id, GUTTER, y + 2, g_status, MOD_FG, STATUS_BG, 0);
+        draw_fill_rect(&g_win.fb, 0, y, win_w, STATUS_H, STATUS_BG);
+        draw_text(&g_win.fb, GUTTER, y + 2, g_status, MOD_FG, STATUS_BG, 0);
         g_status_until_render--;
     }
 }
 
 /* Paint the editor into the window's back-buffer.  Does NOT call
- * gui_flush — the caller is responsible for that.  Split out
- * from render() so the libgui Save As dialog can use it as a
- * "redraw what's underneath" callback without causing a flicker:
- * if this routine flushed, the user would see the bare editor
- * for one compose pass before the dialog overlay landed in the
- * back-buffer and the second flush ran.  See chapter 84. */
+ * wm_window_dirty — the caller is responsible for damaging.
+ * Split out from render() so the libgui Save As dialog can use
+ * it as a "redraw what's underneath" callback without causing a
+ * flicker: if this routine damaged, the user would see the bare
+ * editor for one compose pass before the dialog overlay landed
+ * in the back-buffer and the second damage ran.  See chapter 84. */
 static void render_to_buffer(void)
 {
     scroll_to_cursor();
 
-    gui_fill_rect(g_win_id, 0, 0, WIN_W, WIN_H, BG_BGRA);
+    int win_w = notepad_cur_w();
+    int win_h = notepad_cur_h();
+    int rows = notepad_rows();
+    int cols = notepad_cols();
+
+    draw_fill_rect(&g_win.fb, 0, 0, win_w, win_h, BG_BGRA);
 
     /* Lines. */
-    for (int r = 0; r < ROWS; r++) {
+    for (int r = 0; r < rows; r++) {
         int row = g_top_row + r;
         if (row >= g_line_count) break;
-        uint32_t y = (uint32_t)(GUTTER + r * GLYPH_H);
+        int y = GUTTER + r * GLYPH_H;
         if (g_line_len[row] > 0)
-            gui_draw_text(g_win_id, GUTTER, y, g_lines[row],
-                          FG_BGRA, BG_BGRA, 0);
+            draw_text(&g_win.fb, GUTTER, y, g_lines[row],
+                      FG_BGRA, BG_BGRA, 0);
     }
 
     /* Cursor (block). Chapter 102 -- the kernel font is now
@@ -472,9 +520,9 @@ static void render_to_buffer(void)
      * the rendered width of the glyph under the cursor (or a one-
      * space fallback at end-of-line). */
     int vrow = g_cur_row - g_top_row;
-    if (vrow >= 0 && vrow < ROWS) {
+    if (vrow >= 0 && vrow < rows) {
         int col = g_cur_col;
-        if (col > COLS - 1) col = COLS - 1;        /* clip horizontally */
+        if (col > cols - 1) col = cols - 1;        /* clip horizontally */
         const char *line = g_lines[g_cur_row];
         int line_len_local = g_line_len[g_cur_row];
 
@@ -483,26 +531,26 @@ static void render_to_buffer(void)
         if (col > 0 && col <= line_len_local) {
             char saved = line[col];
             ((char *)line)[col] = '\0';
-            prefix_px = gui_measure_text(line);
+            prefix_px = draw_measure_text(line);
             ((char *)line)[col] = saved;
         }
-        uint32_t cx = (uint32_t)(GUTTER + prefix_px);
-        uint32_t cy = (uint32_t)(GUTTER + vrow * GLYPH_H);
+        int cx = GUTTER + prefix_px;
+        int cy = GUTTER + vrow * GLYPH_H;
 
         /* Cursor block width: one glyph's advance, or a sensible
          * fallback (~ space width) at end-of-line. */
         uint32_t cw = GLYPH_W;
         if (col < line_len_local) {
             char one[2] = { line[col], '\0' };
-            int w_one = gui_measure_text(one);
+            int w_one = draw_measure_text(one);
             if (w_one > 0) cw = (uint32_t)w_one;
         }
-        gui_fill_rect(g_win_id, cx, cy, cw, GLYPH_H, CUR_BGRA);
+        draw_fill_rect(&g_win.fb, cx, cy, cw, GLYPH_H, CUR_BGRA);
         /* Re-draw the glyph under the cursor in the bg colour so it's
          * visible against the blue block. */
         if (col < line_len_local) {
             char one[2] = { line[col], '\0' };
-            gui_draw_text(g_win_id, cx, cy, one, BG_BGRA, CUR_BGRA, 0);
+            draw_text(&g_win.fb, cx, cy, one, BG_BGRA, CUR_BGRA, 0);
         }
     }
 
@@ -512,7 +560,7 @@ static void render_to_buffer(void)
 static void render(void)
 {
     render_to_buffer();
-    gui_flush(g_win_id);
+    wm_window_dirty(&g_win, 0, 0, notepad_cur_w(), notepad_cur_h());
 }
 
 /* ---------------- main loop ---------------- */
@@ -525,11 +573,12 @@ static void set_status(const char *s, int frames)
 
 /* Wrapper used by libgui's gui_save_dialog as the "render the
  * underlying window" callback.  It paints the editor into the
- * back-buffer but does NOT flush — the dialog will lay its
- * overlay on top and flush once at the end.  Calling gui_flush
- * here would briefly show the bare editor (without the dialog)
- * to the user every frame, producing a per-keystroke flicker.
- * See chapter 84 for the full explanation. */
+ * back-buffer but does NOT damage — the dialog will lay its
+ * overlay on top and issue a single wm_window_dirty at the end.
+ * Calling wm_window_dirty here would briefly show the bare
+ * editor (without the dialog) to the user every frame, producing
+ * a per-keystroke flicker.  See chapter 84 for the full
+ * explanation. */
 static void editor_repaint_under(void *ud)
 {
     (void)ud;
@@ -551,7 +600,7 @@ static void run_save_as(void)
         while (i > 0 && g_path[i - 1] != '/') i--;
         s_copy(leaf, g_path + i, sizeof(leaf));
     }
-    int rc = gui_save_dialog(g_win_id, WIN_W, WIN_H,
+    int rc = gui_save_dialog(&g_win, notepad_cur_w(), notepad_cur_h(),
                              "/data/", leaf,
                              editor_repaint_under, NULL,
                              chosen, sizeof(chosen));
@@ -591,9 +640,16 @@ int main(int argc, char **argv)
         g_path_chosen = 0;
     }
 
-    g_win_id = gui_create_window(WIN_W, WIN_H, "notepad");
-    if (g_win_id < 0) {
-        write(1, "[notepad] gui_create_window failed\n", 35);
+    /* chapter 108e -- mark RESIZABLE so wsd paints the
+     * bottom-right grip and accepts grip-drags.  The
+     * GUI_EVENT_RESIZE handler below remaps the FB and
+     * triggers a full repaint; render_to_buffer reads the
+     * live FB dims via notepad_cur_w/h so it adapts
+     * automatically. */
+    if (wm_create_window_input(WIN_W, WIN_H,
+                               GUI_WIN_FLAG_RESIZABLE,
+                               "notepad", &g_win) < 0) {
+        write(1, "[notepad] wm_create_window_input failed\n", 41);
         return 1;
     }
 
@@ -604,11 +660,28 @@ int main(int argc, char **argv)
 
     for (;;) {
         struct gui_event ev;
-        if (!gui_poll_event(&ev)) { yield(); continue; }
+        if (!wm_poll_event(&ev)) { yield(); continue; }
         switch (ev.type) {
         case GUI_EVENT_CLOSE:
-            gui_destroy_window(g_win_id);
+            wm_destroy_window(&g_win);
             return 0;
+        case GUI_EVENT_RESIZE:
+            /* chapter 108e -- wsd resized our backing FB and
+             * tore down our old mapping in the same kernel
+             * syscall.  We MUST remap before drawing or the
+             * next render_to_buffer would translation-fault
+             * on the stale VA.  After the remap, render()
+             * reads g_win.fb.w/h via the notepad_cur_w/h
+             * helpers and paints at the new size. */
+            if (wm_window_remap_fb(&g_win) < 0) {
+                /* Remap failed -- best we can do is bail.
+                 * Window stays alive on wsd's side until the
+                 * next resize attempt or process exit. */
+                set_status("resize remap failed", 4);
+                continue;
+            }
+            render();
+            continue;
         case GUI_EVENT_KEY: {
             /* Extended (non-ASCII) keys arrive as GUI_KEY_*
              * (0x101..) — handle these BEFORE narrowing arg0
@@ -626,7 +699,7 @@ int main(int argc, char **argv)
             char c = (char)(ev.arg0 & 0xFF);
             if (c == 0) break;
             if (c == 0x1B || c == CTRL_Q) {     /* ESC or Ctrl-Q */
-                gui_destroy_window(g_win_id);
+                wm_destroy_window(&g_win);
                 return 0;
             }
             if (c == CTRL_S) {

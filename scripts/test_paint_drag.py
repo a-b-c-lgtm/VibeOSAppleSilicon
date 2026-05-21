@@ -33,28 +33,47 @@ FB_W = 1280
 FB_H = 800
 ABS_MAX = 0x7FFF
 
-# Launcher geometry — see userspace/launcher/launcher.c.
-LAUNCHER_X, LAUNCHER_Y = 80, 60
+# Launcher geometry — see userspace/launcher/launcher.c.  The
+# launcher is now a Start-menu-style panel: NODECORATION +
+# ALWAYS_ON_TOP, anchored above the taskbar at (0, FB_H - 28 - 232)
+# = (0, 540).  It is hidden by default; the taskbar's Start button
+# toggles visibility via WM_WIN_RESTORE / WM_WIN_MINIMIZE.
+LAUNCHER_X = 0
+LAUNCHER_Y = 540
 LAUNCHER_W = 240
-WM_BORDER  = 1
-WM_TITLE_H = 24
+LAUNCHER_H = 232
+WM_BORDER  = 0       # no left/right border in wsd decoration
+WM_TITLE_H = 0       # NODECORATION -> wsd skips title bar
 
-# Launcher "paint" button (button index 1).  Center = (201, 162).
-PAINT_BTN_X = LAUNCHER_X + WM_BORDER + 16 + 208 // 2  # 201
-PAINT_BTN_Y = LAUNCHER_Y + WM_TITLE_H + 16 + 36 + 8 + 36 // 2  # 162
+# Taskbar's Start button (see userspace/taskbar/taskbar.c).
+BAR_H            = 28
+START_BTN_X      = 8
+START_BTN_Y_OFF  = 4
+START_BTN_W      = 60
+START_BTN_H      = BAR_H - 8
+START_CX = START_BTN_X + START_BTN_W // 2                       # 38
+START_CY = (FB_H - BAR_H) + START_BTN_Y_OFF + START_BTN_H // 2  # 786
 
-# Paint window: opens at the next auto-cascade slot.  Cascade slots
-# are (80,60), (120,90), (160,120), ... in 40,30 increments.  The
-# launcher used (80,60), so paint opens at (120,90).
-PAINT_X = 120
-PAINT_Y = 90
+# Launcher "paint" button (button index 1).  Window-relative
+# offset: x = BTN_X + BTN_W/2 = 16 + 208/2 = 120;
+#         y = BTN_TOP + 1*(BTN_H+BTN_GAP) + BTN_H/2
+#           = 16 + 44 + 18 = 78.
+PAINT_BTN_X = LAUNCHER_X + 120                  # 120
+PAINT_BTN_Y = LAUNCHER_Y + WM_TITLE_H + 78      # 618
+
+# Paint window: opens at the next auto-cascade slot.  The
+# launcher uses wm_create_window_at (which does NOT advance
+# the wsd cascade), so paint is the first cascade client and
+# lands at slot 0 = (100, 100).
+PAINT_X = 100
+PAINT_Y = 100
 PAINT_W = 600
 PAINT_H = 400
 
 # Click points inside paint's content area.  The content origin
 # (in screen coords) is at:
-PAINT_CX0 = PAINT_X + WM_BORDER     # 121
-PAINT_CY0 = PAINT_Y + WM_TITLE_H    # 114
+PAINT_CX0 = PAINT_X                 # 100 (no side border)
+PAINT_CY0 = PAINT_Y + 24            # 124 (wsd title bar)
 
 # Three mid-canvas waypoints we'll drag through.  Stay well clear
 # of paint's own header text (top 32 px) and the right-edge swatch
@@ -207,6 +226,16 @@ def main():
         if b"$ " not in wait_for(ser, b"$ ", 25.0):
             print("FAIL: shell prompt not reached"); return 1
         time.sleep(0.6)
+
+        # Step 0: summon the launcher.  It's hidden at boot;
+        # clicking the taskbar's Start button issues
+        # WM_WIN_RESTORE.  Drain the response so the cell-list
+        # log doesn't confuse later wait_for calls.
+        print(f"  clicking Start button at ({START_CX}, {START_CY}) "
+              f"to summon launcher")
+        left_click(qmp, START_CX, START_CY)
+        wait_for(ser, b"start -> show launcher", 3.0)
+        time.sleep(0.3)
 
         # Step 1: spawn paint by clicking the launcher's PAINT button.
         print(f"  clicking launcher's paint button at "

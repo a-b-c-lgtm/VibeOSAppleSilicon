@@ -12,8 +12,8 @@
  * new tid recorded.  This is the userspace-side equivalent of
  * systemd's `Restart=on-failure` -- minus the dependency graph,
  * minus the backoff, minus the journal -- but enough to keep
- * /bin/clipboardd alive across crashes, which is the whole
- * reason it's there.
+ * /bin/clipboardd and /bin/fontd alive across crashes, which
+ * is the whole reason it's there.
  *
  * Expected output (kernel chatter elided):
  *   [init] hello -> tid=...
@@ -37,11 +37,12 @@
  * unload story, and won't have one until we add a service
  * manager UI.
  *
- * No backoff: the only supervised entry today is clipboardd, and
- * if it's crashing in a tight loop the right answer is to fix
- * clipboardd, not to back off.  When ch113 adds the audio mixer
- * we'll revisit. */
-#define SUPERVISED_MAX 4
+ * No backoff: the supervised entries today are clipboardd,
+ * fontd, and (chapter 108d) wsd; all small daemons.  If any
+ * is crashing in a tight loop the right answer is to fix it,
+ * not to back off.  When ch113 adds the audio mixer we'll
+ * revisit. */
+#define SUPERVISED_MAX 6
 struct supervised {
     const char *path;
     const char *args;
@@ -164,6 +165,41 @@ int main(void)
      * window between fb_init and desktop reading the BGRA blob
      * off OSFS.  Wallpaper ownership is intentionally a
      * userspace concern: the kernel knows nothing about images. */
+
+    /* Chapter 108b -- font service.
+     *
+     * The TrueType rasteriser used to live in the kernel
+     * (chapter 102), eating ~1.5K lines of EL1 code plus the
+     * ~700KB DejaVuSans.ttf blob.  Chapter 108b moved it to
+     * /bin/fontd, a userspace daemon bound to /srv/font.  The
+     * kernel-side WM (kernel/core/wm_font.c) is its only client
+     * today; on a cache miss it sends a one-shot RPC to fontd
+     * and gets back an AA bitmap.
+     *
+     * Supervised because the WM falls back to the kernel's
+     * always-available bitmap font when fontd is unreachable --
+     * which means a fontd crash is recoverable: the user sees
+     * one frame of bitmap text, init respawns fontd, and the
+     * next cache miss re-establishes the conn.
+     *
+     * Started BEFORE /bin/desktop so the very first TTF glyph
+     * a userspace window asks for has a non-trivial chance of
+     * being TTF rather than the bitmap fallback. */
+    puts("[init] launching /bin/fontd (supervised)");
+    supervise("/bin/fontd", "");
+
+    /* Chapter 108d — window-server daemon.  Owns the
+     * scanout framebuffer and the /srv/wm compositor bus;
+     * all GUI apps paint through it.  A wsd crash visibly
+     * freezes the desktop — hence the supervisor wrapper
+     * from day one, so the restart machinery is the same
+     * the day it matters as it was the day it didn't.
+     *
+     * Started AFTER fontd so wsd has a working font server
+     * when it starts drawing title-bar text. */
+    puts("[init] launching /bin/wsd (supervised)");
+    supervise("/bin/wsd", "");
+
     puts("[init] launching /bin/desktop (background, GUI)");
     int dtid = spawn("/bin/desktop", "");
     if (dtid < 0) {
@@ -220,6 +256,52 @@ int main(void)
         putd(-httid);
         write(1, "\n", 1);
         /* non-fatal — desktop is still usable without it */
+    }
+
+    /* Chapter 112b — boot-time httpsd.
+     *
+     * Same rationale as the chapter-106c httpd above, but for
+     * TLS.  Without an in-guest HTTPS server we'd need either
+     * a host-side proxy (scripts/https_proxy.py, deprecated by
+     * chapter 112d) or working outbound HTTPS through the QEMU
+     * SLIRP stack -- both add wall-clock latency and external
+     * dependencies to regression runs.  A loopback httpsd lets
+     * the tls_socket handshake and the browser's https:// path
+     * be tested without ever crossing the host network.
+     *
+     * Port 8443 (the conventional "alternate HTTPS" port)
+     * keeps us off port 443 which would clash with anything
+     * the host might be running on the SLIRP guest side.  The
+     * sample CN=localhost cert chain in test_chain.c is fine
+     * for loopback; tlstest's --handshake mode pins on the
+     * leaf public key, so name/expiry validation isn't in play
+     * yet (that's chapter 112c).
+     *
+     * As with httpd we tolerate spawn failure: a missing
+     * httpsd means TLS regression tests will fail at the
+     * connect() step with a clear "tlstest: FAIL" line. */
+    puts("[init] launching /bin/httpsd 8443 (background, loopback TLS)");
+    int httsid = spawn("/bin/httpsd", "8443");
+    if (httsid < 0) {
+        write(1, "[init] spawn /bin/httpsd FAILED errno=", 38);
+        putd(-httsid);
+        write(1, "\n", 1);
+        /* non-fatal — TLS tests will surface this */
+    }
+
+    /* Chapter 112e — second httpsd on port 8444, presenting the
+     * EC / ECDSA sample chain instead of the RSA one.  Same
+     * loopback-test rationale as the RSA instance above; the
+     * point is to give the browser two distinct CAs to validate
+     * against simultaneously so the multi-anchor trust store
+     * isn't just a one-entry list with extra ceremony.  Failure
+     * is non-fatal for the same reason. */
+    puts("[init] launching /bin/httpsd --ec 8444 (background, loopback TLS, ECDSA)");
+    int httpsid_ec = spawn("/bin/httpsd", "--ec 8444");
+    if (httpsid_ec < 0) {
+        write(1, "[init] spawn /bin/httpsd --ec FAILED errno=", 43);
+        putd(-httpsid_ec);
+        write(1, "\n", 1);
     }
 
     /* Chapter 108 — clipboard service.

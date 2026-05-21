@@ -175,6 +175,48 @@ enum {
      * -EFAULT if the string pointer isn't readable. */
     SYS_GUI_MEASURE_TEXT    = 52, /* (const char *s) -> uint32_t px width        */
 
+    /* Chapter 108a -- userspace access to window pixel buffers.
+     * The WM-owned pixel buffer for a window is exposed at a
+     * fresh user VA range (RW, EL0, page-aligned, tagged with
+     * DESC_SW_WM_WINDOW so AS teardown skips it and fork()
+     * doesn't inherit it).  Apps that want pixel-level control
+     * (the chapter-108a pixapp demo, the chapter-108b TTF
+     * rasteriser, any future SVG / video / GL renderer) write
+     * directly into the mapping and call SYS_GUI_DAMAGE to tell
+     * the WM which rect changed.  Apps that just want the
+     * existing primitives keep calling SYS_GUI_FILL_RECT etc.
+     *
+     * SYS_GUI_MAP_WINDOW(struct gui_map_window_args *a) -> 0/-errno
+     *   On success, writes the user VA into *a->va_out, the
+     *   row stride (bytes) into *a->stride_out, and the current
+     *   window dimensions into *a->w_out / *a->h_out.  Output
+     *   pointers may be NULL ("don't care").  Idempotent: a
+     *   second call from the same owner returns the same VA.
+     *   -EPERM if not the window owner; -EINVAL if the window
+     *   is RESIZABLE (108a defers resize coherence); -ENOMEM
+     *   if pmem can't supply the page frames; -EFAULT on a
+     *   bad output pointer (mapping still installed).
+     *
+     * SYS_GUI_UNMAP_WINDOW(int id) -> 0/-errno
+     *   Tears the mapping down and returns the frames to pmem.
+     *   Implicit on SYS_GUI_DESTROY_WINDOW / process exit, so
+     *   well-behaved apps don't need to call this; useful for
+     *   tests that want to verify the mapping actually went
+     *   away.  Idempotent on an unmapped window.
+     *
+     * SYS_GUI_DAMAGE(struct gui_damage_args *a) -> 0/-errno
+     *   Tells the WM that the rect (x,y,w,h) of the mapping
+     *   has been written by the app.  The WM copies that rect
+     *   from the user-visible pages into the compositor's
+     *   authoritative buffer and triggers a recompose.  Rect
+     *   coordinates are window-content relative; over-large
+     *   rects are silently clipped to the window so a
+     *   "damage everything" call works without preflight.
+     *   -ENOENT if the window has no mapping yet. */
+    SYS_GUI_MAP_WINDOW      = 53, /* (struct gui_map_window_args *) -> 0/-errno */
+    SYS_GUI_UNMAP_WINDOW    = 54, /* (int id)                       -> 0/-errno */
+    SYS_GUI_DAMAGE          = 55, /* (struct gui_damage_args *)     -> 0/-errno */
+
     /* Milestone 56 — sockets (active-open client side). */
     SYS_SOCKET_CONNECT  = 60, /* (uint32_t ip4_be, uint16_t port) -> fd / -errno */
     SYS_SOCKET_STATE    = 61, /* (int fd) -> int state (enum tcp_state)          */
@@ -237,6 +279,151 @@ enum {
     SYS_SRV_BIND        = 81, /* (const char *path) -> fd / -errno  */
     SYS_SRV_ACCEPT      = 82, /* (int listen_fd) -> fd / -errno     */
     SYS_SRV_CONNECT     = 83, /* (const char *path) -> fd / -errno  */
+
+    /* Chapter 108d — userspace window server foundation.
+     *
+     * SYS_FB_MAP_SCANOUT(struct fb_map_args *out) -> 0 / -errno
+     *   Maps the active virtio-gpu scanout buffer's physical
+     *   pages into the caller's address space, RW from EL0,
+     *   non-executable, tagged so AS teardown skips them (the
+     *   FB stays alive for the kernel's continued use).  Fills
+     *   *out with the user VA, dimensions, and byte stride.
+     *
+     *   The mapping uses the same page-install primitive that
+     *   chapter 108a's gui_window_fb uses — the framebuffer's
+     *   physical pages are contiguous (allocated via
+     *   pmem_alloc_contig at fb_init), so we synthesise a
+     *   trivial PA-array and reuse address_space_install_wm_window.
+     *
+     *   Access control: scoped by simple first-caller-wins.
+     *   The kernel records the calling pid on first call; later
+     *   callers from other pids get -EBUSY.  When the holding
+     *   process exits, the slot is released (see
+     *   fb_release_owner in main.c's exit path) so a respawned
+     *   wsd can re-claim.  -EAGAIN if the FB is not yet ready.
+     *
+     *   Idempotent for the holding pid: repeat calls return
+     *   the cached descriptors. */
+    SYS_FB_MAP_SCANOUT  = 84, /* (struct fb_map_args *out) -> 0 / -errno */
+
+    /* Chapter 108d — server-allocated, client-mappable
+     * per-window framebuffer.  See kernel/core/win_fb.h for the
+     * full design.  Three syscalls all take a user struct pointer
+     * (or a small int for FREE) and return 0/-errno:
+     *
+     *   SYS_WIN_FB_ALLOC(struct win_fb_alloc_args *) — caller
+     *     becomes the owner of a fresh BGRA backing buffer of
+     *     w*h*4 bytes (rounded up to a page).  Kernel maps the
+     *     pages RW into caller's AS and fills in {id, va,
+     *     stride, size}.
+     *
+     *   SYS_WIN_FB_MAP(struct win_fb_map_args *) — caller
+     *     passes a known id; kernel maps the same physical
+     *     pages into caller's AS at a fresh user VA and fills
+     *     in {va, w, h, stride, size}.  Idempotent per AS.
+     *     Chapter 108d is permissive (anyone who knows the id
+     *     may map); the chapter-107 IPC channel between wsd
+     *     and the client is the de-facto ACL until a future
+     *     capability layer tightens it.
+     *
+     *   SYS_WIN_FB_FREE(uint32_t id) — owner only.  Uninstalls
+     *     every mapper's user-VA range first, then frees the
+     *     backing pages, then clears the slot.  -EPERM if
+     *     caller isn't owner; -ENOENT if id is unknown. */
+    SYS_WIN_FB_ALLOC    = 85, /* (struct win_fb_alloc_args *) -> 0 / -errno */
+    SYS_WIN_FB_MAP      = 86, /* (struct win_fb_map_args   *) -> 0 / -errno */
+    SYS_WIN_FB_FREE     = 87, /* (uint32_t id)               -> 0 / -errno */
+    /* chapter 108e — resize an existing win_fb in place.
+     *   SYS_WIN_FB_RESIZE(uint32_t id,
+     *                     uint32_t new_w, uint32_t new_h)
+     *     -> 0 / -errno
+     * Owner-only.  Allocates a fresh backing of new_w*new_h*4
+     * bytes (page-rounded), copies as much of the old buffer
+     * as fits (top-left preserved), uninstalls EVERY existing
+     * mapping (owner + mappers) from its AS, frees the old
+     * pages, then re-installs for the owner only.  The owner's
+     * VA may change; the new VA is NOT returned by this
+     * syscall (owner re-discovers it via a subsequent
+     * SYS_WIN_FB_MAP, which now returns the post-resize geom +
+     * a fresh VA install since the old mapping slot was
+     * cleared).  Mappers must also re-call SYS_WIN_FB_MAP
+     * after seeing GUI_EVENT_RESIZE; until they do, their
+     * old VA returns translation-fault. */
+    SYS_WIN_FB_RESIZE   = 93, /* (uint32_t id, uint32_t w, uint32_t h) -> 0/-errno */
+
+    /* Chapter 112 — entropy source.  Backed by the virtio-rng
+     * device (driver in kernel/device/virtio_rng.c) and stretched
+     * by the ChaCha20 CSPRNG in kernel/core/random.c.
+     *
+     *   sys_getrandom(void *buf, size_t len, unsigned flags)
+     *       -> bytes_written  on success
+     *       -> -EFAULT        if `buf` isn't writable for `len`
+     *       -> -EINVAL        if any unknown flag bit is set
+     *
+     * `flags` is reserved (must be zero) so the kernel keeps the
+     * ability to add GRND_NONBLOCK / GRND_RANDOM-style modifiers
+     * without breaking existing callers; passing unknown bits is
+     * an error, NOT silently ignored.
+     *
+     * The call may block briefly while the virtio-rng device
+     * serves the request (typically < 1 ms under HVF).  It NEVER
+     * partial-fills: on success the full `len` bytes are present
+     * in `buf`; on failure nothing was copied. */
+    SYS_GETRANDOM       = 94,
+
+    /* Chapter 108d — userspace-driven GPU flush.  Wsd
+     * holds a writable mapping of the scanout (via
+     * SYS_FB_MAP_SCANOUT) and now also owns composition end to
+     * end, so it needs to drive virtio-gpu's flush itself
+     * rather than relying on the kernel WM's `compose_all` to
+     * stamp TRANSFER_TO_HOST_2D + RESOURCE_FLUSH on every event.
+     * After chapter 108d the kernel WM never paints, so without
+     * this syscall wsd's pixel stores would sit in scanout RAM
+     * forever and never reach the GPU surface.
+     *
+     *   SYS_FB_PRESENT(uint32_t x, uint32_t y,
+     *                  uint32_t w, uint32_t h) -> 0 / -errno
+     *     Flush the rect [x,x+w) x [y,y+h) of the scanout to
+     *     the GPU.  Passing w=h=0 means "entire scanout".
+     *     Out-of-range rects are clipped, not rejected.  The
+     *     four args are passed as plain registers so no user
+     *     struct copy is needed.  Caller must already hold a
+     *     scanout mapping via SYS_FB_MAP_SCANOUT (we don't
+     *     gate by pid here \u2014 the syscall just calls
+     *     fb_present() and that's a single virtio-gpu submit;
+     *     a caller with no FB to read still ends up flushing
+     *     whatever bytes are in scanout RAM, which is fine).
+     */
+    SYS_FB_PRESENT      = 88, /* (x, y, w, h)                -> 0 / -errno */
+
+    /* chapter 108e -- userspace decorations + cursor.  wsd uses
+     * these three syscalls to:
+     *   - SYS_POINTER_STATE: snapshot the cursor (x, y, btn
+     *     bitmap) so it can paint the cursor sprite and hit-
+     *     test title-bar / close-button clicks itself, X-server
+     *     style.  Any output pointer may be NULL.
+     *   - SYS_GUI_MOVE_WINDOW: relocate a kernel-WM window (a
+     *     wsd "input shadow") to a new scanout (x,y) after wsd
+     *     dragged the title bar.  No event delivery; wsd
+     *     handles GUI_EVENT_MOVE-style notifications itself if
+     *     needed.
+     *   - SYS_GUI_DELIVER_EVENT: inject a gui_event into a
+     *     kernel-WM window's event ring so the owner's next
+     *     gui_poll_event returns it.  wsd uses this to deliver
+     *     GUI_EVENT_CLOSE on a close-button click and (later)
+     *     synthesised pointer events.  ev.window_id is
+     *     overwritten by the kernel with the syscall's id arg.
+     */
+    SYS_POINTER_STATE     = 89, /* (int32_t*, int32_t*, uint32_t*) -> 0/-errno */
+    SYS_GUI_MOVE_WINDOW   = 90, /* (int id, int32_t x, int32_t y) -> 0/-errno */
+    SYS_GUI_DELIVER_EVENT = 91, /* (int id, const gui_event*)      -> 0/-errno */
+
+    /* chapter 108e -- toggle wsd-routed pointer-passthrough on
+     * a kernel WM shadow.  When on, kernel hit-test pretends the
+     * window isn't there; wsd becomes the sole authority on
+     * input routing for that window's pixels.  See struct
+     * wm_window.input_passthrough in kernel/core/wm.c. */
+    SYS_GUI_SET_INPUT_PASSTHROUGH = 92, /* (int id, int on) -> 0/-errno */
 
     /* Chapter 90 — mmap + unified page cache.
      *   sys_mmap(addr, len, prot, flags, fd, offset) -> VA / -errno

@@ -40,9 +40,13 @@ FB_H = 800
 
 WIN_W   = 720
 WIN_H   = 440
-TITLE_H = 24
-WIN_X   = 80
-WIN_Y   = 60
+# Chapter 108d: wsd cascade slot for the 2nd cascade-positioned
+# window (launcher is the 1st at (100,100)).  gui_term uses
+# wm_create_window_input which goes through the cascade, so it lands
+# at (140,140).  NO_DECORATION → no title bar.
+TITLE_H = 0
+WIN_X   = 140
+WIN_Y   = 140
 
 def cleanup():
     for p in (QMP_SOCK, SERIAL_SOCK):

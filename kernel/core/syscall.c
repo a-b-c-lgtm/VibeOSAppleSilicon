@@ -43,6 +43,9 @@
 #include "console_in.h"
 #include "strace.h"
 #include "srv.h"
+#include "wsd_fb.h"
+#include "win_fb.h"
+#include "random.h"
 #include "../device/virtio_input.h"
 #include "../device/virtio_tablet.h"
 #include "../device/virtio_snd.h"
@@ -1219,6 +1222,51 @@ static long sys_beep(uintptr_t freq_hz, uintptr_t duration_ms)
     int rc = virtio_snd_play_square((uint32_t)freq_hz,
                                     (uint32_t)duration_ms);
     return (rc == 0) ? 0 : -EIO;
+}
+
+/*
+ * sys_getrandom(void *buf, size_t len, unsigned flags) — chapter 112.
+ *
+ * Fills the user buffer with cryptographically-random bytes
+ * sourced from kernel/core/random.c (which ultimately pulls its
+ * seed from the virtio-rng device when present).  No flag bits
+ * are defined yet; passing any returns -EINVAL so the kernel
+ * keeps the option to add GRND_NONBLOCK / GRND_RANDOM later
+ * without breaking existing callers.
+ *
+ * The implementation uses a small kernel scratch buffer and
+ * streams the output back via copy_to_user so we don't need a
+ * 4 KiB+ kernel stack frame for large requests.  We deliberately
+ * cap each request at GETRAND_MAX (1 MiB) to bound the amount of
+ * time the kernel can spend filling one syscall — if a caller
+ * really wants more, they can loop.  This mirrors Linux, which
+ * caps getrandom at 33 MiB.
+ *
+ * `random_bytes` may yield while waiting on virtio-rng; that's
+ * fine, sys_getrandom runs in thread context.
+ */
+#define GETRAND_MAX     (1u * 1024u * 1024u)
+#define GETRAND_CHUNK   256u
+
+static long sys_getrandom(uintptr_t buf_ptr, size_t len, unsigned flags)
+{
+    if (flags != 0)            return -EINVAL_VFS;
+    if (len == 0)              return 0;
+    if (len > GETRAND_MAX)     return -EINVAL_VFS;
+    if (!buf_ptr)              return -EFAULT;
+
+    uint8_t chunk[GETRAND_CHUNK];
+    size_t  total = 0;
+    while (total < len) {
+        size_t want = len - total;
+        if (want > sizeof(chunk)) want = sizeof(chunk);
+        long got = random_bytes(chunk, want);
+        if (got <= 0) return total > 0 ? (long)total : -EIO;
+        if (copy_to_user(buf_ptr + (uintptr_t)total, chunk, (size_t)got) < 0)
+            return -EFAULT;
+        total += (size_t)got;
+    }
+    return (long)total;
 }
 
 /*
@@ -2731,6 +2779,47 @@ static long sys_gui_measure_text(long s_uptr)
     return wm_measure_text((const char *)(uintptr_t)s_uptr);
 }
 
+/* Chapter 108a \u2014 userspace pixel-buffer mapping.  Both arg-pack
+ * structs live in user memory; layout MUST match
+ * userspace/libc/syscall.h. */
+struct gui_map_window_args_k {
+    int32_t  id;
+    uint64_t va_out;        /* user pointer; may be NULL */
+    uint64_t stride_out;    /* user pointer to uint32_t; may be NULL */
+    uint64_t w_out;         /* user pointer to uint32_t; may be NULL */
+    uint64_t h_out;         /* user pointer to uint32_t; may be NULL */
+};
+struct gui_damage_args_k {
+    int32_t  id;
+    uint32_t x, y, w, h;
+};
+
+static long sys_gui_map_window(long args_uptr)
+{
+    struct gui_map_window_args_k a;
+    if (copy_from_user(&a, (uint64_t)args_uptr, sizeof(a)) < 0)
+        return -EFAULT;
+    return wm_map_window((uint64_t)thread_current()->id, a.id,
+                         (uint64_t *)(uintptr_t)a.va_out,
+                         (uint32_t *)(uintptr_t)a.stride_out,
+                         (uint32_t *)(uintptr_t)a.w_out,
+                         (uint32_t *)(uintptr_t)a.h_out);
+}
+
+static long sys_gui_unmap_window(long id)
+{
+    return wm_unmap_window((uint64_t)thread_current()->id, (int32_t)id);
+}
+
+static long sys_gui_damage(long args_uptr)
+{
+    struct gui_damage_args_k a;
+    if (copy_from_user(&a, (uint64_t)args_uptr, sizeof(a)) < 0)
+        return -EFAULT;
+    return wm_damage((uint64_t)thread_current()->id, a.id,
+                     a.x, a.y, a.w, a.h);
+}
+
 static long sys_gui_flush(long id)
 {
     return wm_flush((uint64_t)thread_current()->id, (int32_t)id);
@@ -3006,6 +3095,17 @@ void svc_dispatch(struct exception_frame *frame)
         ret = sys_gui_measure_text(a0);
         break;
 
+    /* Chapter 108a \u2014 userspace pixel-buffer access. */
+    case SYS_GUI_MAP_WINDOW:
+        ret = sys_gui_map_window(a0);
+        break;
+    case SYS_GUI_UNMAP_WINDOW:
+        ret = sys_gui_unmap_window(a0);
+        break;
+    case SYS_GUI_DAMAGE:
+        ret = sys_gui_damage(a0);
+        break;
+
     case SYS_SOCKET_CONNECT:
         ret = sys_socket_connect(a0, a1);
         break;
@@ -3035,6 +3135,49 @@ void svc_dispatch(struct exception_frame *frame)
         break;
     case SYS_SRV_CONNECT:
         ret = sys_srv_connect(a0);
+        break;
+
+    /* Chapter 108d — userspace WSD foundation. */
+    case SYS_FB_MAP_SCANOUT:
+        ret = sys_fb_map_scanout(a0);
+        break;
+
+    /* Chapter 108d — per-window shareable FB. */
+    case SYS_WIN_FB_ALLOC:
+        ret = sys_win_fb_alloc(a0);
+        break;
+    case SYS_WIN_FB_MAP:
+        ret = sys_win_fb_map(a0);
+        break;
+    case SYS_WIN_FB_FREE:
+        ret = sys_win_fb_free(a0);
+        break;
+    /* chapter 108e -- in-place resize of an existing win_fb. */
+    case SYS_WIN_FB_RESIZE:
+        ret = sys_win_fb_resize(a0, a1, a2);
+        break;
+
+    /* Chapter 108d — userspace-driven GPU flush. */
+    case SYS_FB_PRESENT:
+        ret = sys_fb_present(a0, a1, a2, a3);
+        break;
+
+    /* chapter 108e -- userspace decorations + cursor. */
+    case SYS_POINTER_STATE:
+        ret = wm_pointer_state((int32_t *)(uintptr_t)a0,
+                               (int32_t *)(uintptr_t)a1,
+                               (uint32_t *)(uintptr_t)a2);
+        break;
+    case SYS_GUI_MOVE_WINDOW:
+        ret = wm_move_window((int32_t)a0, (int32_t)a1, (int32_t)a2);
+        break;
+    case SYS_GUI_DELIVER_EVENT:
+        ret = wm_deliver_event((int32_t)a0,
+                               (const struct gui_event *)(uintptr_t)a1);
+        break;
+    /* chapter 108e -- toggle wsd-routed input passthrough. */
+    case SYS_GUI_SET_INPUT_PASSTHROUGH:
+        ret = wm_set_input_passthrough((int32_t)a0, (int)a1);
         break;
 
     case SYS_MMAP:
@@ -3077,6 +3220,13 @@ void svc_dispatch(struct exception_frame *frame)
     /* Chapter 96 — virtio-snd boot chime / SYS_BEEP. */
     case SYS_BEEP:
         ret = sys_beep(a0, a1);
+        break;
+
+    /* Chapter 112 — entropy source.  Backed by virtio-rng +
+     * ChaCha20 CSPRNG.  Three args: (buf, len, flags); flags
+     * must currently be zero. */
+    case SYS_GETRANDOM:
+        ret = sys_getrandom((uintptr_t)a0, (size_t)a1, (unsigned)a2);
         break;
 
     /* Chapter 100 — enable per-thread syscall tracing on self.

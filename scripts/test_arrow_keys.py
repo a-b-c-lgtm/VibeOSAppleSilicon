@@ -33,13 +33,26 @@ FB_W = 1280
 FB_H = 800
 
 # Launcher window geometry — see userspace/launcher/launcher.c.
-LAUNCHER_X, LAUNCHER_Y = 80, 60
-LAUNCHER_W, LAUNCHER_H = 240, 180
+# Post-Start-menu: launcher is a NO_DECORATION panel pinned just
+# above the 28-px taskbar.  Origin = (0, FB_H - 28 - 232) and
+# content area starts at the window origin (no title bar).  It
+# is HIDDEN at boot; the taskbar's Start button summons it.
+TASKBAR_H              = 28
+LAUNCHER_W, LAUNCHER_H = 240, 232
+LAUNCHER_X             = 0
+LAUNCHER_Y             = FB_H - TASKBAR_H - LAUNCHER_H
+
+# Start button geometry (must match taskbar.c START_BTN_*).
+START_BTN_X        = 8
+START_BTN_Y_OFFSET = 4
+START_BTN_W        = 60
+START_BTN_H        = TASKBAR_H - 8
+ABS_MAX            = 0x7FFF
 
 # A pixel deep inside the launcher's body (its BG_BGRA is light grey
 # 0xE8,0xEC,0xF0).  Wallpaper at the same coords is much darker
 # (greenish-blue gradient ~ 0x2F,0x45,0x5C in this region).
-BODY_SX, BODY_SY = 200, 90
+BODY_SX, BODY_SY = LAUNCHER_X + 10, LAUNCHER_Y + 10
 
 def cleanup():
     for p in (QMP_SOCK, SERIAL_SOCK):
@@ -103,6 +116,30 @@ def send_key(qmp, qcode):
         })
         time.sleep(0.04)
 
+def screen_to_abs(x_screen, y_screen):
+    return (int(x_screen * ABS_MAX / FB_W),
+            int(y_screen * ABS_MAX / FB_H))
+
+def left_click(qmp, x, y):
+    ax, ay = screen_to_abs(x, y)
+    qsend(qmp, {"execute": "input-send-event", "arguments": {"events": [
+        {"type": "abs", "data": {"axis": "x", "value": ax}},
+        {"type": "abs", "data": {"axis": "y", "value": ay}},
+    ]}})
+    time.sleep(0.05)
+    qsend(qmp, {"execute": "input-send-event", "arguments": {"events": [
+        {"type": "btn", "data": {"down": True,  "button": "left"}},
+    ]}})
+    time.sleep(0.05)
+    qsend(qmp, {"execute": "input-send-event", "arguments": {"events": [
+        {"type": "btn", "data": {"down": False, "button": "left"}},
+    ]}})
+
+def click_start_button(qmp):
+    cx = START_BTN_X + START_BTN_W // 2
+    cy = (FB_H - TASKBAR_H) + START_BTN_Y_OFFSET + START_BTN_H // 2
+    left_click(qmp, cx, cy)
+
 def drain(s, deadline):
     out = b""
     while time.time() < deadline:
@@ -165,14 +202,21 @@ def main():
             print("FAIL: shell prompt not reached"); return 1
         time.sleep(0.6)
 
+        # Launcher boots HIDDEN now (Start-menu model).  Click
+        # the taskbar's Start button to summon it before doing
+        # any pixel-level visibility assertions.
+        click_start_button(qmp)
+        wait_for(ser, b"[taskbar] start -> show launcher", 3.0)
+        time.sleep(0.4)
+
         screendump(qmp, DUMP_PATH)
         ppm = read_ppm(DUMP_PATH)
         body0 = pixel_at(ppm, BODY_SX, BODY_SY)
         if not is_launcher_body(body0):
-            print(f"FAIL: launcher body not visible at boot "
+            print(f"FAIL: launcher body not visible after Start "
                   f"(pixel = {body0})")
             return 1
-        print(f"PASS: launcher visible at boot (pixel = {body0})")
+        print(f"PASS: launcher visible after Start click (pixel = {body0})")
 
         # Press each arrow key in turn.  Before the fix any one of
         # these would close the launcher (its CSI ESC byte was
@@ -192,18 +236,23 @@ def main():
                 return 1
             print(f"PASS: launcher still visible after {label} arrow")
 
-        # Now press ESC; the launcher should close because the
-        # parser flushes the orphaned ESC at end of input drain.
+        # Now press ESC.  Historically this closed the launcher
+        # (it exited the process).  Post-Start-menu, ESC instead
+        # asks wsd to MINIMIZE the launcher, so it disappears
+        # from compose (body pixel becomes wallpaper) but the
+        # process stays alive — clicking its taskbar cell would
+        # bring it back.  The pixel-level observation is the
+        # same as before, which is what we assert here.
         send_key(qmp, "esc")
         time.sleep(0.4)
         screendump(qmp, DUMP_PATH)
         ppm = read_ppm(DUMP_PATH)
         body = pixel_at(ppm, BODY_SX, BODY_SY)
         if is_launcher_body(body):
-            print(f"FAIL: ESC did NOT close the launcher "
+            print(f"FAIL: ESC did NOT hide the launcher "
                   f"(body pixel still launcher-coloured = {body})")
             return 1
-        print(f"PASS: ESC closed the launcher "
+        print(f"PASS: ESC hid the launcher "
               f"(body pixel now wallpaper = {body})")
 
         print("\nARROW-KEY BUG: ALL TESTS PASSED")

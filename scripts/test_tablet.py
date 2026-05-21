@@ -36,11 +36,15 @@ ABS_MAX = 0x7FFF
 # Match wm.c / paint.c.
 WIN_W   = 600
 WIN_H   = 400
-TITLE_H = 22       # WM_TITLE_H in wm.c
-# Post-M46 init auto-spawns /bin/launcher first, claiming the (80, 60)
-# cascade slot.  Paint then cascades 32px south-east to (112, 92).
-WIN_X   = 112      # paint's x after launcher cascade
-WIN_Y   = 92       # paint's y after launcher cascade
+# chapter 108e — wsd paints a 24-px title bar above each
+# decorated window.  Paint is decorated (flags = 0), so its
+# body starts at WIN_Y + TITLE_H.  Paint still quits on ESC.
+TITLE_H = 24
+# wsd cascade base is (100, 100) step (40, 40).  Launcher claims
+# slot 0 (100, 100); paint -- the second app spawned -- claims
+# slot 1 at (140, 140).
+WIN_X   = 140
+WIN_Y   = 140
 
 def cleanup():
     for p in (QMP_SOCK, SERIAL_SOCK):
@@ -226,9 +230,12 @@ def main():
         print(f"  centre pixel before drag: {before}")
 
         send_motion(qmp, cx, cy)
+        time.sleep(0.05)
         send_button(qmp, cx, cy, "left", True)
+        time.sleep(0.05)
         for i in range(8):
             send_motion(qmp, cx + 4*i, cy + 2*i)
+            time.sleep(0.05)
         send_button(qmp, cx + 32, cy + 16, "left", False)
         time.sleep(0.4)
 
@@ -246,9 +253,21 @@ def main():
 
         close_x = WIN_X + WIN_W - 10
         close_y = WIN_Y + 10
-        send_motion(qmp, close_x, close_y)
-        send_button(qmp, close_x, close_y, "left", True)
-        send_button(qmp, close_x, close_y, "left", False)
+        # Chapter 108d: no decoration / close button --
+        # paint quits on ESC.  Click inside paint first to make
+        # sure wsd focuses it, then send ESC via virtio-keyboard.
+        # The earlier drag block already left-clicked inside paint
+        # which should have transferred focus, but a fresh click
+        # is cheap insurance against compositor focus quirks.
+        send_motion(q if False else qmp, close_x, close_y)
+        # Actually click in the middle of the window where it's
+        # definitely paint (close_x might be outside the new
+        # window rect if the geometry shifts).
+        send_motion(qmp, WIN_X + 20, WIN_Y + 60)
+        send_button(qmp, WIN_X + 20, WIN_Y + 60, "left", True)
+        send_button(qmp, WIN_X + 20, WIN_Y + 60, "left", False)
+        time.sleep(0.2)
+        send_key(qmp, "esc")
         wait_for(ser, b"[wm] destroyed window", 3.0)
         time.sleep(0.4)
         screendump(qmp, DUMP_PATH)
@@ -257,7 +276,7 @@ def main():
         post_centre = pixel_at(post, w_post, cx, cy)
         if after == post_centre:
             print(f"FAIL: window was not closed (centre still {after})"); return 1
-        print(f"PASS: close button worked (centre {post_centre} -> {after})")
+        print(f"PASS: close via ESC worked (centre {post_centre} -> {after})")
 
         print("\nMILESTONE 41: ALL TESTS PASSED")
         return 0

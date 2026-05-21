@@ -658,6 +658,144 @@ static long serve_forward(int cfd, const char *req_buf, size_t req_len)
 }
 
 /* ----------------------------------------------------------------
+ * Chapter 110 -- cookie test endpoints.
+ *
+ * These exist so test_browser_cookies.py can exercise the cookie
+ * round-trip end-to-end without depending on any external server.
+ * They are NOT general-purpose: just enough surface area to
+ * assert "Set-Cookie creates a jar entry on disk" and "Cookie:
+ * gets echoed back through whoami".
+ *
+ *   GET /cookie/set     -> sets hobbyos_session=alice (Max-Age=3600)
+ *   GET /cookie/whoami  -> "hello <name>" or "anonymous"
+ *   GET /cookie/clear   -> sets hobbyos_session= with Max-Age=0
+ *
+ * These run BEFORE is_local_path() so the strings /cookie/...
+ * never touch the VFS path validator, never need a file under
+ * /mnt or /data, and never need a hostname rewrite at the
+ * upstream proxy.
+ * ---------------------------------------------------------------- */
+
+/* Locate a header value in the raw request buffer.  Case-insensitive
+ * name match.  Returns the start of the value (no leading spaces),
+ * and writes the length to *out_len.  Returns 0 if not found. */
+static const char *find_header(const char *raw, size_t raw_len,
+                                const char *name, size_t *out_len)
+{
+    /* Skip the request line (METHOD SP TARGET SP VER CRLF). */
+    size_t i = 0;
+    while (i + 1 < raw_len && !(raw[i] == '\r' && raw[i+1] == '\n')) i++;
+    if (i + 2 > raw_len) return 0;
+    i += 2;
+
+    size_t nlen = s_len(name);
+    while (i < raw_len) {
+        if (i + 1 < raw_len && raw[i] == '\r' && raw[i+1] == '\n') break;
+        size_t le = i;
+        while (le + 1 < raw_len &&
+               !(raw[le] == '\r' && raw[le+1] == '\n')) le++;
+        if (le > i + nlen && raw[i + nlen] == ':') {
+            int match = 1;
+            for (size_t k = 0; k < nlen; k++) {
+                char a = raw[i + k];
+                char b = name[k];
+                if (a >= 'A' && a <= 'Z') a = (char)(a + 32);
+                if (b >= 'A' && b <= 'Z') b = (char)(b + 32);
+                if (a != b) { match = 0; break; }
+            }
+            if (match) {
+                size_t v = i + nlen + 1;
+                while (v < le && (raw[v] == ' ' || raw[v] == '\t')) v++;
+                *out_len = le - v;
+                return raw + v;
+            }
+        }
+        i = le + 2;
+    }
+    return 0;
+}
+
+/* Status line + common headers + caller-supplied extra header
+ * block (must end with \r\n, or be NULL) + Content-Type + blank
+ * line.  Mirrors send_common_headers but lets cookie endpoints
+ * slip Set-Cookie: in between Connection: close and Content-Type. */
+static void send_status_with_extra(int cfd, int code, const char *reason,
+                                    const char *extra_headers,
+                                    const char *content_type)
+{
+    send_status_line(cfd, code, reason);
+    (void)write_str(cfd, "Server: " HTTPD_VERSION "\r\n");
+    (void)write_str(cfd, "Connection: close\r\n");
+    if (extra_headers) (void)write_str(cfd, extra_headers);
+    (void)write_str(cfd, "Content-Type: ");
+    (void)write_str(cfd, content_type);
+    (void)write_str(cfd, "\r\n\r\n");
+}
+
+static long serve_cookie_set(int cfd)
+{
+    const char *extra =
+        "Set-Cookie: hobbyos_session=alice; Path=/; Max-Age=3600\r\n";
+    send_status_with_extra(cfd, 200, "OK", extra,
+                           "text/plain; charset=utf-8");
+    const char *body = "session=alice\n";
+    (void)write_str(cfd, body);
+    return (long)s_len(body);
+}
+
+static long serve_cookie_clear(int cfd)
+{
+    const char *extra =
+        "Set-Cookie: hobbyos_session=; Path=/; Max-Age=0\r\n";
+    send_status_with_extra(cfd, 200, "OK", extra,
+                           "text/plain; charset=utf-8");
+    const char *body = "cleared\n";
+    (void)write_str(cfd, body);
+    return (long)s_len(body);
+}
+
+static long serve_cookie_whoami(int cfd, const char *raw, size_t raw_len)
+{
+    size_t cookie_len = 0;
+    const char *cookie = find_header(raw, raw_len, "Cookie", &cookie_len);
+
+    char name[64];
+    int  named = 0;
+    if (cookie && cookie_len > 0) {
+        const char *needle = "hobbyos_session=";
+        size_t nlen = s_len(needle);
+        for (size_t k = 0; k + nlen <= cookie_len; k++) {
+            /* Each candidate match must be at the start of a
+             * cookie -- i.e. preceded by ';', ' ', or start. */
+            if (k > 0 && cookie[k - 1] != ' ' && cookie[k - 1] != ';')
+                continue;
+            int match = 1;
+            for (size_t j = 0; j < nlen; j++) {
+                if (cookie[k + j] != needle[j]) { match = 0; break; }
+            }
+            if (!match) continue;
+            size_t v = k + nlen, e = v;
+            while (e < cookie_len && cookie[e] != ';') e++;
+            size_t cap = sizeof(name) - 1;
+            size_t got = (e - v < cap) ? (e - v) : cap;
+            for (size_t i = 0; i < got; i++) name[i] = cookie[v + i];
+            name[got] = '\0';
+            if (got > 0) named = 1;
+            break;
+        }
+    }
+
+    char body[128];
+    int  bl;
+    if (named) bl = snprintf(body, sizeof(body), "hello %s\n", name);
+    else       bl = snprintf(body, sizeof(body), "anonymous\n");
+    send_status_with_extra(cfd, 200, "OK", 0,
+                           "text/plain; charset=utf-8");
+    (void)write_all(cfd, body, (size_t)bl);
+    return bl;
+}
+
+/* ----------------------------------------------------------------
  * Per-connection handler.  Reads one request, dispatches to either
  * the chapter-105 local-file path or the chapter-106a forwarding
  * path, closes the connection.  HTTP/1.0 + Connection: close means
@@ -710,10 +848,44 @@ static void handle_one(int cfd, uint32_t peer_ip, uint16_t peer_port)
         return;
     }
 
+    if (s_starts_with(target, "/cookie/")) {
+        /* Chapter 110 test endpoints.  Dispatched before
+         * is_local_path so the strings never touch the VFS or
+         * the upstream proxy. */
+        long n = -404;
+        if (s_eq(target, "/cookie/set")) {
+            n = serve_cookie_set(cfd);
+        } else if (s_eq(target, "/cookie/whoami")) {
+            n = serve_cookie_whoami(cfd, raw, raw_len);
+        } else if (s_eq(target, "/cookie/clear")) {
+            n = serve_cookie_clear(cfd);
+        } else {
+            send_error(cfd, 404, "Not Found");
+        }
+        int code = (n >= 0) ? 200 : (int)(-n);
+        log_request(peer_ip, peer_port, "cookie", method, target, code, n);
+        return;
+    }
+
     if (is_local_path(target)) {
         /* Chapter 105 local-file path.  path_is_safe only matters
-         * here -- the forward path never calls open(). */
-        if (path_is_safe(target) < 0) {
+         * here -- the forward path never calls open().
+         *
+         * Chapter 109: strip the optional ?query suffix before
+         * validating + opening.  GET form submits round-trip
+         * their inputs as query strings; without this they'd
+         * always trip path_is_safe's "no ? in segments" rule
+         * and 400.  We keep the original `target` only for the
+         * log line so URL queries are still visible in serial. */
+        char path_only[HTTPD_PATH_CAP];
+        size_t pi = 0;
+        for (; target[pi] && target[pi] != '?' &&
+                pi + 1 < sizeof(path_only); pi++) {
+            path_only[pi] = target[pi];
+        }
+        path_only[pi] = '\0';
+
+        if (path_is_safe(path_only) < 0) {
             send_error(cfd, 400, "Bad Request");
             printf("[httpd] ");
             print_ip(peer_ip);
@@ -721,7 +893,7 @@ static void handle_one(int cfd, uint32_t peer_ip, uint16_t peer_port)
                    (int)peer_port, target);
             return;
         }
-        long n = serve_get(cfd, target, method);
+        long n = serve_get(cfd, path_only, method);
         int code = (n >= 0) ? 200 : (int)(-n);
         log_request(peer_ip, peer_port, "local", method, target, code, n);
     } else {

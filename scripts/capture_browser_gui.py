@@ -50,7 +50,7 @@ def boot(fb_w, fb_h):
     return subprocess.Popen([
         "qemu-system-aarch64",
         "-M", "virt,gic-version=3", "-cpu", "host", "-accel", "hvf",
-        "-m", "8G", "-display", "none",
+        "-m", "8G", "-smp", "2", "-display", "none",
         "-serial", f"unix:{SERIAL_SOCK},server,nowait",
         "-qmp",    f"unix:{QMP_SOCK},server,nowait",
         "-global", "virtio-mmio.force-legacy=off",
@@ -196,8 +196,14 @@ def main():
         qmp = conn(QMP_SOCK)
         qrl(qmp); qsend(qmp, {"execute": "qmp_capabilities"})
 
-        ok, _buf = wait_for(ser, b"/$ ", 25.0)
+        ok, _buf = wait_for(ser, b"$ ", 120.0)
         if not ok:
+            try:
+                with open("/tmp/osdev-browser-serial.log", "wb") as f:
+                    f.write(_buf)
+                print(f"[capture] serial transcript (FAIL): "
+                      f"/tmp/osdev-browser-serial.log ({len(_buf)}B)")
+            except OSError: pass
             print("FAIL: shell prompt not reached"); return 1
 
         timing_flag = "--timing " if args.timing else ""

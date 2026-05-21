@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
 """scripts/test_taskbar.py — milestone-47 smoke test.
 
-Boots fully headless with NO input.  Verifies:
-  1. Both /bin/taskbar and /bin/launcher auto-start
+Boots fully headless.  Verifies:
+  1. Both /bin/taskbar and /bin/launcher auto-start.
   2. The taskbar logs window-create with NO_DECORATION + ALWAYS_ON_TOP
-     flags
-  3. The framebuffer at the bottom strip (y >= 772) shows the
-     taskbar's distinctive dark-blue BG (0x18, 0x1C, 0x32), and shows
-     a CELL coloured (0x30, 0x40, 0x70) at x ~16 (where the launcher's
-     entry sits)
-  4. The launcher's title text "launcher" is visible — we look for a
-     TEXT_BGRA pixel at the rough centre of the cell glyph row
+     flags.
+  3. The taskbar's distinctive dark-blue BG is visible at the bottom
+     of the framebuffer, and the green Start button is painted at
+     its left edge.
+  4. Spawning a real app (notepad) over serial makes a CELL appear
+     in the taskbar at the expected position (just right of the
+     Start button).
+  5. Clicking the Start button summons the launcher panel (chapter
+     109e UX: launcher is now a Start-menu-style panel, hidden at
+     boot, anchored above the taskbar).
+
+Chapter 109e notes: the launcher is no longer one of the taskbar's
+cells — it lives in a NODECORATION + ALWAYS_ON_TOP window that the
+taskbar's filter explicitly hides from its cell list (the launcher's
+title is the literal string "launcher").  Summon/dismiss is the
+Start button's job, not a cell click.
 """
 import json, os, select, socket, subprocess, sys, time
 
@@ -21,6 +30,22 @@ DUMP_PATH   = "/tmp/osdev-fb-tb.ppm"
 
 FB_W = 1280
 FB_H = 800
+
+# Taskbar / launcher geometry — see userspace/taskbar/taskbar.c
+# and userspace/launcher/launcher.c.
+BAR_H            = 28
+START_BTN_X      = 8
+START_BTN_Y_OFF  = 4
+START_BTN_W      = 60
+START_BTN_H      = BAR_H - 8
+START_CX = START_BTN_X + START_BTN_W // 2                       # 38
+START_CY = (FB_H - BAR_H) + START_BTN_Y_OFF + START_BTN_H // 2  # 786
+CELLS_X0 = START_BTN_X + START_BTN_W + 8                         # 76
+
+LAUNCHER_X = 0
+LAUNCHER_Y = FB_H - BAR_H - 232                                  # 540
+LAUNCHER_W = 240
+LAUNCHER_H = 232
 
 def cleanup():
     for p in (QMP_SOCK, SERIAL_SOCK):
@@ -91,6 +116,27 @@ def wait_for(s, needle, timeout):
         if needle in buf: return buf
     return buf
 
+ABS_MAX = 0x7FFF
+def screen_to_abs(x, y):
+    return (int(x * ABS_MAX / FB_W), int(y * ABS_MAX / FB_H))
+
+def qmp_move(qmp, x, y):
+    ax, ay = screen_to_abs(x, y)
+    qsend(qmp, {"execute": "input-send-event", "arguments": {"events": [
+        {"type": "abs", "data": {"axis": "x", "value": ax}},
+        {"type": "abs", "data": {"axis": "y", "value": ay}},
+    ]}})
+
+def qmp_btn(qmp, down):
+    qsend(qmp, {"execute": "input-send-event", "arguments": {"events": [
+        {"type": "btn", "data": {"down": bool(down), "button": "left"}},
+    ]}})
+
+def qmp_click(qmp, x, y):
+    qmp_move(qmp, x, y); time.sleep(0.05)
+    qmp_btn(qmp, True);  time.sleep(0.05)
+    qmp_btn(qmp, False)
+
 def screendump(qmp, path):
     try: os.unlink(path)
     except FileNotFoundError: pass
@@ -141,6 +187,11 @@ def main():
             return 1
         print("PASS: init auto-spawned /bin/taskbar")
 
+        if b"launching /bin/launcher" not in boot_log:
+            print("FAIL: init did not auto-spawn launcher")
+            return 1
+        print("PASS: init auto-spawned /bin/launcher")
+
         # The taskbar's create line should mention flags=0x3
         # (NO_DECORATION | ALWAYS_ON_TOP).  serial_puthex emits a
         # 16-digit hex word with leading zeros.
@@ -154,17 +205,27 @@ def main():
             return 1
         print("PASS: taskbar window created with flags=0x3")
 
-        # Wait for the taskbar to do its first render-with-cells pass.
-        time.sleep(0.6)
+        # Spawn a real app so the taskbar has at least one cell
+        # to draw (the launcher itself is filtered out of the
+        # cell list by taskbar.c).  notepad is the smallest GUI
+        # app handy; spawn over serial so the focused launcher
+        # (when it gets summoned later) doesn't swallow input.
+        ser.sendall(b"notepad &\n")
+        log = wait_for(ser, b"[wm] window created", 5.0)
+        if b"[wm] window created" not in log:
+            print("FAIL: notepad did not open a window")
+            return 1
+        # Wait for taskbar to refresh its cell list.
+        time.sleep(0.8)
+
         screendump(qmp, DUMP_PATH)
         print(f"  saved screendump: {DUMP_PATH}")
 
         ppm = read_ppm(DUMP_PATH)
         # Bar BG colour at top of strip (y == FB_H - BAR_H + 8).
         # Bar Y range = 772..799.  Sample at y=775 (above any cell
-        # but below the 1px highlight at y=772).
-        # Wait — cells start at y=4 inside the bar = absolute 776.
-        # So sample at y=775 for pure BG.
+        # but below the 1px highlight at y=772).  Sample x well
+        # past every cell (1100 is safely in pure-BG territory).
         bar_bg = pixel_at(ppm, 1100, 775)
         if not near(bar_bg, (24, 28, 50), tol=10):
             print(f"FAIL: bar BG pixel at (1100,775) = {bar_bg}, "
@@ -172,41 +233,75 @@ def main():
             return 1
         print(f"PASS: taskbar BG painted (pixel at (1100,775) = {bar_bg})")
 
-        # First cell sits at (CELL_PADX=8, bar_y=772+4=776), 180x20.
-        # Text is left-aligned at x=14 spanning ~64 px ("launcher" =
-        # 8 chars * 8 px).  Sample at (170, 786) — well right of the
-        # label but still inside the cell, on its body fill.
-        # Cell BG is CELL_BGRA = (48, 64, 112) when not focused, or
-        # CELL_FOCUS_BGRA = (96, 144, 224) when focused.
-        cell_pix = pixel_at(ppm, 170, 786)
+        # Start button is painted at (8..68, 776..796).  Its idle
+        # fill is START_BG_IDLE = GUI_BGRA(0x30, 0x60, 0x30) =
+        # mid-green.  Sample at (38, 786) which is dead-centre of
+        # the button — the glyph row for "Start" sits a few pixels
+        # below the top, so x=38, y=786 lands on the fill.
+        start_pix = pixel_at(ppm, START_CX, START_CY)
+        if not near(start_pix, (48, 96, 48), tol=24):
+            # The label glyph might land on this exact pixel
+            # depending on the font; fall back to a wider search
+            # for any green-dominant pixel in the button region.
+            found_green = False
+            for sy in range(START_CY - 4, START_CY + 5):
+                for sx in range(START_CX - 8, START_CX + 9):
+                    p = pixel_at(ppm, sx, sy)
+                    if p[1] > p[0] + 20 and p[1] > p[2] + 20 and p[1] >= 60:
+                        found_green = True; break
+                if found_green: break
+            if not found_green:
+                print(f"FAIL: Start button green fill not visible "
+                      f"near ({START_CX}, {START_CY}); sampled {start_pix}")
+                return 1
+            print(f"PASS: Start button green fill visible near "
+                  f"({START_CX}, {START_CY})")
+        else:
+            print(f"PASS: Start button painted (pixel at "
+                  f"({START_CX}, {START_CY}) = {start_pix})")
+
+        # The first cell (notepad) sits at (CELLS_X0=76, bar_y=776),
+        # 180x20.  Cell BG is CELL_BGRA = (48, 64, 112) when not
+        # focused, or CELL_FOCUS_BGRA = (96, 144, 224) when focused.
+        # Sample at a point safely inside the cell body to the
+        # RIGHT of the label glyphs (label is 8×7 px wide left of
+        # ~x=CELLS_X0+70).  CELLS_X0 + 100 = 176 lands well past
+        # the "notepad" label, still inside the 180-wide cell.
+        cell_x = CELLS_X0 + 100
+        cell_pix = pixel_at(ppm, cell_x, 786)
         focus = (96, 144, 224)
         unfocus = (48, 64, 112)
         if near(cell_pix, focus, tol=15):
-            print(f"PASS: launcher cell painted FOCUSED (pixel = {cell_pix})")
+            print(f"PASS: notepad cell painted FOCUSED (pixel = {cell_pix})")
         elif near(cell_pix, unfocus, tol=15):
-            print(f"PASS: launcher cell painted unfocused (pixel = {cell_pix})")
+            print(f"PASS: notepad cell painted unfocused (pixel = {cell_pix})")
         else:
-            print(f"FAIL: cell pixel at (170, 786) = {cell_pix}, "
+            print(f"FAIL: cell pixel at ({cell_x}, 786) = {cell_pix}, "
                   f"expected near {focus} or {unfocus}")
             return 1
 
-        # Bonus: sample inside the launcher label itself — should be
-        # the white-ish glyph foreground (240, 240, 240).
-        glyph_pix = pixel_at(ppm, 60, 786)
-        if not near(glyph_pix, (240, 240, 240), tol=20):
-            # Don't fail — just informational.  Anti-aliased / blended
-            # glyphs would land elsewhere.
-            print(f"  note: glyph pixel at (60, 786) = {glyph_pix}")
-        else:
-            print(f"PASS: launcher label glyph rendered (pixel = {glyph_pix})")
+        # Click the Start button to summon the launcher panel.
+        print(f"  clicking Start button at ({START_CX}, {START_CY}) "
+              f"to summon launcher")
+        qmp_click(qmp, START_CX, START_CY)
+        wait_for(ser, b"start -> show launcher", 3.0)
+        time.sleep(0.4)
 
-        # The launcher window should still be in its usual spot —
-        # confirm we didn't break that pixel.
-        launcher_bg = pixel_at(ppm, 200, 90)
+        screendump(qmp, DUMP_PATH)
+        ppm = read_ppm(DUMP_PATH)
+        # The launcher panel (NODECORATION) is now at
+        # (LAUNCHER_X, LAUNCHER_Y) = (0, 540), size 240x232.
+        # Its body is light-grey-blue (0xE8, 0xEC, 0xF0).
+        # Sample at (110, LAUNCHER_Y + 6) -- inside the top
+        # margin, above the first button at body-y=BTN_TOP=16,
+        # so pure BG.
+        launcher_bg = pixel_at(ppm, 110, LAUNCHER_Y + 6)
         if launcher_bg[0] < 220 or launcher_bg[1] < 220 or launcher_bg[2] < 220:
-            print(f"FAIL: launcher BG regression — (200,90) = {launcher_bg}")
+            print(f"FAIL: launcher panel did not appear after Start "
+                  f"click — (110, {LAUNCHER_Y + 6}) = {launcher_bg}")
             return 1
-        print(f"PASS: launcher still visible (pixel at (200,90) = {launcher_bg})")
+        print(f"PASS: launcher panel summoned by Start button "
+              f"(pixel at (110, {LAUNCHER_Y + 6}) = {launcher_bg})")
 
         print("\nMILESTONE 47: ALL TESTS PASSED")
         return 0

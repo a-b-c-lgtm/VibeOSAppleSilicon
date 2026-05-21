@@ -238,6 +238,57 @@ static inline int dom_node_n_attrs(const struct dom_node *n)
     return count;
 }
 
+/* Set an attribute on an element node.  Replaces the existing
+ * value if `name` is already present, else appends a new attr.
+ * Strings are copied (malloc'd) -- caller retains ownership of
+ * the input buffers.  Returns 0 on success, -1 on OOM or invalid
+ * input.  Added in chapter 111 for the pocketjs DOM bridge.
+ */
+static inline int dom_node_set_attr(struct dom_node *n,
+                                    const char *name,
+                                    const char *value)
+{
+    if (!n || n->type != DOM_NODE_ELEMENT || !name) return -1;
+    /* Replace existing attribute. */
+    for (struct dom_attr *a = n->attrs; a; a = a->next) {
+        if (!dom_streq(a->name, name)) continue;
+        size_t vl = value ? 0 : 0; (void)vl;
+        size_t nv = 0; if (value) while (value[nv]) nv++;
+        char *nb = (char *)malloc(nv + 1);
+        if (!nb) return -1;
+        for (size_t i = 0; i < nv; i++) nb[i] = value[i];
+        nb[nv] = 0;
+        if (a->value) free(a->value);
+        a->value = nb;
+        return 0;
+    }
+    /* Append a new attribute. */
+    struct dom_attr *a = (struct dom_attr *)malloc(sizeof(*a));
+    if (!a) return -1;
+    size_t nn = 0; while (name[nn]) nn++;
+    size_t nv = 0; if (value) while (value[nv]) nv++;
+    a->name  = (char *)malloc(nn + 1);
+    a->value = (char *)malloc(nv + 1);
+    if (!a->name || !a->value) {
+        if (a->name) free(a->name);
+        if (a->value) free(a->value);
+        free(a);
+        return -1;
+    }
+    for (size_t i = 0; i < nn; i++) a->name[i]  = name[i];
+    a->name[nn] = 0;
+    for (size_t i = 0; i < nv; i++) a->value[i] = value ? value[i] : 0;
+    a->value[nv] = 0;
+    a->next = NULL;
+    /* Append at the end so the iteration order in dom_node_attr
+     * stays predictable for callers that walk the attrs list. */
+    if (!n->attrs) { n->attrs = a; return 0; }
+    struct dom_attr *t = n->attrs;
+    while (t->next) t = t->next;
+    t->next = a;
+    return 0;
+}
+
 /* ---------- builder: stack helpers ---------- */
 
 static struct dom_node *dom_top(const struct dom *d)

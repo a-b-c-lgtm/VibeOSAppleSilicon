@@ -35,12 +35,24 @@ DUMP_PATH   = "/tmp/osdev-fb-ttf.ppm"
 FB_W = 1280
 FB_H = 800
 
-# Launcher window geometry. The launcher is the first window the WM
-# creates on boot, so it lands at (80, 60) with a 240x232 body and a
-# 24 px title bar. Button 0 ("gui_term") is the topmost button.
-WIN_X, WIN_Y = 80, 60
+# Launcher window geometry.  chapter 109e UX: launcher is now
+# a Start-menu-style panel — NODECORATION + ALWAYS_ON_TOP,
+# anchored above the taskbar at (0, FB_H - BAR_H - 232) =
+# (0, 540), hidden by default and summoned by the taskbar's
+# Start button.  No wsd title bar (NODECORATION), so the
+# body starts at WIN_Y directly.
+BAR_H        = 28
+WIN_X, WIN_Y = 0, FB_H - BAR_H - 232          # (0, 540)
 WIN_W, WIN_H = 240, 232
-TITLE_H      = 24
+TITLE_H      = 0
+
+# Taskbar's Start button (see userspace/taskbar/taskbar.c).
+START_BTN_X      = 8
+START_BTN_Y_OFF  = 4
+START_BTN_W      = 60
+START_BTN_H      = BAR_H - 8
+START_CX = START_BTN_X + START_BTN_W // 2                       # 38
+START_CY = (FB_H - BAR_H) + START_BTN_Y_OFF + START_BTN_H // 2  # 786
 
 # Inside the window content area:
 #   BTN_X     = 16
@@ -48,15 +60,22 @@ TITLE_H      = 24
 #   BTN_W     = 208
 #   BTN_H     = 36
 #   GLYPH_H   = 16
-BTN_AREA_X0 = WIN_X + 16                       # 96
-BTN_AREA_X1 = BTN_AREA_X0 + 208                # 304
-BTN0_Y0     = WIN_Y + TITLE_H + 16             # 100
-BTN0_Y1     = BTN0_Y0 + 36                     # 136
+BTN_AREA_X0 = WIN_X + 16                       # 16
+BTN_AREA_X1 = BTN_AREA_X0 + 208                # 224
+BTN0_Y0     = WIN_Y + TITLE_H + 16             # 556
+BTN0_Y1     = BTN0_Y0 + 36                     # 592
 
 # Pixel colours from userspace/launcher/launcher.c (GUI_BGRA packs
 # the bytes into a 32-bit BGRA word; the framebuffer hands QEMU
 # pixels as R, G, B in PPM output, which is what we compare here).
-BTN_BGRA  = (0xC0, 0xD0, 0xE8)   # button fill (label background)
+#
+# Chapter 108c migration: the launcher's button fill now comes
+# from libgui's shared draw_button_chrome() -- a neutral
+# (236,236,236) light-gray that all chrome shares -- instead of
+# the launcher-specific blue (0xC0,0xD0,0xE8) it used to bake in.
+# The TTF asserts only need a stable known background colour;
+# they don't care which one.
+BTN_BGRA  = (236, 236, 236)      # button fill (label background)
 TEXT_BGRA = (0x10, 0x18, 0x28)   # label foreground
 
 def cleanup():
@@ -170,18 +189,75 @@ def main():
             print("FAIL: shell prompt not reached"); return 1
         print("PASS: shell prompt reached")
 
-        # Give the launcher a beat to render its first frame.
-        time.sleep(0.5)
+        # The launcher is hidden at boot — click the taskbar's
+        # Start button to summon it.  We need its buttons
+        # rendered into the FB so the TTF asserts have pixels to
+        # work with.
+        def screen_to_abs(x, y):
+            return (int(x * 0x7FFF / FB_W), int(y * 0x7FFF / FB_H))
+        def qmp_click(x, y):
+            ax, ay = screen_to_abs(x, y)
+            qsend(qmp, {"execute": "input-send-event",
+                        "arguments": {"events": [
+                {"type": "abs", "data": {"axis": "x", "value": ax}},
+                {"type": "abs", "data": {"axis": "y", "value": ay}},
+            ]}})
+            time.sleep(0.05)
+            qsend(qmp, {"execute": "input-send-event",
+                        "arguments": {"events": [
+                {"type": "btn", "data": {"down": True,  "button": "left"}},
+            ]}})
+            time.sleep(0.05)
+            qsend(qmp, {"execute": "input-send-event",
+                        "arguments": {"events": [
+                {"type": "btn", "data": {"down": False, "button": "left"}},
+            ]}})
 
-        screendump(qmp, DUMP_PATH)
-        ppm = read_ppm(DUMP_PATH)
+        print(f"  clicking Start button at ({START_CX}, {START_CY}) "
+              f"to summon launcher")
+
+        # The Start-click -> wsd-restore -> launcher-repaint hop
+        # is racy under sweep load: a single click sometimes lands
+        # before the launcher's bus connection is fully up. Click,
+        # wait for the launcher's button-0 corner pixel to actually
+        # appear, and retry the click ONLY if the launcher window
+        # itself never showed up (because the click is a toggle --
+        # re-clicking when the launcher is already visible would
+        # hide it again).
+        def launcher_visible(ppm):
+            # Anywhere inside the launcher's footprint is a
+            # light-gray pixel (R+G+B > ~600). The wallpaper at the
+            # same coords is a much darker blue-gray (sum < ~250).
+            p = pixel_at(ppm, BTN_AREA_X0 + 4, BTN0_Y0 + 4)
+            return sum(p) > 500
+
+        ppm = None
+        btn_corner = None
+        ok = False
+        for attempt in range(5):
+            # Only click if the launcher isn't already up. The
+            # Start button is a toggle, so blindly re-clicking on
+            # an already-shown launcher dismisses it.
+            screendump(qmp, DUMP_PATH)
+            ppm = read_ppm(DUMP_PATH)
+            if not launcher_visible(ppm):
+                qmp_click(START_CX, START_CY)
+                wait_for(ser, b"start -> show launcher", 2.0)
+            deadline = time.time() + 2.5
+            while time.time() < deadline:
+                time.sleep(0.3)
+                screendump(qmp, DUMP_PATH)
+                ppm = read_ppm(DUMP_PATH)
+                btn_corner = pixel_at(ppm, BTN_AREA_X0 + 4, BTN0_Y0 + 4)
+                if near(btn_corner, BTN_BGRA, tol=8):
+                    ok = True
+                    break
+            if ok: break
+            print(f"  (attempt {attempt+1}: button not visible yet, "
+                  f"pixel = {btn_corner}; retrying)")
+
         print(f"  saved screendump: {DUMP_PATH}")
-
-        # Verify the launcher's first button actually painted -- look
-        # for a BTN_BGRA pixel away from the label area (top-left
-        # corner of the button body, a few pixels in).
-        btn_corner = pixel_at(ppm, BTN_AREA_X0 + 4, BTN0_Y0 + 4)
-        if not near(btn_corner, BTN_BGRA, tol=8):
+        if not ok:
             print(f"FAIL: launcher button-0 not painted "
                   f"(pixel at ({BTN_AREA_X0+4},{BTN0_Y0+4}) = {btn_corner}, "
                   f"expected ~{BTN_BGRA})")

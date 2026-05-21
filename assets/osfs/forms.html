@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Browser Form Test</title>
+  <style>
+    body { font-family: sans-serif; margin: 24px; line-height: 1.5; }
+    .card { border: 1px solid #333; padding: 12px; margin: 12px 0; }
+    input { padding: 4px; margin-right: 8px; }
+    button { padding: 4px 10px; }
+  </style>
+</head>
+<body>
+  <h1>Form Submit Smoke Test</h1>
+  <p>This page is local to /mnt and avoids external rate limits.</p>
+
+  <div class="card">
+    <h2>GET form with submit button</h2>
+    <form method="get" action="http://127.0.0.1:80/mnt/test.html">
+      <input type="text" name="q" value="hello" />
+      <input type="text" name="page" value="1" />
+      <button type="submit">[ SUBMIT ] Open /mnt/test.html with query</button>
+    </form>
+    <p>Click the bracketed text above to submit.</p>
+  </div>
+
+  <div class="card">
+    <h2>Second submit target</h2>
+    <form method="get" action="http://127.0.0.1:80/mnt/hello.txt">
+      <input type="text" name="from" value="forms.html" />
+      <button type="submit">[ SUBMIT ] Open /mnt/hello.txt</button>
+    </form>
+    <p>This is also a real form submit (GET).</p>
+  </div>
+
+  <p><a href="http://127.0.0.1:80/mnt/hn.html">Open local HN snapshot</a></p>
+</body>
+</html>

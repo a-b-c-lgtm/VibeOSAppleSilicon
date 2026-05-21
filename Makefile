@@ -74,12 +74,16 @@ C_SRCS   := kernel/core/main.c \
             kernel/core/srv.c \
             kernel/core/console_in.c \
             kernel/core/wm.c \
+            kernel/core/wm_font.c \
+            kernel/core/wsd_fb.c \
+            kernel/core/win_fb.c \
             kernel/core/net.c \
             kernel/core/icmp.c \
             kernel/core/udp.c \
             kernel/core/dhcp.c \
             kernel/core/tcp.c \
             kernel/core/dns.c \
+            kernel/core/random.c \
             kernel/device/gic.c \
             kernel/device/virtio_blk.c \
             kernel/device/virtio_gpu.c \
@@ -87,11 +91,11 @@ C_SRCS   := kernel/core/main.c \
             kernel/device/virtio_tablet.c \
             kernel/device/virtio_net.c \
             kernel/device/virtio_snd.c \
+            kernel/device/virtio_rng.c \
             kernel/device/blk_cache.c \
             kernel/device/fb.c \
             kernel/device/font.c \
             kernel/device/text.c \
-            kernel/device/ttf.c \
             kernel/arch/page_tables.c \
             kernel/arch/address_space.c \
             kernel/arch/cpu.c \
@@ -275,6 +279,93 @@ BEEP_OBJS := $(BUILD)/userspace/crt/crt0.o \
 BEEP_ELF  := $(BUILD)/userspace/beep/beep.elf
 BEEP_STRIPPED := $(BUILD)/userspace/beep/beep.stripped.elf
 
+# chapter-112 getrand: print N random bytes as hex via SYS_GETRANDOM.
+GETRAND_OBJS := $(BUILD)/userspace/crt/crt0.o \
+               $(BUILD)/userspace/getrand/getrand.o
+GETRAND_ELF  := $(BUILD)/userspace/getrand/getrand.elf
+GETRAND_STRIPPED := $(BUILD)/userspace/getrand/getrand.stripped.elf
+
+# ----------------------------------------------------------------------
+# chapter-112a BearSSL static library (libbearssl.a).
+#
+# Vendored at vendor/bearssl/ from BearSSL 0.6 (MIT licensed).
+# We compile every src/**/*.c EXCEPT sysrng.c (that file probes
+# /dev/urandom and similar host-OS surfaces; our seeding comes
+# from kernel/core/random.c via SYS_GETRANDOM, so sysrng.c would
+# both not link and not be used).  T0-generated parsers are
+# already checked in, so no Mono required.
+#
+# Vendor code is built with a permissive flag set: -w to drop
+# -Wall/-Wextra/-Werror noise (BearSSL is clean against its own
+# author's flag set, not necessarily ours), and -O2 because
+# AES/SHA/GCM are the kind of code that benefits from inlining.
+# Everything else mirrors USER_CFLAGS so the resulting .o files
+# are ABI-compatible with the rest of userspace.
+# ----------------------------------------------------------------------
+BEARSSL_SRCS := $(shell find vendor/bearssl/src -name '*.c' \
+                    -not -path 'vendor/bearssl/src/rand/sysrng.c')
+BEARSSL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(BEARSSL_SRCS))
+BEARSSL_LIB  := $(BUILD)/vendor/bearssl/libbearssl.a
+BEARSSL_INC  := -I vendor/bearssl-shim -I vendor/bearssl/inc -I vendor/bearssl/src
+BEARSSL_CFLAGS := -ffreestanding -nostdlib \
+                  -mcpu=cortex-a72 -mgeneral-regs-only \
+                  -fno-stack-protector -fno-pie -fno-pic \
+                  -fno-asynchronous-unwind-tables \
+                  -O2 -g -MMD -MP -w $(BEARSSL_INC)
+
+# Bridge object: extern memcpy/memset/memmove/memcmp/strlen + time()
+# stub.  Required by every binary that links libbearssl.a.
+CSTRING_OBJ := $(BUILD)/userspace/libc/cstring.o
+
+# chapter-112b shared objects (used by both tlstest and httpsd):
+#
+#   TLS_SOCKET_OBJ -- thin BearSSL-engine + br_sslio_ wrapper that
+#                     exposes a tls_socket_t with connect/send/
+#                     recv/close methods over our chapter-104
+#                     TCP sockets and chapter-112 SYS_GETRANDOM.
+#   TEST_CHAIN_OBJ -- re-exports BearSSL's sample CN=localhost
+#                     RSA-2048 cert chain + private key as extern
+#                     symbols (test_server_chain[], test_server_key)
+#                     for use by the in-guest httpsd server and the
+#                     tlstest knownkey client.
+#
+# Both need BearSSL's umbrella header on the include path; the
+# test cert TU also wants vendor/bearssl/samples/ so the sample
+# .h files (chain-rsa.h, key-rsa.h) resolve.  Pattern-rule
+# overrides for each are below.
+TLS_SOCKET_OBJ := $(BUILD)/userspace/libc/tls_socket.o
+TEST_CHAIN_OBJ := $(BUILD)/vendor/testcerts/test_chain.o
+# Chapter 112e: second test chain (ECDSA / P-256) re-exported
+# from a sibling TU because the BearSSL sample headers all use
+# `static const` for their CERT0/CERT1/CHAIN symbols.
+TEST_CHAIN_EC_OBJ := $(BUILD)/vendor/testcerts/test_chain_ec.o
+
+# chapter-112a tlstest: links libbearssl.a and runs br_sha256 against
+# two NIST KAT vectors.  Proves the build works; no TLS yet.
+# chapter 112b extends this with `tlstest --handshake HOST PORT`
+# which dials an in-guest TLS server and verifies the handshake
+# end-to-end -- so tlstest now also needs the tls_socket + cert
+# objects.
+TLSTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                $(BUILD)/userspace/tlstest/tlstest.o \
+                $(TLS_SOCKET_OBJ) \
+                $(TEST_CHAIN_OBJ) \
+                $(CSTRING_OBJ)
+TLSTEST_ELF  := $(BUILD)/userspace/tlstest/tlstest.elf
+TLSTEST_STRIPPED := $(BUILD)/userspace/tlstest/tlstest.stripped.elf
+
+# chapter-112b httpsd: in-guest TLS test server.  Same socket
+# accept loop as httpd, but each connection runs the BearSSL
+# server engine on top.  Serves a fixed marker body so the
+# handshake KAT can verify end-to-end encryption.
+HTTPSD_OBJS := $(BUILD)/userspace/crt/crt0.o \
+               $(BUILD)/userspace/httpsd/httpsd.o \
+               $(TEST_CHAIN_OBJ) \
+               $(TEST_CHAIN_EC_OBJ) \
+               $(CSTRING_OBJ)
+HTTPSD_ELF  := $(BUILD)/userspace/httpsd/httpsd.elf
+HTTPSD_STRIPPED := $(BUILD)/userspace/httpsd/httpsd.stripped.elf
+
 # chapter-97 pngdec: decode a PNG and print w x h + checksum.
 PNGDEC_OBJS := $(BUILD)/userspace/crt/crt0.o \
                $(BUILD)/userspace/pngdec/pngdec.o
@@ -359,6 +450,15 @@ COWTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
 COWTEST_ELF  := $(BUILD)/userspace/cowtest/cowtest.elf
 COWTEST_STRIPPED := $(BUILD)/userspace/cowtest/cowtest.stripped.elf
 
+# chapter 108c mixtest: asserts the one-window-one-draw-path
+# contract.  A window that installed gui_window_fb must refuse
+# gui_fill_rect / gui_draw_text / gui_present with -EBUSY; an
+# unmapped window must still accept them (legacy notify path).
+MIXTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                $(BUILD)/userspace/mixtest/mixtest.o
+MIXTEST_ELF  := $(BUILD)/userspace/mixtest/mixtest.elf
+MIXTEST_STRIPPED := $(BUILD)/userspace/mixtest/mixtest.stripped.elf
+
 # milestone-56 httpget: TCP client over the M55 stack via the new
 # socket syscall surface.  Useful end-to-end test that the
 # kernel-side fd path correctly demuxes onto tcp_send/tcp_recv.
@@ -366,6 +466,15 @@ HTTPGET_OBJS := $(BUILD)/userspace/crt/crt0.o \
                 $(BUILD)/userspace/httpget/httpget.o
 HTTPGET_ELF  := $(BUILD)/userspace/httpget/httpget.elf
 HTTPGET_STRIPPED := $(BUILD)/userspace/httpget/httpget.stripped.elf
+
+# chapter-110 cookies: user-facing inspector for the /data/cookies
+# jar that browser + httpget share.  Pure text -- equivalent to
+# `cat` over the same files, plus a `clear` subcommand and an
+# expired-cookie annotation.
+COOKIES_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                $(BUILD)/userspace/cookies/cookies.o
+COOKIES_ELF  := $(BUILD)/userspace/cookies/cookies.elf
+COOKIES_STRIPPED := $(BUILD)/userspace/cookies/cookies.stripped.elf
 
 # chapter-104 echod: TCP echo daemon, the server-side counterpart
 # of httpget.  Exercises the new SYS_SOCKET_LISTEN / SYS_SOCKET_ACCEPT
@@ -413,6 +522,70 @@ CLIPBOARDD_OBJS := $(BUILD)/userspace/crt/crt0.o \
                    $(BUILD)/userspace/clipboardd/clipboardd.o
 CLIPBOARDD_ELF  := $(BUILD)/userspace/clipboardd/clipboardd.elf
 CLIPBOARDD_STRIPPED := $(BUILD)/userspace/clipboardd/clipboardd.stripped.elf
+
+# chapter-108b fontd: the TrueType rasteriser, evicted from the
+# kernel and turned into a long-running userspace daemon bound
+# to /srv/font (chapter-107 IPC bus).  init's supervisor
+# restarts it on crash.  The kernel-side WM reaches for it via
+# kernel/core/wm_font.c when wm_draw_text needs a glyph; if the
+# daemon is briefly unreachable (boot window, respawn) the WM
+# falls back to the always-available bitmap font.
+#
+# DejaVuSans.ttf is embedded into fontd's ELF (no longer into
+# the kernel) via the same objcopy-binary trick used for the
+# ramfs payload.  The wrapper object exposes
+# _binary_DejaVuSans_ttf_start / _end which userspace/fontd/ttf.c
+# walks at startup.
+FONTD_OBJS := $(BUILD)/userspace/crt/crt0.o \
+              $(BUILD)/userspace/fontd/fontd.o \
+              $(BUILD)/userspace/fontd/ttf.o \
+              $(BUILD)/userspace/fontd/DejaVuSans.ttf.o
+FONTD_ELF  := $(BUILD)/userspace/fontd/fontd.elf
+FONTD_STRIPPED := $(BUILD)/userspace/fontd/fontd.stripped.elf
+
+# chapter-108d wsd: the window-server daemon.  Phase A just
+# claims the framebuffer via SYS_FB_MAP_SCANOUT and idles; the
+# kernel WM still composes.  Subsequent phases replace
+# kernel/core/wm.c with logic that lives in this binary.
+# Bound to /srv/wm (chapter-107 IPC) in Phase B.
+#
+# chapter 108e -- wsd paints title bars and the cursor sprite
+# using libgui/draw.h (draw_text -> fontd, draw_fill_rect,
+# draw_blit_bgra), so DRAW_OBJ has to come along.  draw.o is
+# declared later in this Makefile (WMCLIENT_OBJ block) but
+# the := expansion of $(BUILD)/userspace/libgui/draw.o is a
+# literal path -- works fine, no forward-reference issue.
+WSD_OBJS := $(BUILD)/userspace/crt/crt0.o \
+            $(BUILD)/userspace/wsd/wsd.o \
+            $(BUILD)/userspace/libgui/draw.o
+WSD_ELF  := $(BUILD)/userspace/wsd/wsd.elf
+WSD_STRIPPED := $(BUILD)/userspace/wsd/wsd.stripped.elf
+
+# chapter-108d Phase B smoke client.  One-shot CLI that
+# connects to /srv/wm, exercises WM_HELLO + WM_LIST, and
+# prints PASS/FAIL.  Driven by scripts/test_wsd_hello.py.
+WMTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+               $(BUILD)/userspace/wmtest/wmtest.o
+WMTEST_ELF  := $(BUILD)/userspace/wmtest/wmtest.elf
+WMTEST_STRIPPED := $(BUILD)/userspace/wmtest/wmtest.stripped.elf
+
+# chapter-108d wmclient /srv/wm exhibit app.  First user of
+# libgui/wmclient.h.  One-shot: HELLO, CREATE, MAP_FB paint,
+# MOVE, DAMAGE, DESTROY, exit.  Driven by
+# scripts/test_hellowsd.py.
+#
+# WMCLIENT_OBJ + DRAW_OBJ are hoisted to the top of the libgui
+# group so that every later *_OBJS line (HELLOGUI, BROWSER,
+# NOTEPAD, ...) can reference them under := immediate-expansion.
+# Pattern-rule ordering trap recorded in
+# /memories/repo/makefile-pattern-rule-ordering.md.
+WMCLIENT_OBJ := $(BUILD)/userspace/libgui/wmclient.o
+DRAW_OBJ     := $(BUILD)/userspace/libgui/draw.o
+HELLOWSD_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                 $(BUILD)/userspace/hellowsd/hellowsd.o \
+                 $(WMCLIENT_OBJ)
+HELLOWSD_ELF  := $(BUILD)/userspace/hellowsd/hellowsd.elf
+HELLOWSD_STRIPPED := $(BUILD)/userspace/hellowsd/hellowsd.stripped.elf
 
 # chapter-108 clip: command-line client for the clipboard.
 # `clip set foo`, `clip get`, `clip gen`, `clip clear`.  The
@@ -476,29 +649,84 @@ LAYOUT_STRIPPED := $(BUILD)/userspace/layout/layout.stripped.elf
 # 8x16-px-cell character grid for stdout (default = plain ASCII
 # with box-drawing borders; --ansi adds 24-bit colour + underline
 # escapes).  https:// is rejected (no TLS yet).
+# Chapter 108d: --gui mode now uses the wsd-backed
+# wmclient + draw.o (each frame composes into the mapped FB and
+# pushes one wm_window_dirty) instead of the chapter-94 kernel-WM
+# syscalls (gui_create_window / gui_fill_rect / gui_present /
+# gui_flush).  Non-GUI modes (--ansi, --paint, --bench-resize,
+# headless plain) don't touch wmclient.o but link it anyway --
+# the dead-code is < 4 KiB and lets the same browser binary do
+# both paths without per-mode link variants.
+#
+# Chapter 112d: the browser now speaks TLS natively via the same
+# BearSSL static library that backs tlstest + httpsd.  We pull in
+# TLS_SOCKET_OBJ (the BearSSL engine + br_sslio_ wrapper),
+# TEST_CHAIN_OBJ (the sample CN=localhost RSA-2048 chain whose
+# intermediate doubles as our hardcoded trust anchor until 112e
+# loads a real store), and CSTRING_OBJ (the freestanding mem*
+# bridge libbearssl.a needs).  The full set is link-grouped
+# against $(BEARSSL_LIB) below so members can resolve each other
+# in one pass.
 BROWSER_OBJS := $(BUILD)/userspace/crt/crt0.o \
-                $(BUILD)/userspace/browser/browser.o
+                $(BUILD)/userspace/browser/browser.o \
+                $(DRAW_OBJ) \
+                $(WMCLIENT_OBJ) \
+                $(TLS_SOCKET_OBJ) \
+                $(TEST_CHAIN_OBJ) \
+                $(CSTRING_OBJ)
 BROWSER_ELF  := $(BUILD)/userspace/browser/browser.elf
 BROWSER_STRIPPED := $(BUILD)/userspace/browser/browser.stripped.elf
 
 # milestone-40 GUI demo: opens a window, paints a gradient + text,
 # accepts keystrokes routed through the in-kernel WM.
+# Chapter 108c: now links against libgui/draw.o for the in-process
+# software rasteriser, so the cold paint + per-keystroke repaint
+# both go through direct pixel writes + one gui_window_dirty
+# instead of the legacy gui_present / gui_draw_text syscalls.
+# DRAW_OBJ is defined at the top of the libgui group (next to
+# WMCLIENT_OBJ) so every := user gets the right path.  Pattern-
+# rule ordering trap recorded in
+# /memories/repo/makefile-pattern-rule-ordering.md.
 HELLOGUI_OBJS := $(BUILD)/userspace/crt/crt0.o \
-                 $(BUILD)/userspace/hellogui/hellogui.o
+                 $(BUILD)/userspace/hellogui/hellogui.o \
+                 $(DRAW_OBJ)
 HELLOGUI_ELF  := $(BUILD)/userspace/hellogui/hellogui.elf
 HELLOGUI_STRIPPED := $(BUILD)/userspace/hellogui/hellogui.stripped.elf
 
+# chapter-108a GUI demo: opens a window, asks the kernel for direct
+# access to its pixel buffer via SYS_GUI_MAP_WINDOW, paints a
+# horizontal red->blue gradient by writing the BGRA bytes
+# directly (no per-primitive syscalls), then DAMAGEs the whole
+# window once.  Contrast with HELLOGUI, which uses one syscall
+# per primitive.
+PIXAPP_OBJS := $(BUILD)/userspace/crt/crt0.o \
+               $(BUILD)/userspace/pixapp/pixapp.o \
+               $(WMCLIENT_OBJ)
+PIXAPP_ELF  := $(BUILD)/userspace/pixapp/pixapp.elf
+PIXAPP_STRIPPED := $(BUILD)/userspace/pixapp/pixapp.stripped.elf
+
 # milestone-41 mouse demo: paints colour squares wherever the user
 # clicks, with right-click cycling palette + close-button support.
+# Chapter 108c: links against libgui/draw.o so each brush stamp is
+# an in-process pixel write + one gui_window_dirty over the stamp
+# rect, instead of one gui_fill_rect + gui_flush syscall pair per
+# stamp on the drag hot path.
+# Chapter 108d: also pulls in wmclient.o so paint can
+# create its window through wsd and pull mouse events via
+# wm_poll_event (instead of the kernel-WM gui_* syscalls).
 PAINT_OBJS := $(BUILD)/userspace/crt/crt0.o \
-              $(BUILD)/userspace/paint/paint.o
+              $(BUILD)/userspace/paint/paint.o \
+              $(DRAW_OBJ) \
+              $(WMCLIENT_OBJ)
 PAINT_ELF  := $(BUILD)/userspace/paint/paint.elf
 PAINT_STRIPPED := $(BUILD)/userspace/paint/paint.stripped.elf
 
 # milestone-42 GUI terminal: spawn_pipe() child binaries and render
 # their stdout into the window scrollback.
 GUI_TERM_OBJS := $(BUILD)/userspace/crt/crt0.o \
-                 $(BUILD)/userspace/gui_term/gui_term.o
+                 $(BUILD)/userspace/gui_term/gui_term.o \
+                 $(DRAW_OBJ) \
+                 $(WMCLIENT_OBJ)
 GUI_TERM_ELF  := $(BUILD)/userspace/gui_term/gui_term.elf
 GUI_TERM_STRIPPED := $(BUILD)/userspace/gui_term/gui_term.stripped.elf
 
@@ -511,41 +739,73 @@ GUI_TERM_STRIPPED := $(BUILD)/userspace/gui_term/gui_term.stripped.elf
 # can be reused by future GUI apps without copy-pasting.  The
 # build system has supported multi-object apps from day one (see
 # the `*_OBJS` lists), but this is the first time we use it.
+#
+# Chapter 108c adds draw.o — the software rasteriser + fontd
+# client every chapter-108c-mapped app links against.  Chapter
+# Chapter 108d ported notepad off the kernel-WM syscalls onto
+# the wsd-backed libgui primitives (DRAW_OBJ + WMCLIENT_OBJ);
+# save_dialog.o also moved to draw/wmclient so it can be linked
+# in alongside.  draw.o has no dependency on save_dialog.o, so
+# the LIBGUI_OBJS group is just the save_dialog widget; users
+# add DRAW_OBJ + WMCLIENT_OBJ themselves.
 LIBGUI_OBJS  := $(BUILD)/userspace/libgui/save_dialog.o
 NOTEPAD_OBJS := $(BUILD)/userspace/crt/crt0.o \
                 $(BUILD)/userspace/notepad/notepad.o \
-                $(LIBGUI_OBJS)
+                $(LIBGUI_OBJS) \
+                $(DRAW_OBJ) \
+                $(WMCLIENT_OBJ)
 NOTEPAD_ELF  := $(BUILD)/userspace/notepad/notepad.elf
 NOTEPAD_STRIPPED := $(BUILD)/userspace/notepad/notepad.stripped.elf
 
 # milestone-44 GUI app launcher: small floating window with three
 # buttons that spawn() the matching binary on click.
+# Chapter 108c: linked against libgui/draw.o so the per-hover
+# repaint is a handful of in-process pixel writes + one
+# gui_window_dirty, rather than eight syscalls per button.
 LAUNCHER_OBJS := $(BUILD)/userspace/crt/crt0.o \
-                 $(BUILD)/userspace/launcher/launcher.o
+                 $(BUILD)/userspace/launcher/launcher.o \
+                 $(DRAW_OBJ) \
+                 $(WMCLIENT_OBJ)
 LAUNCHER_ELF  := $(BUILD)/userspace/launcher/launcher.elf
 LAUNCHER_STRIPPED := $(BUILD)/userspace/launcher/launcher.stripped.elf
 
 # milestone-47 desktop taskbar: borderless always-on-top strip pinned
 # to the bottom of the framebuffer; one cell per non-pinned window.
+# Chapter 108c: linked against libgui/draw.o so the per-second
+# clock tick + per-event cell repaint are pure in-process pixel
+# writes plus a tight gui_window_dirty over the rect that
+# actually changed.
 TASKBAR_OBJS := $(BUILD)/userspace/crt/crt0.o \
-                $(BUILD)/userspace/taskbar/taskbar.o
+                $(BUILD)/userspace/taskbar/taskbar.o \
+                $(DRAW_OBJ) \
+                $(WMCLIENT_OBJ)
 TASKBAR_ELF  := $(BUILD)/userspace/taskbar/taskbar.elf
 TASKBAR_STRIPPED := $(BUILD)/userspace/taskbar/taskbar.stripped.elf
 
 # milestone-49 toast notifications.  /bin/notify pops up a brief
 # borderless always-on-top window with a message and auto-dismisses.
+# Chapter 108d: ported to /srv/wm via wmclient; the
+# kernel-WM gui_fill_rect / gui_draw_text syscalls are stubs now,
+# so notify rasterises its own pixels via libgui/draw.[hc] into
+# the wsd-mapped framebuffer and DAMAGEs through WM_WIN_DAMAGE.
 NOTIFY_OBJS := $(BUILD)/userspace/crt/crt0.o \
-               $(BUILD)/userspace/notify/notify.o
+               $(BUILD)/userspace/notify/notify.o \
+               $(DRAW_OBJ) \
+               $(WMCLIENT_OBJ)
 NOTIFY_ELF  := $(BUILD)/userspace/notify/notify.elf
 NOTIFY_STRIPPED := $(BUILD)/userspace/notify/notify.stripped.elf
 
 # milestone-50 desktop environment.  /bin/desktop owns the
 # wallpaper: it reads /wallpaper.bgra from disk, creates a screen-
-# sized PIN_TO_BOTTOM window, and blits the pixels in via
-# gui_present.  No kernel involvement in image data — the kernel
-# just provides the framebuffer and the windowing primitives.
+# sized PIN_TO_BOTTOM window, and blits the pixels in via the
+# chapter-108c draw_blit_bgra helper.  Pre-108c this was a
+# gui_present syscall — a memcpy of the whole 1920x1080x4 = 8 MB
+# wallpaper across the EL0/EL1 boundary.  Now the kernel hands
+# us the mapped framebuffer once and we copy in directly.
 DESKTOP_OBJS := $(BUILD)/userspace/crt/crt0.o \
-                $(BUILD)/userspace/desktop/desktop.o
+                $(BUILD)/userspace/desktop/desktop.o \
+                $(DRAW_OBJ) \
+                $(WMCLIENT_OBJ)
 DESKTOP_ELF  := $(BUILD)/userspace/desktop/desktop.elf
 DESKTOP_STRIPPED := $(BUILD)/userspace/desktop/desktop.stripped.elf
 
@@ -556,6 +816,70 @@ $(BUILD)/userspace/%.o: userspace/%.c
 $(BUILD)/userspace/%.o: userspace/%.S
 	@mkdir -p $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
+
+# Vendored BearSSL: separate pattern rule with BEARSSL_CFLAGS
+# (USER_CFLAGS has -Werror which we don't want for third-party
+# code).  Output mirrors the src layout under build/vendor/bearssl/.
+$(BUILD)/vendor/bearssl/%.o: vendor/bearssl/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BEARSSL_CFLAGS) -c $< -o $@
+
+# Archive all BearSSL objects into libbearssl.a.  Using `r` (replace)
+# instead of `c` (create) so partial rebuilds don't drop members;
+# `s` writes an in-archive index so the linker can pull individual
+# .o files lazily without scanning the whole archive.
+$(BEARSSL_LIB): $(BEARSSL_OBJS)
+	@mkdir -p $(dir $@)
+	@rm -f $@
+	$(CROSS)ar rcs $@ $(BEARSSL_OBJS)
+
+# tlstest.o needs both BearSSL header paths (the umbrella bearssl.h
+# pulls in bearssl_hash.h which #includes <string.h>) on top of
+# USER_CFLAGS.  Generic userspace pattern rule above doesn't supply
+# these, so override here.
+$(BUILD)/userspace/tlstest/tlstest.o: userspace/tlstest/tlstest.c
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc -c $< -o $@
+
+# Chapter 112b: tls_socket.c is libc-adjacent code that uses
+# BearSSL.  Same header-path override as tlstest.o.
+$(BUILD)/userspace/libc/tls_socket.o: userspace/libc/tls_socket.c
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc -c $< -o $@
+
+# Chapter 112d: browser.c now includes bearssl.h so it can read
+# the engine's last-error code after a BR_SSLIO clean close and
+# tell EOF apart from a real TLS error.  Same header-path
+# override as tls_socket.o.  This pattern-specific rule must
+# live AFTER the generic $(BUILD)/userspace/%.o rule (above)
+# for Make's "most specific wins" tiebreaker to pick it up --
+# trap recorded in /memories/repo/makefile-pattern-rule-ordering.md.
+$(BUILD)/userspace/browser/browser.o: userspace/browser/browser.c
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc -c $< -o $@
+
+# Chapter 112b: httpsd.c uses BearSSL too.
+$(BUILD)/userspace/httpsd/httpsd.o: userspace/httpsd/httpsd.c
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc -c $< -o $@
+
+# Chapter 112b: test_chain.c re-exports the BearSSL sample chain.
+# Needs vendor/bearssl/samples/ on the include path so the sample
+# headers (chain-rsa.h, key-rsa.h) resolve.  The sample headers
+# come from BearSSL 0.6 (MIT) and are unmodified.
+$(BUILD)/vendor/testcerts/test_chain.o: vendor/testcerts/test_chain.c
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc \
+	    -I vendor/bearssl/samples -c $< -o $@
+
+# Chapter 112e: same shape for the EC sample chain (chain-ec.h /
+# key-ec.h).  Separate TU because the upstream headers declare
+# their CERT0/CERT1/CHAIN as `static const` and would collide if
+# included in the same translation unit as the RSA chain.
+$(BUILD)/vendor/testcerts/test_chain_ec.o: vendor/testcerts/test_chain_ec.c
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc \
+	    -I vendor/bearssl/samples -c $< -o $@
 
 $(HELLO_ELF): $(HELLO_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
@@ -641,6 +965,30 @@ $(BEEP_ELF): $(BEEP_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(BEEP_OBJS)
 
+$(GETRAND_ELF): $(GETRAND_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(GETRAND_OBJS)
+
+# chapter-112a tlstest: link order matters — the archive must come
+# AFTER the .o files that reference it (TLSTEST_OBJS contains
+# tlstest.o which calls br_sha256_*) so the linker can resolve
+# forward references in one pass.  --start-group/--end-group lets
+# libbearssl members re-resolve mem* etc. from cstring.o which is
+# itself part of TLSTEST_OBJS.
+$(TLSTEST_ELF): $(TLSTEST_OBJS) $(BEARSSL_LIB) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ \
+	    --start-group $(TLSTEST_OBJS) $(BEARSSL_LIB) --end-group
+
+# chapter-112b httpsd: same link discipline as tlstest -- libbearssl
+# pulls members for both the server engine (br_ssl_server_*) and
+# the RSA-PKCS1v1.5 + AES-GCM + SHA-256 transcript, all of which
+# need to back-reference cstring.o's mem* implementations.
+$(HTTPSD_ELF): $(HTTPSD_OBJS) $(BEARSSL_LIB) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ \
+	    --start-group $(HTTPSD_OBJS) $(BEARSSL_LIB) --end-group
+
 $(PNGDEC_ELF): $(PNGDEC_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(PNGDEC_OBJS)
@@ -693,9 +1041,17 @@ $(COWTEST_ELF): $(COWTEST_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(COWTEST_OBJS)
 
+$(MIXTEST_ELF): $(MIXTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(MIXTEST_OBJS)
+
 $(HTTPGET_ELF): $(HTTPGET_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(HTTPGET_OBJS)
+
+$(COOKIES_ELF): $(COOKIES_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(COOKIES_OBJS)
 
 $(ECHOD_ELF): $(ECHOD_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
@@ -716,6 +1072,22 @@ $(SRVTEST_ELF): $(SRVTEST_OBJS) userspace/linker_user.ld
 $(CLIPBOARDD_ELF): $(CLIPBOARDD_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(CLIPBOARDD_OBJS)
+
+$(FONTD_ELF): $(FONTD_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(FONTD_OBJS)
+
+$(WSD_ELF): $(WSD_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(WSD_OBJS)
+
+$(WMTEST_ELF): $(WMTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(WMTEST_OBJS)
+
+$(HELLOWSD_ELF): $(HELLOWSD_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(HELLOWSD_OBJS)
 
 $(CLIP_ELF): $(CLIP_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
@@ -741,13 +1113,18 @@ $(LAYOUT_ELF): $(LAYOUT_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(LAYOUT_OBJS)
 
-$(BROWSER_ELF): $(BROWSER_OBJS) userspace/linker_user.ld
+$(BROWSER_ELF): $(BROWSER_OBJS) $(BEARSSL_LIB) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
-	$(LD) $(USER_LDFLAGS) -o $@ $(BROWSER_OBJS)
+	$(LD) $(USER_LDFLAGS) -o $@ \
+	    --start-group $(BROWSER_OBJS) $(BEARSSL_LIB) --end-group
 
 $(HELLOGUI_ELF): $(HELLOGUI_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(HELLOGUI_OBJS)
+
+$(PIXAPP_ELF): $(PIXAPP_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(PIXAPP_OBJS)
 
 $(PAINT_ELF): $(PAINT_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
@@ -843,6 +1220,15 @@ $(DATE_STRIPPED): $(DATE_ELF)
 $(BEEP_STRIPPED): $(BEEP_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
+$(GETRAND_STRIPPED): $(GETRAND_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(TLSTEST_STRIPPED): $(TLSTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(HTTPSD_STRIPPED): $(HTTPSD_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
 $(PNGDEC_STRIPPED): $(PNGDEC_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
@@ -882,7 +1268,13 @@ $(CHLDTEST_STRIPPED): $(CHLDTEST_ELF)
 $(COWTEST_STRIPPED): $(COWTEST_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
+$(MIXTEST_STRIPPED): $(MIXTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
 $(HTTPGET_STRIPPED): $(HTTPGET_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(COOKIES_STRIPPED): $(COOKIES_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(ECHOD_STRIPPED): $(ECHOD_ELF)
@@ -898,6 +1290,18 @@ $(SRVTEST_STRIPPED): $(SRVTEST_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(CLIPBOARDD_STRIPPED): $(CLIPBOARDD_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(FONTD_STRIPPED): $(FONTD_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(WSD_STRIPPED): $(WSD_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(WMTEST_STRIPPED): $(WMTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(HELLOWSD_STRIPPED): $(HELLOWSD_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(CLIP_STRIPPED): $(CLIP_ELF)
@@ -922,6 +1326,9 @@ $(BROWSER_STRIPPED): $(BROWSER_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(HELLOGUI_STRIPPED): $(HELLOGUI_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(PIXAPP_STRIPPED): $(PIXAPP_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(PAINT_STRIPPED): $(PAINT_ELF)
@@ -995,17 +1402,21 @@ $(BUILD)/ramfs/%.o: assets/ramfs/%
 	    $(notdir $<) $(abspath $@)
 
 # ----------------------------------------------------------------------
-# Embedded TrueType font (chapter 102)
+# Embedded TrueType font (chapter 102 -> chapter 108b)
 #
-# The kernel's TTF rasteriser (kernel/device/ttf.c) needs the raw
-# bytes of a TrueType file. We embed DejaVu Sans 2.37 (Bitstream
-# Vera + Arev licenses, see assets/fonts/DejaVuSans.LICENSE) into
-# the kernel image the same way ramfs files are embedded.
+# Pre-chapter-108b this was embedded into the kernel image because
+# the in-kernel TTF rasteriser (kernel/device/ttf.c) needed the
+# raw bytes.  Chapter 108b moved the rasteriser to /bin/fontd,
+# so the TrueType payload moved with it: instead of linking into
+# the kernel ELF it links into the fontd ELF.  Same objcopy-binary
+# trick; the symbols are still _binary_DejaVuSans_ttf_start /
+# _end, walked by userspace/fontd/ttf.c at daemon startup.
 #
-# Symbols exposed: _binary_DejaVuSans_ttf_start / _end.
+# DejaVu Sans 2.37 — Bitstream Vera + Arev licences, see
+# assets/fonts/DejaVuSans.LICENSE.
 # ----------------------------------------------------------------------
 FONT_BLOB_SRC := assets/fonts/DejaVuSans.ttf
-FONT_BLOB_OBJ := $(BUILD)/font/DejaVuSans.ttf.o
+FONT_BLOB_OBJ := $(BUILD)/userspace/fontd/DejaVuSans.ttf.o
 
 $(FONT_BLOB_OBJ): $(FONT_BLOB_SRC)
 	@mkdir -p $(dir $@)
@@ -1041,7 +1452,7 @@ $(WALLPAPER_BIN): $(WALLPAPER_SRC) scripts/img_to_bgra.py
 	@mkdir -p $(dir $@)
 	python3 scripts/img_to_bgra.py $< $@ $(WALLPAPER_W) $(WALLPAPER_H)
 
-OBJS     := $(S_OBJS) $(C_OBJS) $(RAMFS_OBJS) $(FONT_BLOB_OBJ)
+OBJS     := $(S_OBJS) $(C_OBJS) $(RAMFS_OBJS)
 
 # Disk images (definitions early so `all:` can depend on them).
 # The actual rules are further down where the run targets live.
@@ -1148,8 +1559,8 @@ QEMU_SMP ?= 2
 # OSFS-1 layout (see kernel/core/osfs.h).  The kernel mounts this
 # at /mnt at boot, and looks up /bin/<name> from it as well.
 # (DISK is defined earlier so all: can depend on it.)
-OSFS_FILES := assets/osfs/hello.txt assets/osfs/poem.txt assets/osfs/test.html assets/osfs/test.css assets/osfs/test_layout.html assets/osfs/hn.html assets/osfs/icon.png assets/osfs/icon_palette.png assets/osfs/icon_gray.png assets/osfs/icon_large.png assets/osfs/img_test.html assets/osfs/intrinsic.html $(WALLPAPER_BIN)
-OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(ECHOD_STRIPPED) $(HTTPD_STRIPPED) $(LOOPTEST_STRIPPED) $(SRVTEST_STRIPPED) $(CLIPBOARDD_STRIPPED) $(CLIP_STRIPPED) $(PROXYTEST_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED)
+OSFS_FILES := assets/osfs/hello.txt assets/osfs/poem.txt assets/osfs/test.html assets/osfs/test.css assets/osfs/test_layout.html assets/osfs/hn.html assets/osfs/forms.html assets/osfs/onclick.html assets/osfs/icon.png assets/osfs/icon_palette.png assets/osfs/icon_gray.png assets/osfs/icon_large.png assets/osfs/img_test.html assets/osfs/intrinsic.html assets/osfs/ca.bundle $(WALLPAPER_BIN)
+OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(GETRAND_STRIPPED) $(TLSTEST_STRIPPED) $(HTTPSD_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(COOKIES_STRIPPED) $(ECHOD_STRIPPED) $(HTTPD_STRIPPED) $(LOOPTEST_STRIPPED) $(SRVTEST_STRIPPED) $(CLIPBOARDD_STRIPPED) $(FONTD_STRIPPED) $(CLIP_STRIPPED) $(PROXYTEST_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PIXAPP_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(MIXTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED) $(WSD_STRIPPED) $(WMTEST_STRIPPED) $(HELLOWSD_STRIPPED)
 
 # Bake the chapter-97 test PNG (16x16 RGBA with a known pixel
 # pattern) at build time.  See scripts/make_test_png.py for the
@@ -1172,6 +1583,38 @@ assets/osfs/icon_gray.png: scripts/make_test_png.py
 assets/osfs/icon_large.png: scripts/make_test_png.py
 	python3 scripts/make_test_png.py --kind=large_palette $@
 
+# Chapter 112e + 112f CA bundle.  Framed "CAB1" format ingested
+# by tls_socket_init_chain_from_bundle in the guest.  Two
+# anchors, both ROOT certs (not intermediates):
+#
+#   cert-root-rsa.pem -- BearSSL sample RSA root CA
+#   cert-root-ec.pem  -- BearSSL sample ECDSA P-256 root CA
+#
+# httpsd presents the full leaf+intermediate chain (CHAIN_LEN=2
+# in chain-{rsa,ec}.h).  With the ROOT in the trust store the
+# validator does the recursive walk: leaf sig vs intermediate
+# pubkey (off the wire) -> intermediate sig vs root pubkey (off
+# the anchor list) -> accept.  In chapter 112e we trusted the
+# intermediate directly, which only exercised the first link.
+#
+# Ingest is via the chapter-112f PEM mode -- the same code path
+# you'd point at a Mozilla NSS root list.
+# Chapter 112g: fetch the host's public CA list (Mozilla NSS-derived
+# on most systems) into vendor/testcerts/ on first build, then fold
+# it into the framed bundle alongside the BearSSL sample roots.  The
+# .pem is .gitignored and rebuilt on demand.
+vendor/testcerts/public-roots.pem: scripts/fetch_public_roots.sh
+	bash scripts/fetch_public_roots.sh $@
+
+assets/osfs/ca.bundle: scripts/mkcabundle.py \
+                      vendor/bearssl/samples/cert-root-rsa.pem \
+                      vendor/bearssl/samples/cert-root-ec.pem \
+                      vendor/testcerts/public-roots.pem
+	python3 scripts/mkcabundle.py $@ \
+	    --pem vendor/bearssl/samples/cert-root-rsa.pem \
+	    --pem vendor/bearssl/samples/cert-root-ec.pem \
+	    --pem vendor/testcerts/public-roots.pem
+
 $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	@mkdir -p $(BUILD)
 	python3 scripts/mkosfs.py $(DISK) \
@@ -1181,12 +1624,15 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    test.css=assets/osfs/test.css \
 	    test_layout.html=assets/osfs/test_layout.html \
 	    hn.html=assets/osfs/hn.html \
+	    forms.html=assets/osfs/forms.html \
+	    onclick.html=assets/osfs/onclick.html \
 	    icon.png=assets/osfs/icon.png \
 	    icon_palette.png=assets/osfs/icon_palette.png \
 	    icon_gray.png=assets/osfs/icon_gray.png \
 	    icon_large.png=assets/osfs/icon_large.png \
 	    img_test.html=assets/osfs/img_test.html \
 	    intrinsic.html=assets/osfs/intrinsic.html \
+	    ca.bundle=assets/osfs/ca.bundle \
 	    init=$(INIT_STRIPPED) \
 	    sh=$(SH_STRIPPED) \
 	    cat=$(CAT_STRIPPED) \
@@ -1208,6 +1654,9 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    stackbomb=$(STACKBOMB_STRIPPED) \
 	    date=$(DATE_STRIPPED) \
 	    beep=$(BEEP_STRIPPED) \
+	    getrand=$(GETRAND_STRIPPED) \
+	    tlstest=$(TLSTEST_STRIPPED) \
+	    httpsd=$(HTTPSD_STRIPPED) \
 	    pngdec=$(PNGDEC_STRIPPED) \
 	    env=$(ENV_STRIPPED) \
 	    grep=$(GREP_STRIPPED) \
@@ -1218,11 +1667,16 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    sync=$(SYNC_STRIPPED) \
 	    pipetest=$(PIPETEST_STRIPPED) \
 	    httpget=$(HTTPGET_STRIPPED) \
+	    cookies=$(COOKIES_STRIPPED) \
 	    echod=$(ECHOD_STRIPPED) \
 	    httpd=$(HTTPD_STRIPPED) \
 	    looptest=$(LOOPTEST_STRIPPED) \
 	    srvtest=$(SRVTEST_STRIPPED) \
 	    clipboardd=$(CLIPBOARDD_STRIPPED) \
+	    fontd=$(FONTD_STRIPPED) \
+	    wsd=$(WSD_STRIPPED) \
+	    wmtest=$(WMTEST_STRIPPED) \
+	    hellowsd=$(HELLOWSD_STRIPPED) \
 	    clip=$(CLIP_STRIPPED) \
 	    proxytest=$(PROXYTEST_STRIPPED) \
 	    htmltok=$(HTMLTOK_STRIPPED) \
@@ -1231,6 +1685,7 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    layout=$(LAYOUT_STRIPPED) \
 	    browser=$(BROWSER_STRIPPED) \
 	    hellogui=$(HELLOGUI_STRIPPED) \
+	    pixapp=$(PIXAPP_STRIPPED) \
 	    paint=$(PAINT_STRIPPED) \
 	    gui_term=$(GUI_TERM_STRIPPED) \
 	    notepad=$(NOTEPAD_STRIPPED) \
@@ -1242,6 +1697,7 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    sigtest=$(SIGTEST_STRIPPED) \
 	    chldtest=$(CHLDTEST_STRIPPED) \
 	    cowtest=$(COWTEST_STRIPPED) \
+	    mixtest=$(MIXTEST_STRIPPED) \
 	    wallpaper.bgra=$(WALLPAPER_BIN)
 
 # OSFS-2 disk: empty 64 MiB OSFS-2 image, formatted by mkosfs2.py.
@@ -1288,6 +1744,17 @@ QEMU_AUDIO_BACKEND ?= none
 QEMU_SND := -audiodev $(QEMU_AUDIO_BACKEND),id=audio0 \
             -device virtio-sound-device,audiodev=audio0
 
+# Chapter 112 — hardware RNG fed from the host's /dev/urandom.
+# Without this option the kernel's virtio_rng_init() finds nothing
+# and random_init() falls back to a CNTVCT-seeded ChaCha20 PRNG
+# with a loud warning on the boot log; that path is fine for tests
+# but is NOT safe to use for TLS (chapter 114+).  Every regular
+# `run*` target now hands the device to the guest by default; pass
+# `QEMU_RNG=` on the command line to suppress it and exercise the
+# fallback path explicitly.
+QEMU_RNG ?= -object rng-random,id=rng0,filename=/dev/urandom \
+            -device virtio-rng-device,rng=rng0
+
 # QEMU's `virt` machine defaults to legacy (v1) virtio-mmio.  We
 # implement the modern (v2) transport, so force the bus to v2.
 QEMU_VIRTIO_OPTS := -global virtio-mmio.force-legacy=off
@@ -1302,6 +1769,7 @@ run: $(KERNEL) $(DISK) $(DATA_DISK)
 	        $(QEMU_BLK) \
 	        $(QEMU_NET) \
 	        $(QEMU_SND) \
+	        $(QEMU_RNG) \
 	        -kernel $(KERNEL)
 
 # `run-graphical` opens a Cocoa window and attaches a virtio-gpu so
@@ -1337,6 +1805,7 @@ run-graphical: $(KERNEL) $(DISK) $(DATA_DISK)
 	        $(QEMU_BLK) \
 	        $(QEMU_NET) \
 	        $(QEMU_SND) \
+	        $(QEMU_RNG) \
 	        -kernel $(KERNEL)
 
 .PHONY: run-tcg
@@ -1349,6 +1818,7 @@ run-tcg: $(KERNEL) $(DISK) $(DATA_DISK)
 	        $(QEMU_BLK) \
 	        $(QEMU_NET) \
 	        $(QEMU_SND) \
+	        $(QEMU_RNG) \
 	        -kernel $(KERNEL)
 
 # Same as `run` but stops at first instruction and exposes a GDB

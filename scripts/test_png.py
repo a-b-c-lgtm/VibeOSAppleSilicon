@@ -47,6 +47,8 @@ def boot():
         "-device", "virtio-net-device,netdev=n0",
         "-audiodev", "none,id=audio0",
         "-device", "virtio-sound-device,audiodev=audio0",
+        "-object", "rng-random,id=rng0,filename=/dev/urandom",
+        "-device", "virtio-rng-device,rng=rng0",
         "-kernel", f"{ROOT}/build/kernel.elf",
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

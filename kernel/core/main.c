@@ -46,6 +46,8 @@
 #include "../device/virtio_tablet.h"
 #include "../device/virtio_net.h"
 #include "../device/virtio_snd.h"
+#include "../device/virtio_rng.h"
+#include "random.h"
 #include "net.h"
 #include "dhcp.h"
 #include "icmp.h"
@@ -764,18 +766,19 @@ void kernel_main(uint64_t dtb_phys)
     if (virtio_gpu_init() == 0) {
         serial_puts("ok\n");
         if (fb_init() == 0) {
-            /* Chapter 102 -- initialise the TTF rasteriser now that
-             * kmalloc is up and we know we have a framebuffer to
-             * render into. font_init_ttf is a no-op if it fails,
-             * leaving font_get_default returning the bitmap font;
-             * the boot screen below uses font_get_default unchanged. */
-            font_init_ttf();
+            /* Chapter 108b -- the TTF rasteriser is no longer in
+             * the kernel; it lives in /bin/fontd, started by init.
+             * The boot screen below uses the bitmap font (the same
+             * font panic and title-bar paths always used).  Once
+             * init brings up fontd, wm_draw_text on userspace
+             * windows switches over via the kernel-side font
+             * client in kernel/core/wm_font.c. */
             /* Paint the milestone-38 boot screen.  This is the first
              * graphical artifact the project produces; if it shows up
              * the whole [pmem -> virtio-gpu -> RAM-backed framebuffer
              * -> font blit -> RESOURCE_FLUSH] pipeline is working. */
             const struct fb_info *fb = fb_get_info();
-            const struct bitmap_font *font = font_get_default();
+            const struct bitmap_font *font = font_get_bitmap();
 
             fb_clear(FB_COLOR(0x10, 0x14, 0x28));
 
@@ -867,6 +870,19 @@ void kernel_main(uint64_t dtb_phys)
     } else {
         serial_puts("none (no audio output)\n");
     }
+
+    serial_puts("probing virtio-mmio bus for an RNG ... ");
+    if (virtio_rng_init() == 0) {
+        serial_puts("ok (entropy online)\n");
+    } else {
+        serial_puts("none (no hardware RNG)\n");
+    }
+    /* random_init() seeds the kernel CSPRNG.  Runs unconditionally:
+     * if virtio-rng was found it pulls the seed from there; if not
+     * it falls back to CNTVCT_EL0, prints a loud warning, and marks
+     * the CSPRNG as `not strong` so TLS code (chapter 114+) can
+     * refuse to start. */
+    random_init();
 
     serial_puts("initialising window manager ... ");
     wm_init();

@@ -269,4 +269,99 @@ long wm_set_minimized(uint64_t pid, int32_t id, int on);
  * process that crashes does not leak its windows. */
 void wm_destroy_owner(uint64_t pid);
 
+/* Chapter 108a \u2014 userspace access to window pixel buffers.
+ *
+ * `wm_map_window` allocates one page-aligned 4 KiB frame per page
+ * of the window's pixel storage, copies the current contents of
+ * `w->pixels` into them, and installs the run RW + EL0 + tagged
+ * DESC_SW_WM_WINDOW into the calling thread's address space.  The
+ * resulting user VA appears in *va_out; *stride_out receives the
+ * row stride in bytes (always `w * 4` for now \u2014 no padding); the
+ * window dimensions go into *w_out / *h_out.  The window remembers
+ * the mapping so destroy / owner-exit can tear it down.
+ *
+ * Only one mapping per window per owner.  Re-calling on an
+ * already-mapped window returns the SAME VA without re-allocating.
+ * Mappings are NOT inherited across fork / clone (the AS code
+ * skips DESC_SW_WM_WINDOW pages, so the child sees nothing at the
+ * old VA).
+ *
+ * Errors:
+ *   -EPERM   not the window owner.
+ *   -ENOTSUP window is RESIZABLE (chapter 108a defers resize
+ *            coherence; this lifts once 108b lands).
+ *   -ENOMEM  pmem exhausted or AS layer refused.
+ *   -EFAULT  one of the user output pointers is not writable. */
+long wm_map_window(uint64_t pid, int32_t id,
+                   uint64_t *va_out, uint32_t *stride_out,
+                   uint32_t *w_out, uint32_t *h_out);
+
+/* Chapter 108a \u2014 inverse of wm_map_window.  Drops the user-AS
+ * descriptors and frees the backing 4 KiB frames.  Idempotent on
+ * an already-unmapped window (returns 0).  Implicit on
+ * wm_destroy_window / wm_destroy_owner so callers needn't bother
+ * on a clean exit, but explicit unmap is needed if userspace wants
+ * to release the bump-pointer VA range without exiting. */
+long wm_unmap_window(uint64_t pid, int32_t id);
+
+/* Chapter 108a \u2014 declare a sub-rectangle of a mapped window
+ * dirty.  The WM copies that rect from the user-visible pages
+ * into the compositor's authoritative `w->pixels` buffer and
+ * triggers a recompose.  Rect coordinates are window-content
+ * relative (same convention as wm_fill_rect / wm_present).  A
+ * rect that exceeds the window is clipped.  Returns 0 on
+ * success; -EPERM if not the owner; -ENOENT if the window has
+ * no mapping installed yet; -EINVAL if rw==0 or rh==0. */
+long wm_damage(uint64_t pid, int32_t id,
+               uint32_t x, uint32_t y, uint32_t rw, uint32_t rh);
+
+/* chapter 108e -- expose the current pointer state to userspace.
+ * Used by wsd to paint the cursor sprite and run hit-tests for
+ * title-bar drags / close-button clicks in userspace, X-server
+ * style.  Writes scanout coords + the GUI_BTN_* bitmap into the
+ * three user pointers (any may be NULL).  Returns 0 on success,
+ * -EFAULT on a bad user pointer.  Idempotent and side-effect
+ * free; intended for the wsd input poller to call at ~60 Hz. */
+long wm_pointer_state(int32_t *out_x_user, int32_t *out_y_user,
+                      uint32_t *out_btn_user);
+
+/* chapter 108e -- relocate a window on the scanout without going
+ * through the usual title-bar-drag path.  Any caller may move
+ * any window (wsd is the only legitimate caller today, since it
+ * owns decoration hit-testing; restricting to a "compositor"
+ * pid is a future tightening).  The window's body-rect anchor
+ * (x, y) is set verbatim; no clipping.  Returns 0 on success,
+ * -EINVAL if the id is out of range, -ENOENT if the slot is
+ * free.  Does not push events to the window's app. */
+long wm_move_window(int32_t id, int32_t x, int32_t y);
+
+/* chapter 108e -- inject a synthesised gui_event into the per-
+ * window event ring so the app's next wm_poll_event returns it.
+ * Used by wsd to deliver GUI_EVENT_CLOSE (from close-button
+ * clicks) and future synthesised pointer events.  The `ev.window_id`
+ * field is overwritten by the kernel with `id` for consistency,
+ * but the rest of the event is copied verbatim.  Returns 0 on
+ * success, -EINVAL if id is out of range, -ENOENT if the slot
+ * is free, -EFAULT on a bad user pointer, -ENOSPC if the
+ * window's event ring is full (caller can retry). */
+long wm_deliver_event(int32_t id, const struct gui_event *ev_user);
+
+/* chapter 108e -- toggle "wsd-routed" mode on a kernel WM shadow.
+ *
+ * When on != 0, the kernel's pointer router skips this window
+ * entirely (hit-test pretends it's not there; the focused-window
+ * MOVE / non-left forwarding bails before pushing).  wsd then has
+ * exclusive control over which window receives mouse events for
+ * the pixels this shadow occupies, and routes them via
+ * wm_deliver_event in wsd's own z-order.  Keyboard input still
+ * flows via the kernel's g_focus_id, which wsd keeps in sync by
+ * calling wm_raise_window after each click-to-raise.
+ *
+ * When on == 0, the kernel resumes auto-routing pointer events
+ * to this window (the chapter-30 default).
+ *
+ * Idempotent.  Returns 0 on success, -EINVAL for an invalid id,
+ * -ENOENT if the slot is free. */
+long wm_set_input_passthrough(int32_t id, int on);
+
 #endif /* KERNEL_CORE_WM_H */

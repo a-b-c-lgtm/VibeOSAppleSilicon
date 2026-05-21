@@ -25,6 +25,7 @@
 #include "heap.h"
 #include "thread.h"
 #include "serial.h"
+#include "uaccess.h"
 #include <stddef.h>
 
 /* EPIPE / EMSGSIZE come from srv.h.  ENOMEM/EAGAIN are local
@@ -373,12 +374,20 @@ long srv_read(struct srv_conn *c, int is_service_end, void *buf, size_t len)
                 return -EMSGSIZE;
             }
             (void)queue_pop(q);
-            uint8_t *dst = (uint8_t *)buf;
-            for (uint32_t i = 0; i < m->len; i++) dst[i] = m->data[i];
+            /* Chapter 108d — copy through copy_to_user
+             * so the destination's pages get pre-faulted (lazy
+             * anon mmap) and COW-broken before the bytes land.
+             * The previous byte-by-byte memcpy panicked at EL1
+             * whenever `buf` happened to point at an unmapped
+             * or COW-shared page (common for wsd worker thread
+             * stacks and forked gui_term post-fork reads). */
             long n = (long)m->len;
+            int rc = copy_to_user((uint64_t)(uintptr_t)buf,
+                                  m->data, m->len);
             kfree(m);
             /* Drained one slot — wake a blocked writer. */
             thread_wake_blocked(c);
+            if (rc < 0) return -EFAULT;
             return n;
         }
         if (!*peer_open) return 0;   /* EOF */
@@ -405,6 +414,12 @@ long srv_write(struct srv_conn *c, int is_service_end, const void *buf, size_t l
             if (!m) return -ENOMEM_VFS;
             m->next = NULL;
             m->len  = (uint32_t)len;
+            /* `buf` here is a KERNEL pointer: sys_write for
+             * FD_SRV_CONN already copy_from_user'd the user
+             * payload into a kheap buffer and is calling us
+             * with that kheap pointer.  A plain byte-by-byte
+             * copy is the right shape (no user-mode page faults
+             * possible). */
             const uint8_t *src = (const uint8_t *)buf;
             for (uint32_t i = 0; i < (uint32_t)len; i++) m->data[i] = src[i];
             queue_push(q, m);

@@ -7,6 +7,14 @@
  * contained "ask the user where to save" dialog without having
  * to grow that code into the app itself.
  *
+ * Chapter 108d — ported off the kernel WM syscalls
+ * (gui_fill_rect / gui_draw_text / gui_flush / gui_poll_event)
+ * onto the wsd-backed libgui primitives (draw_fill_rect /
+ * draw_text / wm_window_dirty / wm_poll_event).  The dialog
+ * draws straight into the caller's per-window FB; the only
+ * IPC round-trip per frame is the single WM_WIN_DAMAGE that
+ * `wm_window_dirty` issues at the end.
+ *
  * Why a library?
  * --------------
  *
@@ -50,6 +58,7 @@
 #define LIBGUI_SAVE_DIALOG_H
 
 #include <stddef.h>
+#include "wmclient.h"
 
 /* Background-render callback.  Called once per dialog frame,
  * BEFORE the dialog overlay is drawn, with `ud` passed through
@@ -58,18 +67,22 @@
  * window had when gui_save_dialog() was entered.
  *
  * IMPORTANT: the callback must paint into the window's back-
- * buffer (gui_fill_rect / gui_draw_text), but must NOT call
- * gui_flush.  The dialog calls gui_flush itself once per frame,
- * after its overlay has been drawn on top of the callback's
- * output.  If the callback flushes too, the user sees the
- * underlying view (without the dialog) flash on screen each
- * frame between the callback's flush and the dialog's flush.
- * Per-keystroke flicker is the symptom. */
+ * buffer (draw_fill_rect / draw_text), but must NOT call
+ * wm_window_dirty.  The dialog issues a single whole-window
+ * damage itself at the end of each frame after its overlay has
+ * been drawn on top of the callback's output.  If the callback
+ * also damaged, the user would see the underlying view
+ * (without the dialog) flash on screen between the callback's
+ * damage and the dialog's damage; per-keystroke flicker is the
+ * symptom. */
 typedef void (*gui_render_cb)(void *ud);
 
 /* Open a modal Save As dialog inside an already-open window.
  *
- *   win_id        target window — the dialog renders into it.
+ *   win           target wsd-backed window — the dialog renders
+ *                 into win->fb and damages via wm_window_dirty.
+ *                 Must have been created by wm_create_window_input
+ *                 so events arrive at wm_poll_event.
  *   win_w, win_h  window dimensions; the dialog centres itself.
  *   dir_prefix    directory to enumerate and prepend to the
  *                 returned path (e.g. "/data/").  Must end in
@@ -88,12 +101,12 @@ typedef void (*gui_render_cb)(void *ud);
  *    1  user confirmed; out_path holds the chosen full path.
  *    0  user cancelled (ESC).
  *   -1  invalid arguments (cap too small, dir_prefix without
- *       trailing slash, win_id < 0).
+ *       trailing slash, win == NULL or win->id == 0).
  *
- * Blocks until confirm or cancel.  Uses gui_poll_event /
+ * Blocks until confirm or cancel.  Uses wm_poll_event /
  * yield() in a tight loop; the caller's event loop is paused.
  */
-int gui_save_dialog(int win_id,
+int gui_save_dialog(struct wm_window *win,
                     int win_w, int win_h,
                     const char *dir_prefix,
                     const char *initial_name,

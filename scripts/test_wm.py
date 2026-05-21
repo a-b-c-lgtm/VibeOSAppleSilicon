@@ -207,22 +207,32 @@ def main():
             print("FAIL: framebuffer too uniform \u2014 WM didn't paint")
             return 1
 
-        # Verify the launcher's chrome by sampling a known pixel
-        # inside its body.  Launcher BG is 0xE8ECF0 (light grey-
-        # blue); top-left corner at (80, 60) with a 24px title bar,
-        # so absolute (200, 90) is a known-empty body cell.
-        bx, by = 200, 90
+        # Verify the launcher exists in the WM by checking that
+        # init logged its window creation (already asserted via
+        # the [wm] window created needle above).  We can't sample
+        # the launcher body in the framebuffer at boot anymore:
+        # chapter 109e UX made the launcher a Start-menu panel
+        # that is MINIMIZED on first render (the taskbar's Start
+        # button toggles it), so the spot where it used to land
+        # at (130, 130) is now wallpaper.  Sanity-check instead
+        # that (130, 130) is NOT the launcher's light-grey body
+        # (which would mean it leaked through the minimize path).
+        bx, by = 130, 130
         body = (pixels[(by * w + bx) * 3 + 0],
                 pixels[(by * w + bx) * 3 + 1],
                 pixels[(by * w + bx) * 3 + 2])
-        if min(body) < 220:
-            print(f"FAIL: launcher body pixel at ({bx},{by}) = {body}, "
-                  f"expected light-grey BG")
+        is_launcher_bg = (min(body) >= 220
+                          and abs(body[0] - body[1]) <= 12
+                          and abs(body[1] - body[2]) <= 12)
+        if is_launcher_bg:
+            print(f"FAIL: launcher appears visible at boot (pixel at "
+                  f"({bx},{by}) = {body}); should be hidden until the "
+                  f"Start button is clicked")
             return 1
-        print(f"[smoke] launcher body painted at ({bx},{by}) = {body}",
-              flush=True)
+        print(f"[smoke] launcher hidden at boot (pixel at ({bx},{by}) "
+              f"= {body}, not launcher BG)", flush=True)
 
-        print("PASS: WM painted the launcher window")
+        print("PASS: WM painted the desktop and the launcher stayed hidden")
         return 0
     finally:
         try: qemu.terminate()

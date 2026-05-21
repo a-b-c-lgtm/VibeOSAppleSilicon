@@ -27,6 +27,9 @@
 #include "serial.h"
 #include "uaccess.h"
 #include "thread.h"
+#include "pmem.h"
+#include "wm_font.h"
+#include "../arch/address_space.h"
 #include "../device/fb.h"
 #include "../device/font.h"
 #include "../device/text.h"
@@ -41,6 +44,7 @@
 #define ENOENT  2
 #define EFAULT 14
 #define ENOSPC 28
+#define EBUSY  16
 #endif
 
 /* GCC-emitted memset/memcpy fallbacks for freestanding builds.  */
@@ -78,6 +82,47 @@ struct wm_window {
     uint8_t *pixels;        /* w*h*4 BGRA, kheap-allocated */
     char     title[WM_TITLE_MAX + 1];
     struct gui_event_ring events;
+    /* Chapter 108a \u2014 userspace pixel-buffer mapping.  Lazily
+     * populated by wm_map_window; cleared by wm_unmap_window /
+     * wm_destroy_window / wm_destroy_owner.
+     *
+     *   user_pages_n   : number of 4 KiB frames in the mapping.
+     *                    0 means "no mapping installed."  When
+     *                    nonzero we also know which AS the
+     *                    mapping lives in (the owner's, by
+     *                    construction \u2014 only the owner can map
+     *                    a window).
+     *   user_pages_pa  : kheap-allocated array of length
+     *                    user_pages_n, holding the physical
+     *                    addresses of the mapped frames in
+     *                    user-VA order.  Used both for tearing
+     *                    the mapping down and for the wm_damage
+     *                    copy back into `pixels`.
+     *   user_va        : the user-VA base of the mapping.
+     *   user_as        : non-owning pointer to the owner's
+     *                    address space (we don't refcount it;
+     *                    on owner exit, wm_destroy_owner is
+     *                    called BEFORE address_space_destroy
+     *                    so we can still uninstall).
+     */
+    uint32_t              user_pages_n;
+    uint64_t              user_va;
+    uint64_t             *user_pages_pa;
+    struct address_space *user_as;
+
+    /* chapter 108e -- when set, the kernel WM's pointer router
+     * skips this window entirely.  hit_test() pretends the window
+     * isn't there; the focused-window MOVE/UP forwarding path
+     * also bails before pushing to this window's event ring.
+     * Set by wsd via SYS_GUI_SET_INPUT_PASSTHROUGH on every
+     * shadow it binds (WM_WIN_BIND_KERNEL).  Once passthrough is
+     * on, wsd is the sole authority on input routing for this
+     * window: it does hit-test in its own z-order and injects
+     * MOUSE_DOWN / MOUSE_UP / MOUSE_MOVE via
+     * SYS_GUI_DELIVER_EVENT.  Keyboard input still flows via the
+     * kernel's g_focus_id, which wsd keeps in sync by calling
+     * SYS_GUI_RAISE_WINDOW after each click-to-raise. */
+    int                   input_passthrough;
 };
 
 static struct wm_window g_wins[WM_MAX_WINDOWS];
@@ -89,7 +134,6 @@ static uint32_t         g_next_z      = 1;
  * next auto-positioned window into a non-(80,60) slot. */
 static uint32_t         g_next_cascade = 0;
 static int32_t          g_focus_id    = -1;
-static int              g_wm_painted_wallpaper = 0;
 
 /* ---- mouse / pointer state (milestone 41) ---- */
 static int32_t  g_pointer_x  = -1;          /* -1 = uninitialised */
@@ -246,6 +290,10 @@ static struct wm_window *win_owned_by(int32_t id, uint64_t pid)
     if (w->owner_pid != pid) return NULL;
     return w;
 }
+/* Forward decl: defined down at the chapter-108a block but called
+ * by the destroy paths just below. */
+static void wm_drop_user_pages(struct wm_window *w);
+
 static int32_t topmost_id(void)
 {
     int32_t  best_id = -1;
@@ -259,347 +307,85 @@ static int32_t topmost_id(void)
     return best_id;
 }
 
-/* ---- painting ---- */
-static const struct fb_color WALLPAPER     = FB_COLOR(0x10, 0x14, 0x28);
-static const struct fb_color WALLPAPER_TOP = FB_COLOR(0x18, 0x20, 0x40);
-static const struct fb_color DECO_BG   = FB_COLOR(0x20, 0x30, 0x60);
-static const struct fb_color DECO_BG_F = FB_COLOR(0x40, 0x60, 0xC0);
-static const struct fb_color DECO_FG   = FB_COLOR(0xFF, 0xFF, 0xFF);
-static const struct fb_color BORDER    = FB_COLOR(0x60, 0x80, 0xC0);
+/* ---- painting (chapter 108d: retired) ----
+ *
+ * Prior to chapter 108d the kernel WM owned the entire scanout
+ * paint path: paint_wallpaper, blit_window (with decoration,
+ * close button, minimise button, resize grip, content blit),
+ * blit_cursor (a hand-rolled X11-style sprite), wm_draw_text_fb
+ * + wm_text_glyph + wm_blend_pixel for TTF/fontd-backed title
+ * text, and compose_all() that walked the window table in
+ * three z-order passes (pin-to-bottom, regular, always-on-top)
+ * then called fb_present() to push the result to virtio-gpu.
+ *
+ * Every public WM mutator below used to end with a call to
+ * compose_all().  This chapter moves the compositor into
+ * userspace (/bin/wsd via /srv/wm) so the kernel keeps only
+ * the window table, focus tracking, input routing into per-
+ * window event queues, and the chapter-108a backing-buffer
+ * mappings — none of which need to touch the scanout.
+ *
+ * What got deleted in this slice:
+ *   - paint_wallpaper(), blit_window(), blit_cursor()
+ *   - wm_draw_text_fb(), wm_text_glyph(), wm_blend_pixel()
+ *   - the CURSOR_BITMAP[] sprite
+ *   - DECO_BG, DECO_BG_F, DECO_FG, BORDER colour constants
+ *   - WALLPAPER, WALLPAPER_TOP colour constants
+ *   - the g_wm_painted_wallpaper bit (never read elsewhere)
+ *   - compose_all() and every caller's call to it
+ *   - kernel/core/wm_font.{c,h} entirely (its only caller
+ *     was wm_text_glyph)
+ *
+ * What got stubbed (still called by legacy apps, must not
+ * crash, but does no painting):
+ *   - wm_present()    — returns 0
+ *   - wm_fill_rect()  — returns 0
+ *   - wm_draw_text()  — returns 0
+ *   - wm_flush()      — returns 0
+ *
+ * What stayed (kernel still owns it):
+ *   - g_wins[] window table, slot allocation, owner pid,
+ *     focus tracking (g_focus_id), drag tracking (g_drag_id),
+ *     resize tracking
+ *   - g_pointer_x/y position tracking (still used by the
+ *     pointer router to decide which window an EV_ABS hits)
+ *   - all input routing (wm_keyboard_byte, wm_pointer_move,
+ *     wm_pointer_button) — pixel-side compose_all() calls
+ *     deleted; event-queue enqueues stay
+ *   - chapter 108a wm_map_window / wm_unmap_window / wm_damage
+ *     mapped-buffer machinery
+ *   - WM_LIST, WM_GET_SCREEN_SIZE, gui_create_window,
+ *     gui_destroy_window, gui_window_fb, gui_poll_event,
+ *     wm_raise_window, wm_set_minimized
+ *
+ * Legacy GUI apps (notepad, gui_term, browser, launcher,
+ * taskbar, desktop, paint, notify, hellogui, pixapp,
+ * save_dialog) were ported to wmclient (userspace/libgui/wmclient.h)
+ * and the /srv/wm bus in chapter 108d, one app at a time.
+ * Hellowsd (which already uses wmclient) IS visible
+ * after this slice — paint the magic 0xff7755aa colour into
+ * its window and the wsd compose path puts it on screen
+ * for real, no longer overwritten by the kernel compositor
+ * because the kernel compositor doesn't exist.
+ */
 
-static void paint_wallpaper(void)
-{
-    if (!fb_is_ready()) return;
-    const struct fb_info *fb = fb_get_info();
-
-    /* Vertical gradient: slightly lighter near the top fading to
-     * the existing dark navy at the bottom.  Done in 16-row bands
-     * so we don't pay per-pixel cost in the kernel.
-     *
-     * This is intentionally a kernel-level FALLBACK only.  As
-     * soon as init spawns /bin/desktop, the desktop process
-     * creates a PIN_TO_BOTTOM window covering the screen and
-     * blits the real wallpaper image into it.  Wallpaper
-     * ownership belongs in userspace, not in the kernel. */
-    const uint32_t bands = 16;
-    const uint32_t band_h = fb->height / bands;
-    for (uint32_t i = 0; i < bands; i++) {
-        /* Linear blend WALLPAPER_TOP -> WALLPAPER as i: 0 -> bands-1. */
-        uint32_t num = i, den = bands - 1;
-        uint8_t r = (uint8_t)((WALLPAPER_TOP.r * (den - num) + WALLPAPER.r * num) / den);
-        uint8_t g = (uint8_t)((WALLPAPER_TOP.g * (den - num) + WALLPAPER.g * num) / den);
-        uint8_t b = (uint8_t)((WALLPAPER_TOP.b * (den - num) + WALLPAPER.b * num) / den);
-        struct fb_color c = FB_COLOR(r, g, b);
-        uint32_t y = i * band_h;
-        uint32_t h = (i == bands - 1) ? (fb->height - y) : band_h;
-        fb_fill_rect(0, y, fb->width, h, c);
-    }
-
-    /* Subtle horizontal bar at the bottom — placeholder for a
-     * future taskbar so the wallpaper doesn't look totally empty. */
-    fb_fill_rect(0, fb->height - 28, fb->width, 28, FB_COLOR(0x18, 0x1C, 0x32));
-    fb_fill_rect(0, fb->height - 28, fb->width, 1,  BORDER);
-}
-
-/* Blit a window's content + decorations into the framebuffer back
- * buffer.  Caller is responsible for fb_present()ing the affected
- * region. */
-static void blit_window(const struct wm_window *w)
-{
-    if (!fb_is_ready()) return;
-    const struct fb_info *fb = fb_get_info();
-    if (!fb) return;
-
-    /* Milestone 47: NO_DECORATION windows have no title bar, no
-     * border, and no close button.  Their content rectangle starts
-     * at (w->x, w->y) and is exactly w->w * w->h pixels. */
-    if (w->flags & GUI_WIN_FLAG_NO_DECORATION) {
-        int32_t cx = w->x;
-        int32_t cy = w->y;
-        for (uint32_t row = 0; row < w->h; row++) {
-            int32_t fy = cy + (int32_t)row;
-            if (fy < 0 || fy >= (int32_t)fb->height) continue;
-            for (uint32_t col = 0; col < w->w; col++) {
-                int32_t fx = cx + (int32_t)col;
-                if (fx < 0 || fx >= (int32_t)fb->width) continue;
-                uint32_t v = ((uint32_t *)w->pixels)[row * w->w + col];
-                fb_draw_pixel((uint32_t)fx, (uint32_t)fy, bgra_unpack(v));
-            }
-        }
-        return;
-    }
-
-    int32_t deco_x = w->x;
-    int32_t deco_y = w->y;
-    int32_t deco_w = (int32_t)w->w + 2 * WM_BORDER;
-    int32_t deco_h = (int32_t)w->h + WM_TITLE_HEIGHT + WM_BORDER;
-    if (deco_x < 0) deco_x = 0;
-    if (deco_y < 0) deco_y = 0;
-    if (deco_x >= (int32_t)fb->width)  return;
-    if (deco_y >= (int32_t)fb->height) return;
-
-    /* Title bar — colour reflects focus. */
-    int focused = (w->id == g_focus_id);
-    fb_fill_rect((uint32_t)deco_x, (uint32_t)deco_y,
-                 (uint32_t)deco_w, WM_TITLE_HEIGHT,
-                 focused ? DECO_BG_F : DECO_BG);
-    /* Title text. */
-    const struct bitmap_font *font = font_get_default();
-    text_draw_string(font,
-                     (uint32_t)deco_x + 8, (uint32_t)deco_y + 4,
-                     fb->width, fb->height,
-                     w->title,
-                     DECO_FG, DECO_BG, 1, NULL, NULL);
-
-    /* Close button — a small red square with a white X on the
-     * right side of the title bar. */
-    if (deco_w >= WM_CLOSE_BTN_W + 4) {
-        uint32_t bx = (uint32_t)deco_x + (uint32_t)deco_w - WM_CLOSE_BTN_W - 2;
-        uint32_t by = (uint32_t)deco_y + 2;
-        uint32_t bw = WM_CLOSE_BTN_W;
-        uint32_t bh = WM_TITLE_HEIGHT - 4;
-        fb_fill_rect(bx, by, bw, bh, FB_COLOR(0xC0, 0x30, 0x30));
-        /* Draw an X.  Hand-rolled so we don't depend on a font glyph
-         * for this 20x20 button. */
-        for (uint32_t i = 4; i + 4 < bw && i + 4 < bh; i++) {
-            uint32_t lx = bx + i;
-            uint32_t rx = bx + bw - 1 - i;
-            uint32_t y  = by + i;
-            if (lx < fb->width && y < fb->height)
-                fb_draw_pixel(lx, y, FB_COLOR(0xFF, 0xFF, 0xFF));
-            if (rx < fb->width && y < fb->height)
-                fb_draw_pixel(rx, y, FB_COLOR(0xFF, 0xFF, 0xFF));
-        }
-    }
-
-    /* Minimize button — grey square with a white underscore,
-     * placed immediately to the left of the close button.  Only
-     * drawn if the title bar is wide enough to hold both buttons
-     * AND a few pixels of breathing room for the title text. */
-    if (deco_w >= WM_CLOSE_BTN_W + WM_MIN_BTN_W + WM_BTN_GAP + 8) {
-        uint32_t bx = (uint32_t)deco_x + (uint32_t)deco_w
-                    - WM_CLOSE_BTN_W - 2 - WM_BTN_GAP - WM_MIN_BTN_W;
-        uint32_t by = (uint32_t)deco_y + 2;
-        uint32_t bw = WM_MIN_BTN_W;
-        uint32_t bh = WM_TITLE_HEIGHT - 4;
-        fb_fill_rect(bx, by, bw, bh, FB_COLOR(0x60, 0x60, 0x60));
-        /* Underscore: a 2-pixel-tall horizontal bar near the bottom
-         * of the button, leaving 4 px of margin on each side. */
-        if (bw > 8 && bh > 6) {
-            uint32_t ly0 = by + bh - 4;
-            for (uint32_t i = 4; i + 4 < bw; i++) {
-                uint32_t px = bx + i;
-                if (px < fb->width) {
-                    if (ly0     < fb->height)
-                        fb_draw_pixel(px, ly0,     FB_COLOR(0xFF, 0xFF, 0xFF));
-                    if (ly0 + 1 < fb->height)
-                        fb_draw_pixel(px, ly0 + 1, FB_COLOR(0xFF, 0xFF, 0xFF));
-                }
-            }
-        }
-    }
-
-    /* Border around the whole window. */
-    fb_draw_rect((uint32_t)deco_x, (uint32_t)deco_y,
-                 (uint32_t)deco_w, (uint32_t)deco_h, BORDER);
-
-    /* Content area: copy the window's BGRA pixel buffer into the
-     * framebuffer, row by row, clipping to screen bounds. */
-    int32_t cx = deco_x + WM_BORDER;
-    int32_t cy = deco_y + WM_TITLE_HEIGHT;
-    uint32_t cw = w->w;
-    uint32_t ch = w->h;
-    for (uint32_t row = 0; row < ch; row++) {
-        int32_t fy = cy + (int32_t)row;
-        if (fy < 0 || fy >= (int32_t)fb->height) continue;
-        for (uint32_t col = 0; col < cw; col++) {
-            int32_t fx = cx + (int32_t)col;
-            if (fx < 0 || fx >= (int32_t)fb->width) continue;
-            uint32_t v = ((uint32_t *)w->pixels)[row * cw + col];
-            fb_draw_pixel((uint32_t)fx, (uint32_t)fy, bgra_unpack(v));
-        }
-    }
-
-    /* Resize grip — painted last so it sits visually on top of the
-     * content's bottom-right corner.  Three diagonal stripes of
-     * white pixels across a WM_GRIP_SIZE square anchored to the
-     * window's bottom-right interior corner.  Visual cue is small
-     * but unmistakable; matches the macOS / classic-X11 idiom. */
-    if ((w->flags & GUI_WIN_FLAG_RESIZABLE) &&
-        deco_w >= WM_GRIP_SIZE + 2 &&
-        deco_h >= WM_GRIP_SIZE + WM_TITLE_HEIGHT + 2) {
-        int32_t gx0 = deco_x + deco_w - WM_GRIP_SIZE - WM_BORDER;
-        int32_t gy0 = deco_y + deco_h - WM_GRIP_SIZE - WM_BORDER;
-        for (int32_t i = 0; i < WM_GRIP_SIZE; i++) {
-            for (int32_t j = 0; j < WM_GRIP_SIZE; j++) {
-                /* Three diagonal lines: i+j == GRIP-2, GRIP-6, GRIP-10 */
-                int diag = i + j;
-                int draw = (diag == WM_GRIP_SIZE - 2 ||
-                            diag == WM_GRIP_SIZE - 6 ||
-                            diag == WM_GRIP_SIZE - 10);
-                if (!draw) continue;
-                int32_t px = gx0 + j;
-                int32_t py = gy0 + i;
-                if (px < 0 || px >= (int32_t)fb->width)  continue;
-                if (py < 0 || py >= (int32_t)fb->height) continue;
-                fb_draw_pixel((uint32_t)px, (uint32_t)py,
-                              FB_COLOR(0xFF, 0xFF, 0xFF));
-            }
-        }
-    }
-}
-
-/* Tiny 12-row monochrome cursor sprite ('1' = white, '2' = black,
- * '.' = transparent).  Inspired by the classic X11 left_ptr. */
-#define CURSOR_W 12
-#define CURSOR_H 19
-static const char *const CURSOR_BITMAP[CURSOR_H] = {
-    "2...........",
-    "22..........",
-    "212.........",
-    "2112........",
-    "21112.......",
-    "211112......",
-    "2111112.....",
-    "21111112....",
-    "211111112...",
-    "2111111112..",
-    "21111111112.",
-    "211111122222",
-    "2111121.....",
-    "211221......",
-    "21221.......",
-    "2122........",
-    "1221........",
-    ".22.........",
-    "............",
-};
-
-static void blit_cursor(void)
-{
-    if (g_pointer_x < 0 || g_pointer_y < 0) return;
-    const struct fb_info *fb = fb_get_info();
-    if (!fb) return;
-    for (int32_t row = 0; row < CURSOR_H; row++) {
-        for (int32_t col = 0; col < CURSOR_W; col++) {
-            char ch = CURSOR_BITMAP[row][col];
-            if (ch == '.' || ch == 0) continue;
-            int32_t fx = g_pointer_x + col;
-            int32_t fy = g_pointer_y + row;
-            if (fx < 0 || fy < 0)                     continue;
-            if (fx >= (int32_t)fb->width)             continue;
-            if (fy >= (int32_t)fb->height)            continue;
-            struct fb_color c = (ch == '1')
-                ? (struct fb_color)FB_COLOR(0xFF, 0xFF, 0xFF)
-                : (struct fb_color)FB_COLOR(0x00, 0x00, 0x00);
-            fb_draw_pixel((uint32_t)fx, (uint32_t)fy, c);
-        }
-    }
-}
-
-static void compose_all(void)
-{
-    if (!fb_is_ready()) return;
-    /* Lazy cursor seed.  blit_cursor early-returns while
-     * g_pointer_x/y are -1, which means the sprite stays invisible
-     * until the FIRST EV_ABS arrives from the host.  Under HVF the
-     * QEMU window doesn't generate any tablet events until the user
-     * physically waves the host pointer over it — so freshly-booted
-     * systems and "all windows closed" states could sit there for
-     * many seconds with no cursor at all.  Drop a sane default at
-     * the centre of the screen the first time we have a usable
-     * framebuffer; the very next motion event overwrites it. */
-    if (g_pointer_x < 0 || g_pointer_y < 0) {
-        const struct fb_info *fb = fb_get_info();
-        if (fb) {
-            g_pointer_x = (int32_t)fb->width  / 2;
-            g_pointer_y = (int32_t)fb->height / 2;
-        }
-    }
-    paint_wallpaper();
-    /* Painter's algorithm: walk every in-use window in ascending z.
-     *
-     * The previous implementation tied the outer pass counter to z
-     * directly (`if (g_wins[i].z <= pass) continue;`).  That worked
-     * only while z values stayed packed in [1..WM_MAX_WINDOWS], which
-     * is NOT true after focus-raises: every left-down does
-     * `w->z = ++g_next_z`, so after a few clicks z values fan out
-     * arbitrarily and:
-     *   (a) windows with the same z would be painted multiple times
-     *       and others skipped entirely, and
-     *   (b) windows whose z exceeded WM_MAX_WINDOWS would never be
-     *       painted at all.
-     *
-     * The straightforward fix is to track which windows have been
-     * emitted with a per-pass mask instead of conflating z with the
-     * pass index.  N <= 16 so O(N^2) is fine. */
-    uint32_t painted = 0;  /* bit i set => g_wins[i] already drawn */
-    /* Pass 0: pin-to-bottom windows (the desktop wallpaper).  We
-     * paint these FIRST in z order so they sit underneath every
-     * other window.  hit_test ignores them entirely so clicks
-     * fall through to apps as if the wallpaper weren't there. */
-    for (uint32_t pass = 0; pass < WM_MAX_WINDOWS; pass++) {
-        int32_t  pick_id = -1;
-        uint32_t pick_z  = 0;
-        for (int32_t i = 0; i < WM_MAX_WINDOWS; i++) {
-            if (!g_wins[i].in_use) continue;
-            if (painted & (1u << i)) continue;
-            if (g_wins[i].minimized) continue;
-            if (!(g_wins[i].flags & GUI_WIN_FLAG_PIN_TO_BOTTOM)) continue;
-            if (pick_id < 0 || g_wins[i].z < pick_z) {
-                pick_id = i;
-                pick_z  = g_wins[i].z;
-            }
-        }
-        if (pick_id < 0) break;
-        blit_window(&g_wins[pick_id]);
-        painted |= (1u << pick_id);
-    }
-    /* Pass 1: every regular (non-always-on-top, non-pin-to-bottom)
-     * window in z order. */
-    for (uint32_t pass = 0; pass < WM_MAX_WINDOWS; pass++) {
-        int32_t  pick_id = -1;
-        uint32_t pick_z  = 0;
-        for (int32_t i = 0; i < WM_MAX_WINDOWS; i++) {
-            if (!g_wins[i].in_use) continue;
-            if (painted & (1u << i)) continue;
-            if (g_wins[i].minimized) continue;
-            if (g_wins[i].flags & GUI_WIN_FLAG_ALWAYS_ON_TOP) continue;
-            if (g_wins[i].flags & GUI_WIN_FLAG_PIN_TO_BOTTOM) continue;
-            if (pick_id < 0 || g_wins[i].z < pick_z) {
-                pick_id = i;
-                pick_z  = g_wins[i].z;
-            }
-        }
-        if (pick_id < 0) break;
-        blit_window(&g_wins[pick_id]);
-        painted |= (1u << pick_id);
-    }
-    /* Pass 2: always-on-top windows, also in z order so multiple
-     * pinned panels stack predictably. */
-    for (uint32_t pass = 0; pass < WM_MAX_WINDOWS; pass++) {
-        int32_t  pick_id = -1;
-        uint32_t pick_z  = 0;
-        for (int32_t i = 0; i < WM_MAX_WINDOWS; i++) {
-            if (!g_wins[i].in_use) continue;
-            if (painted & (1u << i)) continue;
-            if (g_wins[i].minimized) continue;
-            if (!(g_wins[i].flags & GUI_WIN_FLAG_ALWAYS_ON_TOP)) continue;
-            if (pick_id < 0 || g_wins[i].z < pick_z) {
-                pick_id = i;
-                pick_z  = g_wins[i].z;
-            }
-        }
-        if (pick_id < 0) break;
-        blit_window(&g_wins[pick_id]);
-        painted |= (1u << pick_id);
-    }
-    blit_cursor();
-    fb_present(0, 0, 0, 0);
-    g_wm_painted_wallpaper = 1;
-}
 
 /* ---- public API ---- */
+
+/* Chapter 108d — compose_all is retired.  The 12 in-tree call sites
+ * (focus changes, drags, destroys, raises, minimises, damage)
+ * used to trigger a kernel-side framebuffer recomposite.  Now
+ * that wsd owns the scanout, the right thing is for those state
+ * transitions to be observable to wsd over /srv/wm so it can
+ * re-render.  Until that wire is built, the call
+ * sites stay textually but invoke this no-op.  Keeping the calls
+ * preserves the historical paint points so a future refactor
+ * knows where the publish-state hooks belong. */
+static inline void compose_all(void)
+{
+    /* intentionally empty */
+}
+
 void wm_init(void)
 {
     for (int i = 0; i < WM_MAX_WINDOWS; i++)
@@ -709,6 +495,10 @@ static int32_t hit_test(int32_t sx, int32_t sy)
         if (w->flags & GUI_WIN_FLAG_PIN_TO_BOTTOM) continue;
         /* Minimized windows aren't on screen — clicks ignore them. */
         if (w->minimized) continue;
+        /* chapter 108e -- wsd-routed shadows are invisible to the
+         * kernel hit-tester.  wsd does its own hit-test in
+         * wsd-z-order and injects events via gui_deliver_event. */
+        if (w->input_passthrough) continue;
         int32_t x0 = w->x;
         int32_t y0 = w->y;
         int32_t x1, y1;
@@ -925,6 +715,9 @@ void wm_pointer_move(int32_t sx, int32_t sy)
         }
     } else if (g_focus_id >= 0) {
         struct wm_window *w = win_by_id(g_focus_id);
+        /* chapter 108e -- wsd-routed shadows get their MOVE
+         * events injected by wsd, not auto-forwarded by kernel. */
+        if (w && w->input_passthrough) w = NULL;
         if (w) {
             int32_t cx = 0, cy = 0;
             if (classify_click(w, sx, sy, &cx, &cy) == 'B') {
@@ -974,8 +767,19 @@ void wm_pointer_button(uint32_t button, int down)
     int32_t hit = hit_test(sx, sy);
     if (down && button == GUI_BTN_LEFT) {
         if (hit < 0) {
-            /* Clicked the wallpaper — defocus all. */
-            g_focus_id = -1;
+            /* chapter 108e follow-up -- click landed where the
+             * kernel WM sees no window.  In a wsd-managed
+             * session this is the common case: every wsd
+             * client's shadow is input_passthrough, so kernel
+             * hit_test ignores it.  The click most likely hit
+             * paint / notepad / etc. and wsd will handle it
+             * in its own hit-test below.  Do NOT clear
+             * g_focus_id here -- that would silently break
+             * keyboard focus on the app the user was using
+             * (e.g. ESC stops exiting paint because focus has
+             * been quietly handed to nobody).  wsd remains
+             * the authority on focus transitions; the kernel
+             * just routes keys to whoever wsd last raised. */
             compose_all();
             return;
         }
@@ -1050,6 +854,9 @@ void wm_pointer_button(uint32_t button, int down)
      * content area if applicable. */
     if (g_focus_id >= 0) {
         struct wm_window *w = win_by_id(g_focus_id);
+        /* chapter 108e -- wsd-routed shadows get their UP/non-left
+         * events injected by wsd, not auto-forwarded by kernel. */
+        if (w && w->input_passthrough) w = NULL;
         if (w) {
             int32_t cx = 0, cy = 0;
             if (classify_click(w, sx, sy, &cx, &cy) == 'B') {
@@ -1133,6 +940,12 @@ long wm_create_window_ex(uint64_t pid, uint32_t w, uint32_t h,
     win->h          = h;
     win->pixels     = buf;
     win->events.head = win->events.tail = 0;
+    /* Chapter 108a \u2014 no user-visible mapping yet; lazily
+     * populated by the first wm_map_window call. */
+    win->user_pages_n  = 0;
+    win->user_pages_pa = NULL;
+    win->user_va       = 0;
+    win->user_as       = NULL;
 
     if (want_x >= 0 && want_y >= 0) {
         win->x = want_x;
@@ -1194,6 +1007,18 @@ long wm_destroy_window(uint64_t pid, int32_t id)
 {
     struct wm_window *w = win_owned_by(id, pid);
     if (!w) return -ENOENT;
+    /* Chapter 108a \u2014 tear the user-visible mapping down before
+     * we forget about the window.  The AS is still live (we're
+     * called from sys_gui_destroy_window, EL0 caller is the
+     * owner thread).  Failure here is logged and ignored \u2014
+     * worst case the kheap allocation linked to user_pages_pa
+     * leaks for the lifetime of the kernel, which is bounded. */
+    if (w->user_pages_n != 0 && w->user_as) {
+        (void)address_space_uninstall_wm_window(w->user_as,
+                                                w->user_va,
+                                                w->user_pages_n);
+    }
+    wm_drop_user_pages(w);
     kfree(w->pixels);
     w->pixels = NULL;
     w->in_use = 0;
@@ -1209,6 +1034,22 @@ void wm_destroy_owner(uint64_t pid)
     int any = 0;
     for (int32_t i = 0; i < WM_MAX_WINDOWS; i++) {
         if (g_wins[i].in_use && g_wins[i].owner_pid == pid) {
+            /* Chapter 108a \u2014 uninstall the user-visible mapping
+             * first.  Owner-exit teardown runs from thread_exit
+             * BEFORE address_space_destroy, so the owner's AS
+             * is still live and the uninstall succeeds.  If for
+             * any reason it doesn't (AS already gone, descriptor
+             * mismatch), we still drop our half via
+             * wm_drop_user_pages \u2014 the AS teardown path skips
+             * DESC_SW_WM_WINDOW entries so this won't double-
+             * free. */
+            if (g_wins[i].user_pages_n != 0 && g_wins[i].user_as) {
+                (void)address_space_uninstall_wm_window(
+                        g_wins[i].user_as,
+                        g_wins[i].user_va,
+                        g_wins[i].user_pages_n);
+            }
+            wm_drop_user_pages(&g_wins[i]);
             kfree(g_wins[i].pixels);
             g_wins[i].pixels = NULL;
             g_wins[i].in_use = 0;
@@ -1227,21 +1068,20 @@ long wm_present(uint64_t pid, int32_t id,
                 uint32_t x, uint32_t y, uint32_t rw, uint32_t rh,
                 const uint8_t *src_user)
 {
-    struct wm_window *w = win_owned_by(id, pid);
-    if (!w) return -EPERM;
-    if (rw == 0 || rh == 0) return 0;
-    if (x >= w->w || y >= w->h) return -EINVAL;
-    if (x + rw > w->w || y + rh > w->h) return -EINVAL;
-
-    /* Copy user pixels row-by-row into the window buffer.  The
-     * source is assumed tightly packed (rw*4 bytes per row, no
-     * padding) — same convention as VibeOS. */
-    for (uint32_t row = 0; row < rh; row++) {
-        uint8_t *dst = w->pixels + ((y + row) * w->w + x) * 4u;
-        uint64_t s   = (uint64_t)(uintptr_t)src_user + (uint64_t)row * rw * 4u;
-        if (copy_from_user(dst, s, (size_t)rw * 4u) < 0)
-            return -EFAULT;
-    }
+    /* Chapter 108d: kernel compositor retired.  Legacy apps that
+     * still call SYS_WIN_PRESENT get a successful no-op so they
+     * don't crash; they will draw nothing on screen until they
+     * port to wmclient + the userspace wsd compose path.
+     *
+     * milestone-15 invariant preserved: once the app has mapped
+     * the FB into its own AS (user_pages_n > 0), the kernel
+     * refuses to keep writing through its copy -- prevents
+     * tearing with the user's direct writes.  mixtest.c verifies
+     * this. */
+    (void)x; (void)y; (void)rw; (void)rh; (void)src_user;
+    struct wm_window *w = win_by_id(id);
+    if (w && w->in_use && w->owner_pid == pid && w->user_pages_n != 0)
+        return -EBUSY;
     return 0;
 }
 
@@ -1250,48 +1090,57 @@ long wm_fill_rect(uint64_t pid, int32_t id,
                   uint32_t rw, uint32_t rh,
                   uint32_t bgra)
 {
-    struct wm_window *w = win_owned_by(id, pid);
-    if (!w) return -EPERM;
-    if (rw == 0 || rh == 0) return 0;
-    if (x >= w->w || y >= w->h) return -EINVAL;
-    if (x + rw > w->w || y + rh > w->h) return -EINVAL;
-
-    for (uint32_t row = 0; row < rh; row++) {
-        uint32_t *dst = (uint32_t *)w->pixels + (y + row) * w->w + x;
-        for (uint32_t col = 0; col < rw; col++)
-            dst[col] = bgra;
-    }
+    /* Chapter 108d: see wm_present above.  No-op success unless
+     * the window has been mapped to userspace -- then -EBUSY. */
+    (void)x; (void)y; (void)rw; (void)rh; (void)bgra;
+    struct wm_window *w = win_by_id(id);
+    if (w && w->in_use && w->owner_pid == pid && w->user_pages_n != 0)
+        return -EBUSY;
     return 0;
 }
 
-/* Per-pixel alpha-blend BGRA into a window buffer pixel.
- * Chapter 102: TTF glyphs carry per-pixel alpha (0..255). For 0
- * (transparent) we skip; for 255 (opaque) we write fg directly;
- * otherwise we blend fg over the existing pixel using the same
- * (a*src + (255-a)*dst) / 255 formula text_alpha_blend uses. */
-static inline void wm_blend_pixel(uint32_t *p, uint32_t fg, uint8_t a)
+/* Chapter 108b -- look up a single codepoint, preferring the
+ * userspace font server.  Returns 0 and fills *out_gi on
+ * success; also returns the cell height and baseline offset
+ * appropriate to whichever source was used.  Always succeeds
+ * for valid inputs (falls back to the kernel bitmap font when
+ * fontd isn't reachable). */
+static int wm_text_glyph(uint32_t cp,
+                         struct glyph_info *out_gi,
+                         uint32_t *out_cell_h,
+                         uint32_t *out_baseline,
+                         uint32_t *out_advance_fallback)
 {
-    if (a == 0) return;
-    if (a == 0xFF) { *p = fg; return; }
-    uint32_t dst = *p;
-    uint8_t fr = (fg >> 16) & 0xFF, fg_ = (fg >> 8) & 0xFF, fb = fg & 0xFF;
-    uint8_t dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF, db = dst & 0xFF;
-    uint16_t inv = (uint16_t)(255 - a);
-    uint8_t orr = (uint8_t)(((uint16_t)fr  * a + (uint16_t)dr * inv) / 255);
-    uint8_t org = (uint8_t)(((uint16_t)fg_ * a + (uint16_t)dg * inv) / 255);
-    uint8_t orb = (uint8_t)(((uint16_t)fb  * a + (uint16_t)db * inv) / 255);
-    *p = ((uint32_t)0xFFu << 24) | ((uint32_t)orr << 16)
-       | ((uint32_t)org  <<  8) |  (uint32_t)orb;
+    if (wm_font_get_glyph(cp, out_gi) == 0) {
+        *out_cell_h           = wm_font_cell_height();
+        *out_baseline         = wm_font_baseline_offset();
+        *out_advance_fallback = (out_gi->advance ? out_gi->advance
+                                                 : wm_font_cell_height() / 2);
+        return 0;
+    }
+    /* Fontd unreachable (boot window / respawning) or codepoint
+     * outside the TTF cache range -- fall back to the kernel's
+     * always-available bitmap font. */
+    const struct bitmap_font *fb_font = font_get_bitmap();
+    if (!fb_font) return -1;
+    if (font_get_glyph(fb_font, cp, out_gi) != 0) return -1;
+    *out_cell_h           = fb_font->cell_height;
+    /* The bitmap font has no "real" baseline -- the cell IS the
+     * glyph -- so we pretend the baseline is the bottom of the
+     * cell, the same convention text.c uses. */
+    *out_baseline         = fb_font->cell_height;
+    *out_advance_fallback = fb_font->cell_width;
+    return 0;
 }
 
 /* Chapter 102 -- pixel-accurate text measurement.
  *
- * Sums the per-glyph advance widths for `s_user` using the same
- * default font that wm_draw_text uses. Mirrors the loop in
- * wm_draw_text exactly so callers get a width that matches what
- * they'll actually paint. Stops at '\n' (callers wanting multi-line
- * measure should split first). Returns the pixel width as a
- * non-negative long, or -EFAULT if `s_user` isn't readable. */
+ * Chapter 108b: the source of glyph metrics is fontd (via
+ * wm_font_get_glyph) when the daemon is up, the bitmap font
+ * otherwise.  Either way the per-glyph advance is summed
+ * exactly the way wm_draw_text will lay them out.  Stops at
+ * '\n'.  Returns the pixel width as a non-negative long, or
+ * -EFAULT if `s_user` isn't readable. */
 long wm_measure_text(const char *s_user)
 {
     char buf[256];
@@ -1299,16 +1148,15 @@ long wm_measure_text(const char *s_user)
                                      sizeof(buf));
     if (got < 0) return -EFAULT;
 
-    const struct bitmap_font *font = font_get_default();
-    if (!font) return 0;
-
     uint32_t w = 0;
     for (size_t i = 0; buf[i]; i++) {
         char ch = buf[i];
         if (ch == '\n') break;
         struct glyph_info gi;
-        if (font_get_glyph(font, (uint32_t)(uint8_t)ch, &gi) != 0) continue;
-        uint32_t adv = gi.advance ? gi.advance : font->cell_width;
+        uint32_t cell_h = 0, baseline = 0, fallback_adv = 0;
+        if (wm_text_glyph((uint32_t)(uint8_t)ch, &gi,
+                          &cell_h, &baseline, &fallback_adv) != 0) continue;
+        uint32_t adv = gi.advance ? gi.advance : fallback_adv;
         w += adv;
     }
     return (long)w;
@@ -1320,86 +1168,24 @@ long wm_draw_text(uint64_t pid, int32_t id,
                   uint32_t fg_bgra, uint32_t bg_bgra,
                   int transparent)
 {
-    struct wm_window *w = win_owned_by(id, pid);
-    if (!w) return -EPERM;
-
-    char buf[256];
-    long got = copy_string_from_user(buf, (uint64_t)(uintptr_t)s_user,
-                                     sizeof(buf));
-    if (got < 0) return -EFAULT;
-
-    const struct bitmap_font *font = font_get_default();
-    if (!font) return -EINVAL;
-
-    /* Chapter 102: render glyph-by-glyph using the new font_get_glyph
-     * API. Bitmap-kind fonts produce alpha values of 0 or 255 so the
-     * blend collapses to the old fast path; TTF-kind fonts produce
-     * full grayscale AA. Per-glyph advance gives proportional spacing
-     * with no caller change.
-     *
-     * Pen origin (cx, y) is the cell's top-left; the baseline sits
-     * at (y + cell_height - 4) for TTF and at (y + cell_height) for
-     * the bitmap font -- matching what text.c::text_draw_glyph does. */
-    uint32_t cx = x;
-    uint32_t baseline_off = (font->kind == BITMAP_FONT_KIND_TTF)
-                                ? (uint32_t)font->cell_height - 4u
-                                : (uint32_t)font->cell_height;
-
-    for (size_t i = 0; buf[i]; i++) {
-        char ch = buf[i];
-        if (ch == '\n') {
-            y += font->cell_height + font->line_spacing;
-            cx = x;
-            continue;
-        }
-        struct glyph_info gi;
-        if (font_get_glyph(font, (uint32_t)(uint8_t)ch, &gi) != 0) continue;
-
-        uint32_t adv = gi.advance ? gi.advance : font->cell_width;
-
-        /* Wrap if this glyph won't fit on the line. */
-        if (cx + adv > w->w) {
-            cx = x;
-            y += font->cell_height + font->line_spacing;
-        }
-        if (y + font->cell_height > w->h) break;
-
-        int32_t bx = (int32_t)cx + gi.left_bearing;
-        int32_t by = (int32_t)(y + baseline_off) - gi.top_bearing;
-
-        for (int row = 0; row < gi.bitmap_h; row++) {
-            for (int col = 0; col < gi.bitmap_w; col++) {
-                int32_t px = bx + col;
-                int32_t py = by + row;
-                if (px < 0 || py < 0) continue;
-                if ((uint32_t)px >= w->w || (uint32_t)py >= w->h) continue;
-                uint8_t a = gi.pixels ? gi.pixels[row * gi.bitmap_w + col] : 0;
-                uint32_t *slot = &((uint32_t *)w->pixels)[py * w->w + px];
-                if (a == 0) {
-                    if (!transparent) *slot = bg_bgra;
-                    continue;
-                }
-                if (transparent) {
-                    wm_blend_pixel(slot, fg_bgra, a);
-                } else {
-                    /* Blend fg over bg (deterministic, no fb readback). */
-                    uint32_t tmp = bg_bgra;
-                    wm_blend_pixel(&tmp, fg_bgra, a);
-                    *slot = tmp;
-                }
-            }
-        }
-
-        cx += adv;
-    }
+    /* Chapter 108d: see wm_present above.  No-op success unless
+     * the window has been mapped to userspace -- then -EBUSY.
+     * We deliberately don't read s_user -- legacy callers pass
+     * pointers from their address space we don't need to touch. */
+    (void)x; (void)y; (void)s_user;
+    (void)fg_bgra; (void)bg_bgra; (void)transparent;
+    struct wm_window *w = win_by_id(id);
+    if (w && w->in_use && w->owner_pid == pid && w->user_pages_n != 0)
+        return -EBUSY;
     return 0;
 }
 
 long wm_flush(uint64_t pid, int32_t id)
 {
-    struct wm_window *w = win_owned_by(id, pid);
-    if (!w) return -EPERM;
-    compose_all();
+    /* Chapter 108d: kernel compositor retired; wsd flushes its own
+     * scanout via SYS_FB_PRESENT.  Legacy SYS_WIN_FLUSH callers
+     * get a success return so they don't error out. */
+    (void)pid; (void)id;
     return 0;
 }
 
@@ -1545,5 +1331,320 @@ long wm_set_minimized(uint64_t pid, int32_t id, int on)
         g_focus_id = w->id;
     }
     compose_all();
+    return 0;
+}
+
+/* ---------- Chapter 108a: userspace window-buffer mapping ---------- */
+
+/* Free the user-visible page set for `w` WITHOUT touching the
+ * AS layer.  Used by destroy paths where the AS uninstall has
+ * either already happened or is about to via address_space
+ * teardown's DESC_SW_WM_WINDOW skip path. */
+static void wm_drop_user_pages(struct wm_window *w)
+{
+    if (!w || !w->user_pages_pa) return;
+    for (uint32_t i = 0; i < w->user_pages_n; i++) {
+        if (w->user_pages_pa[i])
+            pmem_free_page(w->user_pages_pa[i]);
+    }
+    kfree(w->user_pages_pa);
+    w->user_pages_pa = NULL;
+    w->user_pages_n  = 0;
+    w->user_va       = 0;
+    w->user_as       = NULL;
+}
+
+long wm_map_window(uint64_t pid, int32_t id,
+                   uint64_t *va_out, uint32_t *stride_out,
+                   uint32_t *w_out, uint32_t *h_out)
+{
+    struct wm_window *w = win_owned_by(id, pid);
+    if (!w) return -EPERM;
+    /* Chapter 108a defers resize coherence to 108b.  RESIZABLE
+     * windows can't be mapped today because the resize-grip
+     * drag path realloc()s w->pixels but has no story for the
+     * user-visible mapping.  Apps that opt in to gui_window_fb
+     * just have to leave RESIZABLE clear; the only existing
+     * apps with RESIZABLE set (notepad) don't use the mapping
+     * path so this restriction is invisible to them. */
+    if (w->flags & GUI_WIN_FLAG_RESIZABLE) return -EINVAL;
+
+    struct thread *t = thread_current();
+    if (!t || !t->as) return -EFAULT;
+
+    /* Compute payload size in bytes, then in 4 KiB pages
+     * rounded up.  The window's tail-of-last-page leftover is
+     * zero-filled and never touched by either side. */
+    size_t bytes  = (size_t)w->w * (size_t)w->h * 4u;
+    uint32_t n    = (uint32_t)((bytes + PAGE_SIZE - 1) / PAGE_SIZE);
+    uint32_t stride = w->w * 4u;
+    uint32_t ww   = w->w;
+    uint32_t hh   = w->h;
+
+    /* Idempotency: if the window is already mapped (same owner),
+     * return the cached descriptors.  This lets apps that
+     * call gui_window_fb() in a tight loop (e.g. paint after
+     * every event) avoid quadratic re-mapping cost. */
+    if (w->user_pages_n != 0) {
+        if (w->user_as != t->as) return -EPERM;
+        if (va_out     && copy_to_user((uint64_t)(uintptr_t)va_out,
+                                       &w->user_va, sizeof(w->user_va)) < 0)
+            return -EFAULT;
+        if (stride_out && copy_to_user((uint64_t)(uintptr_t)stride_out,
+                                       &stride, sizeof(stride)) < 0)
+            return -EFAULT;
+        if (w_out      && copy_to_user((uint64_t)(uintptr_t)w_out,
+                                       &ww, sizeof(ww)) < 0)
+            return -EFAULT;
+        if (h_out      && copy_to_user((uint64_t)(uintptr_t)h_out,
+                                       &hh, sizeof(hh)) < 0)
+            return -EFAULT;
+        return 0;
+    }
+
+    /* Phase 1: pull `n` page frames out of pmem.  These don't
+     * have to be physically contiguous \u2014 the user sees a
+     * contiguous VA range regardless. */
+    uint64_t *pages = (uint64_t *)kmalloc((size_t)n * sizeof(uint64_t));
+    if (!pages) return -ENOMEM;
+    for (uint32_t i = 0; i < n; i++) pages[i] = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        pages[i] = pmem_alloc_page();
+        if (!pages[i]) {
+            for (uint32_t k = 0; k < i; k++) pmem_free_page(pages[k]);
+            kfree(pages);
+            return -ENOMEM;
+        }
+    }
+
+    /* Phase 2: seed the user-visible pages with the current
+     * compositor-side bytes so the app sees what's on screen
+     * right now (typically the dark-gray default fill, but if
+     * the app painted via fill_rect/draw_text before calling
+     * gui_window_fb the seed reflects that).  Each frame holds
+     * up to PAGE_SIZE bytes from `w->pixels`; the last frame
+     * gets clamped to the leftover. */
+    size_t pos = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        uint8_t *frame = (uint8_t *)(uintptr_t)pages[i];
+        size_t   chunk = (bytes - pos < PAGE_SIZE) ? (bytes - pos) : PAGE_SIZE;
+        if (chunk > 0) {
+            const uint8_t *src = w->pixels + pos;
+            for (size_t k = 0; k < chunk; k++) frame[k] = src[k];
+        }
+        /* Pages beyond the payload (only happens for the last
+         * frame) were zero-filled by pmem_alloc_page; nothing
+         * to do. */
+        pos += chunk;
+    }
+
+    /* Phase 3: install the run into the caller's AS at a fresh
+     * VA range.  On failure, give back the frames and report
+     * the AS layer's verdict. */
+    uint64_t va = 0;
+    if (address_space_install_wm_window(t->as, pages, n, &va) != 0) {
+        for (uint32_t i = 0; i < n; i++) pmem_free_page(pages[i]);
+        kfree(pages);
+        return -ENOMEM;
+    }
+
+    /* Phase 4: remember the mapping on the window struct so
+     * destroy / unmap can find it. */
+    w->user_pages_pa = pages;
+    w->user_pages_n  = n;
+    w->user_va       = va;
+    w->user_as       = t->as;
+
+    /* Phase 5: copy descriptors out to userspace.  If any of
+     * the user pointers is bad we still have a valid mapping;
+     * the caller can recover by calling wm_unmap_window. */
+    if (va_out     && copy_to_user((uint64_t)(uintptr_t)va_out,
+                                   &w->user_va, sizeof(w->user_va)) < 0)
+        return -EFAULT;
+    if (stride_out && copy_to_user((uint64_t)(uintptr_t)stride_out,
+                                   &stride, sizeof(stride)) < 0)
+        return -EFAULT;
+    if (w_out      && copy_to_user((uint64_t)(uintptr_t)w_out,
+                                   &ww, sizeof(ww)) < 0)
+        return -EFAULT;
+    if (h_out      && copy_to_user((uint64_t)(uintptr_t)h_out,
+                                   &hh, sizeof(hh)) < 0)
+        return -EFAULT;
+
+    serial_puts("[wm] map_window id=");
+    serial_puthex((uint64_t)id);
+    serial_puts(" pid=");
+    serial_puthex(pid);
+    serial_puts(" pages=");
+    serial_puthex((uint64_t)n);
+    serial_puts(" va=");
+    serial_puthex(va);
+    serial_puts("\n");
+    return 0;
+}
+
+long wm_unmap_window(uint64_t pid, int32_t id)
+{
+    struct wm_window *w = win_owned_by(id, pid);
+    if (!w) return -EPERM;
+    if (w->user_pages_n == 0) return 0;     /* idempotent */
+    if (!w->user_as) {
+        /* Defensive: caller raced an AS teardown.  Just drop
+         * our half. */
+        wm_drop_user_pages(w);
+        return 0;
+    }
+
+    /* Uninstall the AS descriptors first \u2014 once those are
+     * gone, no user code can race a free against a still-live
+     * mapping. */
+    if (address_space_uninstall_wm_window(w->user_as,
+                                          w->user_va,
+                                          w->user_pages_n) != 0) {
+        /* AS layer disagrees about our mapping; refuse to
+         * proceed so we don't free pages someone else might
+         * believe they still own. */
+        return -EINVAL;
+    }
+    wm_drop_user_pages(w);
+    return 0;
+}
+
+long wm_damage(uint64_t pid, int32_t id,
+               uint32_t x, uint32_t y, uint32_t rw, uint32_t rh)
+{
+    struct wm_window *w = win_owned_by(id, pid);
+    if (!w) return -EPERM;
+    if (w->user_pages_n == 0) return -ENOENT;
+    if (rw == 0 || rh == 0) return -EINVAL;
+
+    /* Clip the damage rect to the window.  Apps that pass an
+     * over-large rect (e.g. "damage everything") get a quiet
+     * clip rather than an error so the typical
+     * gui_window_damage_full() helper Just Works. */
+    if (x >= w->w || y >= w->h) return 0;
+    if (x + rw > w->w) rw = w->w - x;
+    if (y + rh > w->h) rh = w->h - y;
+
+    /* Copy row-by-row from the user-visible pages into the
+     * compositor's authoritative buffer.  We walk the rect in
+     * row order; for each row, the byte offset into the flat
+     * payload is `(y+row) * stride + x*4` and the length is
+     * `rw*4`.  We then translate offsets to (page index, byte
+     * offset within page) since the user-visible storage is a
+     * non-contiguous run of 4 KiB frames.  No copy_from_user
+     * here \u2014 the WM-owned pages live in the kernel identity
+     * map, so accessing them via PA directly is safe. */
+    uint32_t stride = w->w * 4u;
+    for (uint32_t row = 0; row < rh; row++) {
+        size_t off = (size_t)(y + row) * stride + (size_t)x * 4u;
+        uint8_t *dst = w->pixels + off;
+        size_t remaining = (size_t)rw * 4u;
+        while (remaining) {
+            uint32_t page_idx = (uint32_t)(off / PAGE_SIZE);
+            uint32_t in_page  = (uint32_t)(off % PAGE_SIZE);
+            uint32_t chunk    = (uint32_t)((PAGE_SIZE - in_page < remaining)
+                                         ? (PAGE_SIZE - in_page)
+                                         : remaining);
+            if (page_idx >= w->user_pages_n) break;     /* defensive */
+            const uint8_t *src = (const uint8_t *)(uintptr_t)
+                                  w->user_pages_pa[page_idx] + in_page;
+            for (uint32_t k = 0; k < chunk; k++) dst[k] = src[k];
+            dst       += chunk;
+            off       += chunk;
+            remaining -= chunk;
+        }
+    }
+
+    compose_all();
+    return 0;
+}
+
+/* ---------------------------------------------------------------
+ * chapter 108e -- userspace decorations + cursor (wsd takes over)
+ *
+ * The three helpers below are the kernel API surface that wsd
+ * leans on once it owns title-bar paint, drag, close-button paint,
+ * and cursor-sprite paint.  Each one is intentionally tiny and
+ * idempotent: this is the kernel's input/window contract with the
+ * userspace compositor, nothing more.
+ * --------------------------------------------------------------- */
+
+/* Return the current pointer state (x, y in scanout coords;
+ * button bitmap).  Any of the output pointers may be NULL --
+ * wsd's poller only needs (x, y, buttons) every frame so it
+ * passes all three, but a future debug tool that just wants
+ * buttons can pass two NULLs. */
+long wm_pointer_state(int32_t *out_x_user, int32_t *out_y_user,
+                      uint32_t *out_btn_user)
+{
+    int32_t  x = g_pointer_x;
+    int32_t  y = g_pointer_y;
+    uint32_t b = g_buttons;
+    if (out_x_user) {
+        if (copy_to_user((uint64_t)(uintptr_t)out_x_user,
+                         &x, sizeof(x)) < 0) return -EFAULT;
+    }
+    if (out_y_user) {
+        if (copy_to_user((uint64_t)(uintptr_t)out_y_user,
+                         &y, sizeof(y)) < 0) return -EFAULT;
+    }
+    if (out_btn_user) {
+        if (copy_to_user((uint64_t)(uintptr_t)out_btn_user,
+                         &b, sizeof(b)) < 0) return -EFAULT;
+    }
+    return 0;
+}
+
+/* Move a kernel-WM window (typically a wsd "input shadow") to a
+ * new scanout position.  No clipping, no event delivery, no
+ * recompose -- the kernel WM doesn't paint any more in
+ * chapter 108d; the only reason this exists is so that hit-testing for
+ * body clicks lines up after wsd drags the window.  Caller
+ * (wsd) is responsible for sending any GUI_EVENT_MOVE-equivalent
+ * to the app via wm_deliver_event if it cares. */
+long wm_move_window(int32_t id, int32_t x, int32_t y)
+{
+    if (id < 0 || id >= WM_MAX_WINDOWS) return -EINVAL;
+    struct wm_window *w = &g_wins[id];
+    if (!w->in_use) return -ENOENT;
+    w->x = x;
+    w->y = y;
+    return 0;
+}
+
+/* Push a synthesised gui_event into the per-window event ring
+ * so the owning app's next wm_poll_event returns it.  The
+ * window_id field in the user-supplied event is overwritten
+ * with `id` so the app can trust that field unconditionally;
+ * everything else is copied verbatim.
+ *
+ * Used by wsd to deliver GUI_EVENT_CLOSE when the user clicks
+ * the close button; the same syscall will be used later for
+ * synthesised pointer events that hit the title bar but are
+ * meant to reach the app (e.g. a context-menu click on the
+ * title that the app wants to handle). */
+long wm_deliver_event(int32_t id, const struct gui_event *ev_user)
+{
+    if (id < 0 || id >= WM_MAX_WINDOWS) return -EINVAL;
+    struct wm_window *w = &g_wins[id];
+    if (!w->in_use) return -ENOENT;
+    struct gui_event ev;
+    if (copy_from_user(&ev, (uint64_t)(uintptr_t)ev_user,
+                       sizeof(ev)) < 0) return -EFAULT;
+    ev.window_id = w->id;
+    if (!ring_push(&w->events, &ev)) return -ENOSPC;
+    return 0;
+}
+
+/* chapter 108e -- toggle the wsd-routed pointer-passthrough flag
+ * on one shadow.  Idempotent.  See struct wm_window's
+ * input_passthrough comment for the routing semantics. */
+long wm_set_input_passthrough(int32_t id, int on)
+{
+    if (id < 0 || id >= WM_MAX_WINDOWS) return -EINVAL;
+    struct wm_window *w = &g_wins[id];
+    if (!w->in_use) return -ENOENT;
+    w->input_passthrough = on ? 1 : 0;
     return 0;
 }

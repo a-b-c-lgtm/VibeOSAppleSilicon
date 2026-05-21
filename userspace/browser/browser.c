@@ -61,6 +61,8 @@
 #include "../libc/malloc.h"
 #include "../libc/url.h"
 #include "../libc/http.h"
+#include "../libc/cookies.h"
+#include "../libc/origin.h"
 #include "../libc/html.h"
 #include "../libc/dom.h"
 #include "../libc/css.h"
@@ -68,6 +70,74 @@
 #include "../libc/thread.h"
 #include "../libc/png.h"
 #include "../libc/clipboard.h"
+#include "../libc/pocketjs.h"
+#include "../libc/tls_socket.h"
+#include "jsdom.h"
+#include "../libgui/draw.h"
+#include "../libgui/wmclient.h"
+
+#include "bearssl.h"
+
+/* Chapter 112d: the in-guest trust anchor used by the native TLS
+ * path.  Linked in via vendor/testcerts/test_chain.o (the same
+ * sample BearSSL chain that backs /bin/httpsd's server cert and
+ * /bin/tlstest's chain-mode regression).  test_server_chain[0]
+ * is the leaf (CN=localhost RSA-2048); test_server_chain[1] is
+ * the self-signed intermediate CA we feed to BearSSL's minimal
+ * X.509 validator as the trust root.
+ *
+ * Chapter 112e: this remains as a build-time fallback for when
+ * /mnt/ca.bundle is missing or fails to parse (e.g. when running
+ * the browser binary outside a freshly-baked OSFS image).  The
+ * production path is the bundle -- see g_ca_bundle below and
+ * br_conn_open. */
+extern const br_x509_certificate *const test_server_chain;
+extern const size_t                     test_server_chain_len;
+
+/* Chapter 112e: the multi-anchor trust store, loaded from the
+ * OSFS-backed framed CA bundle (built by scripts/mkcabundle.py
+ * from BearSSL's chain-rsa.h and chain-ec.h CA certs).  Loaded
+ * lazily on first https:// fetch, cached for the life of the
+ * process.  ~3 KiB for the two BearSSL sample CAs; chapter
+ * 112f raises the cap to 256 KiB so dropping in a Mozilla NSS
+ * root list (~150 KiB) just works without a recompile. */
+#define BR_CA_BUNDLE_MAX (512 * 1024)
+static char  *g_ca_bundle_buf = 0;
+static size_t g_ca_bundle_len = 0;
+static int    g_ca_bundle_tried = 0;
+
+/* Forward decl: defined a few hundred lines below.  Used here
+ * (load_ca_bundle_once) and elsewhere in the browser. */
+static char *slurp_file(const char *path, size_t *out_len);
+
+static void load_ca_bundle_once(void)
+{
+    if (g_ca_bundle_tried) return;
+    g_ca_bundle_tried = 1;
+
+    size_t got = 0;
+    char *p = slurp_file("/mnt/ca.bundle", &got);
+    if (!p) {
+        /* slurp_file already printed the open errno.  Fall
+         * through to the in-binary fallback in br_conn_open. */
+        printf("[browser] /mnt/ca.bundle missing, "
+               "TLS trust store will use built-in fallback anchor\n");
+        return;
+    }
+    if (got == 0 || got > BR_CA_BUNDLE_MAX) {
+        printf("[browser] /mnt/ca.bundle has invalid size %lu "
+               "(max %u), ignoring\n",
+               (unsigned long)got, (unsigned)BR_CA_BUNDLE_MAX);
+        free(p);
+        return;
+    }
+    g_ca_bundle_buf = p;
+    g_ca_bundle_len = got;
+    printf("[browser] loaded /mnt/ca.bundle "
+           "(%lu bytes, magic=%c%c%c%c)\n",
+           (unsigned long)got,
+           p[0], p[1], p[2], p[3]);
+}
 
 /* ----------------------------------------------------------------
  * Tiny utilities (no libc).
@@ -189,8 +259,167 @@ static char *slurp_file(const char *path, size_t *out_len)
  * once the response stops being plausibly HTTP-shaped. */
 #define DRAIN_FD_MAX_BYTES   (8u * 1024u * 1024u)
 
-/* Drain a TCP fd into a malloc'd buffer that grows on demand. */
-static char *drain_fd(int fd, size_t *out_len)
+/* ----------------------------------------------------------------
+ * Chapter 112d: connection shim that lets http_fetch_one drive
+ * either a plain TCP socket OR a TLS-wrapped one through the
+ * same write/drain/close loop.  Two backends, picked by
+ * `kind`:
+ *
+ *   BR_CONN_TCP  -- `fd` is a raw socket from socket_connect();
+ *                   plain-text HTTP, the chapter-104+106c path.
+ *
+ *   BR_CONN_TLS  -- `tls` is a heap-allocated tls_socket_t whose
+ *                   underlying TCP fd lives inside; the engine
+ *                   does record framing, AES-GCM, and the X.509
+ *                   chain walk (chapter 112c) before any
+ *                   application bytes flow.  See userspace/libc
+ *                   /tls_socket.{c,h}.
+ *
+ * br_conn_read adapts BearSSL's "-1 means error OR clean close"
+ * convention into the read()-style shape the existing drain loop
+ * expects (>0 bytes, 0 EOF, <0 hard error): when br_sslio_read
+ * returns -1 we consult br_ssl_engine_last_error and surface
+ * BR_ERR_OK as EOF (peer sent close_notify) and anything else
+ * as a hard error.  Without this adapter the drain loop would
+ * see every clean TLS shutdown as a transport failure and throw
+ * the already-buffered response body away. */
+#define BR_CONN_TCP  0
+#define BR_CONN_TLS  1
+
+typedef struct {
+    int            kind;
+    int            fd;          /* TCP path; -1 if TLS                       */
+    tls_socket_t  *tls;         /* TLS path; NULL if TCP                     */
+} br_conn_t;
+
+static long br_conn_write(br_conn_t *c, const void *buf, size_t len)
+{
+    if (c->kind == BR_CONN_TLS) {
+        int rc = tls_socket_send(c->tls, buf, len);
+        if (rc < 0) return -1;
+        /* Request fits comfortably in BearSSL's 16 KiB output
+         * buffer; force it onto the wire so the server actually
+         * sees the GET before we try to read the response. */
+        if (tls_socket_flush(c->tls) < 0) return -1;
+        return (long)rc;
+    }
+    return write(c->fd, buf, (unsigned long)len);
+}
+
+static long br_conn_read(br_conn_t *c, void *buf, size_t len)
+{
+    if (c->kind == BR_CONN_TLS) {
+        int rc = tls_socket_recv(c->tls, buf, len);
+        if (rc > 0) return (long)rc;
+        int err = br_ssl_engine_last_error(&c->tls->cc.eng);
+        if (err == BR_ERR_OK) return 0;   /* clean close_notify  = EOF */
+        printf("browser: TLS read error: BR_ERR=%d\n", err);
+        return -1;
+    }
+    return read(c->fd, buf, (unsigned long)len);
+}
+
+static void br_conn_close(br_conn_t *c)
+{
+    if (c->kind == BR_CONN_TLS && c->tls) {
+        (void)tls_socket_close(c->tls);
+        free(c->tls);
+        c->tls = 0;
+    } else if (c->fd >= 0) {
+        close(c->fd);
+    }
+    c->kind = -1;
+    c->fd   = -1;
+}
+
+/* Open a connection to ip4_be:port for the given URL.  For
+ * https:// URLs, malloc a tls_socket_t (~42 KiB), bake the trust
+ * anchor from test_server_chain[1], inject 64 bytes of CSPRNG
+ * entropy, and run the BearSSL handshake.  Returns 0 on success
+ * with *out_c populated; -1 on any failure (a caller-readable
+ * error has already been printed to stdout). */
+static int br_conn_open(br_conn_t *out_c, const struct url *u, uint32_t ip4_be)
+{
+    out_c->kind = BR_CONN_TCP;
+    out_c->fd   = -1;
+    out_c->tls  = 0;
+
+    if (url_is_tls(u)) {
+        load_ca_bundle_once();
+
+        tls_socket_t *t = (tls_socket_t *)malloc(sizeof *t);
+        if (!t) {
+            printf("browser: oom (tls_socket_t = %lu bytes)\n",
+                   (unsigned long)sizeof *t);
+            return -1;
+        }
+
+        /* Chapter 112e: prefer the on-disk multi-anchor bundle.
+         * If /mnt/ca.bundle was loaded successfully at startup,
+         * the trust store carries both BearSSL sample CAs (RSA
+         * + EC), so https://localhost:8443 (RSA) AND
+         * https://localhost:8444 (ECDSA) both validate from the
+         * same tls_socket_t init.  Fall back to the in-binary
+         * single anchor (chapter 112d shape) when the bundle is
+         * missing -- keeps the browser usable on stripped-down
+         * OSFS images and gives us a noise-free regression
+         * baseline for chapter 112d's test. */
+        int init_rc;
+        const char *trust_source;
+        if (g_ca_bundle_buf && g_ca_bundle_len > 0) {
+            init_rc = tls_socket_init_chain_from_bundle(
+                t, (const unsigned char *)g_ca_bundle_buf,
+                g_ca_bundle_len);
+            trust_source = "bundle";
+        } else {
+            if (test_server_chain_len < 2) {
+                printf("browser: TLS trust anchor missing "
+                       "(test_server_chain_len=%lu, expected >= 2)\n",
+                       (unsigned long)test_server_chain_len);
+                free(t);
+                return -1;
+            }
+            init_rc = tls_socket_init_chain_from_anchor(
+                t, test_server_chain[1].data,
+                test_server_chain[1].data_len);
+            trust_source = "built-in";
+        }
+        if (init_rc < 0) {
+            printf("browser: TLS trust anchor decode failed (%s)\n",
+                   trust_source);
+            free(t);
+            return -1;
+        }
+        int rc = tls_socket_connect(t, ip4_be, u->port, u->host);
+        if (rc != 0) {
+            printf("browser: TLS handshake to %s:%u failed "
+                   "(rc=%d, BR_ERR if positive)\n",
+                   u->host, u->port, rc);
+            (void)tls_socket_close(t);
+            free(t);
+            return -1;
+        }
+        printf("[browser] TLS handshake OK with %s:%u "
+               "(chain-validated, %d anchors, source=%s)\n",
+               u->host, u->port, t->anchor_count, trust_source);
+        out_c->kind = BR_CONN_TLS;
+        out_c->tls  = t;
+        return 0;
+    }
+
+    int fd = socket_connect(ip4_be, u->port);
+    if (fd < 0) {
+        printf("browser: connect %s:%u failed (%d)\n",
+               u->host, u->port, fd);
+        return -1;
+    }
+    out_c->kind = BR_CONN_TCP;
+    out_c->fd   = fd;
+    return 0;
+}
+
+/* Drain a connection into a malloc'd buffer that grows on demand. */
+static char *drain_conn(br_conn_t *c, size_t *out_len)
 {
     size_t cap = 16 * 1024, len = 0;
     char  *buf = (char *)malloc(cap);
@@ -210,7 +439,7 @@ static char *drain_fd(int fd, size_t *out_len)
     size_t next_log_threshold = 256u * 1024u;
     int reads = 0;
     for (;;) {
-        long r = read(fd, scratch, scratch_cap);
+        long r = br_conn_read(c, scratch, scratch_cap);
         reads++;
         if (r < 0) {
             printf("browser: read error %ld\n", r);
@@ -261,39 +490,66 @@ static char *http_fetch_one(const char *raw_url, size_t *out_html_len,
         printf("browser: cannot parse URL '%s'\n", raw_url);
         return 0;
     }
-    if (url_is_tls(&u)) {
-        printf("browser: https:// is not yet supported in this build.\n");
-        printf("        TLS is parked behind a future milestone.\n");
-        return 0;
-    }
+
+    /* Chapter 112d: https:// now goes through the native TLS
+     * path inside br_conn_open (BearSSL engine + chapter-112c
+     * minimal X.509 validator).  Pre-112d this branch printed
+     * "https:// is not yet supported"; the canonicalize_url
+     * https-through-proxy rewrite is now opt-in via an
+     * explicitly-set BROWSER_PROXY (see g_proxy_was_set). */
 
     /* Resolve. */
     uint32_t ip_be = 0;
     if (parse_dotted(u.host, &ip_be) < 0) {
-        int rc = resolve(u.host, &ip_be);
-        if (rc < 0) {
-            printf("browser: cannot resolve '%s' (%d)\n", u.host, rc);
-            return 0;
+        /* Chapter 112d: short-circuit "localhost" without going
+         * through SYS_RESOLVE (which would issue a real UDP/53
+         * query that QEMU slirp's DNS forwarder doesn't answer
+         * for the literal "localhost").  Sending the request
+         * to 127.0.0.1 also lets the BearSSL chain validator
+         * accept the sample chain's CN=localhost leaf -- this
+         * is the exact combination test_browser_https.py
+         * exercises against the in-guest /bin/httpsd. */
+        /* Inline ASCII-case-insensitive compare against
+         * "localhost" -- br_streq_ci lives near the bottom of
+         * the file and isn't forward-declared, and url parser
+         * already lowercases hostnames in practice, but being
+         * explicit costs almost nothing. */
+        const char *h = u.host;
+        int is_localhost =
+            ((h[0]|0x20)=='l' && (h[1]|0x20)=='o' && (h[2]|0x20)=='c' &&
+             (h[3]|0x20)=='a' && (h[4]|0x20)=='l' && (h[5]|0x20)=='h' &&
+             (h[6]|0x20)=='o' && (h[7]|0x20)=='s' && (h[8]|0x20)=='t' &&
+             h[9]==0);
+        if (is_localhost) {
+            ip_be = 0x7F000001u;            /* 127.0.0.1 packed MSB-first
+                                             * (parse_dotted's format). */
+            printf("[browser] resolved %s -> 127.0.0.1 (loopback shortcut)\n",
+                   u.host);
+        } else {
+            int rc = resolve(u.host, &ip_be);
+            if (rc < 0) {
+                printf("browser: cannot resolve '%s' (%d)\n", u.host, rc);
+                return 0;
+            }
+            printf("[browser] resolved %s -> %u.%u.%u.%u\n", u.host,
+                   (unsigned)((ip_be >> 24) & 0xFF),
+                   (unsigned)((ip_be >> 16) & 0xFF),
+                   (unsigned)((ip_be >>  8) & 0xFF),
+                   (unsigned)( ip_be        & 0xFF));
         }
-        printf("[browser] resolved %s -> %u.%u.%u.%u\n", u.host,
-               (unsigned)((ip_be >> 24) & 0xFF),
-               (unsigned)((ip_be >> 16) & 0xFF),
-               (unsigned)((ip_be >>  8) & 0xFF),
-               (unsigned)( ip_be        & 0xFF));
     }
 
-    int fd = socket_connect(ip_be, u.port);
-    if (fd < 0) {
-        printf("browser: connect %s:%u failed (%d)\n", u.host, u.port, fd);
+    br_conn_t conn;
+    if (br_conn_open(&conn, &u, ip_be) < 0) {
         return 0;
     }
 
     /* Build HTTP/1.1 request.  Identify as a real browser so we
      * get HTML rather than a "no JavaScript supported" page from
      * sites that sniff the UA. */
-    size_t req_cap = URL_PATH_MAX + URL_HOST_MAX + 256;
+    size_t req_cap = URL_PATH_MAX + URL_HOST_MAX + 256 + 2048; /* +2K for Cookie: */
     char  *req = (char *)malloc(req_cap);
-    if (!req) { printf("browser: oom (req)\n"); close(fd); return 0; }
+    if (!req) { printf("browser: oom (req)\n"); br_conn_close(&conn); return 0; }
     int n = 0;
     n += snprintf(req + n, req_cap - (size_t)n, "GET %s HTTP/1.1\r\n", u.path);
     if (u.port == 80)
@@ -303,18 +559,31 @@ static char *http_fetch_one(const char *raw_url, size_t *out_html_len,
     n += snprintf(req + n, req_cap - (size_t)n,
                   "User-Agent: hobbyos-browser/1.0 (M63)\r\n"
                   "Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.5\r\n"
-                  "Accept-Encoding: identity\r\n"
+                  "Accept-Encoding: identity\r\n");
+    /* Chapter 110: emit Cookie: from /data/cookies/<host>, filtered
+     * by path-prefix + expiry against current wall-clock. */
+    {
+        char cookhdr[1536];
+        int  nck = cookie_store_get(u.host, u.path, time(0),
+                                     cookhdr, sizeof(cookhdr));
+        if (nck > 0 && cookhdr[0]) {
+            n += snprintf(req + n, req_cap - (size_t)n,
+                          "Cookie: %s\r\n", cookhdr);
+            printf("[browser] sending %d cookie(s) to %s\n", nck, u.host);
+        }
+    }
+    n += snprintf(req + n, req_cap - (size_t)n,
                   "Connection: close\r\n\r\n");
-    long wr = write(fd, req, (unsigned long)n);
+    long wr = br_conn_write(&conn, req, (unsigned long)n);
     free(req);
     if (wr < 0) {
         printf("browser: HTTP write failed\n");
-        close(fd); return 0;
+        br_conn_close(&conn); return 0;
     }
 
     size_t total = 0;
-    char  *raw   = drain_fd(fd, &total);
-    close(fd);
+    char  *raw   = drain_conn(&conn, &total);
+    br_conn_close(&conn);
     if (!raw) return 0;
 
     struct http_response *resp = (struct http_response *)malloc(sizeof(*resp));
@@ -335,6 +604,24 @@ static char *http_fetch_one(const char *raw_url, size_t *out_html_len,
     printf(" (");
     if (ct) write(1, ct, (unsigned long)ct_len); else printf("no content-type");
     printf(", body=%lu bytes)\n", (unsigned long)resp->body_len);
+
+    /* Chapter 110: walk Set-Cookie headers (there can be more
+     * than one, so http_get_header which returns only the first
+     * is not enough -- iterate the parsed header table). */
+    {
+        time_t now = time(0);
+        int    stored = 0;
+        for (size_t hi = 0; hi < resp->header_count; hi++) {
+            const struct http_header *h = &resp->headers[hi];
+            if (!http_name_eq(h->name, h->name_len, "set-cookie")) continue;
+            struct cookie_attr ck;
+            if (cookie_parse_set(h->value, h->value_len, now, &ck) < 0)
+                continue;
+            if (cookie_store_set(u.host, &ck) == 0) stored++;
+        }
+        if (stored) printf("[browser] stored %d cookie(s) from %s\n",
+                            stored, u.host);
+    }
 
     /* Capture redirect target (if any). */
     if (resp->status >= 300 && resp->status < 400) {
@@ -398,7 +685,10 @@ static char *http_fetch(const char *url0, size_t *out_html_len)
 static char *fetch(const char *src, size_t *out_len, char **out_origin_url)
 {
     *out_origin_url = 0;
-    if (br_starts(src, "http://")) {
+    /* Chapter 112d: http:// and https:// share the same fetch
+     * loop now -- the scheme selection (and the TLS handshake,
+     * for https://) happens inside br_conn_open. */
+    if (br_starts(src, "http://") || br_starts(src, "https://")) {
         char *u = (char *)malloc(br_strlen(src) + 1);
         if (u) {
             for (size_t i = 0; src[i]; i++) u[i] = src[i];
@@ -406,20 +696,6 @@ static char *fetch(const char *src, size_t *out_len, char **out_origin_url)
             *out_origin_url = u;
         }
         return http_fetch(src, out_len);
-    }
-    if (br_starts(src, "https://")) {
-        /* Chapter 106b: canonicalize_url's case (3) already
-         * rewrites https:// to go through g_proxy_prefix, so
-         * fetch() should normally never see a https:// here.
-         * If it does, the user wired BROWSER_PROXY to an empty
-         * string or bypassed canonicalize -- print the same
-         * hint we used to print pre-106b. */
-        printf("browser: https:// not yet supported (no TLS).\n");
-        printf("        the default BROWSER_PROXY points at the in-guest\n");
-        printf("        httpd on 127.0.0.1:80 (auto-spawned by init) --\n");
-        printf("        for external hosts that httpd needs HTTPD_UPSTREAM\n");
-        printf("        set (chapter 106a) and must be respawned by you.\n");
-        return 0;
     }
     /* Treat as file path. */
     return slurp_file(src, out_len);
@@ -499,27 +775,37 @@ static int resolve_url(const char *base_url, const char *ref,
         return 0;
     }
     /* Path-relative.  Use the base path up to and including its
-     * last '/' (or "/" if base path was empty/"/foo"). */
+     * last '/', or synthesise "/" after the host when the base has
+     * no path at all (e.g. "https://news.ycombinator.com" with no
+     * trailing slash).  Pre-chapter-112h `last_slash` was
+     * initialised to `path_start` so the `last_slash >= path_start`
+     * branch was always taken even when there was no '/' in the
+     * base; that planted a NUL byte at `out[scheme_host_len + 1]`
+     * and silently truncated the result to just the bare host.
+     * That bug stayed latent until case (5a) of canonicalize_url
+     * started routing link-click refs through here.  Tracked
+     * separately by the chapter-112h book entry. */
     const char *path_end = path_start;
     while (*path_end && *path_end != '?' && *path_end != '#') path_end++;
-    /* Find the last '/' in [path_start, path_end). */
-    const char *last_slash = path_start;
+    /* Find the last '/' in [path_start, path_end).  NULL means no
+     * '/' was found -- either the base has no path or the path
+     * portion starts with '?'/'#'. */
+    const char *last_slash = 0;
     for (const char *q = path_start; q < path_end; q++) {
         if (*q == '/') last_slash = q;
     }
-    /* Base path prefix is [base_url, last_slash], inclusive of '/'. */
     size_t prefix_len;
-    if (last_slash >= path_start) {
+    if (last_slash) {
+        /* Keep base up to and including the last '/'. */
         prefix_len = (size_t)(last_slash - base_url) + 1;
+        if (prefix_len + 1 > cap) return -1;
+        for (size_t i = 0; i < prefix_len; i++) out[i] = base_url[i];
     } else {
-        /* No path in base; synthesise "/". */
-        if (scheme_host_len + 1 > cap) return -1;
+        /* No '/' in base path; synthesise "/" after the host. */
+        if (scheme_host_len + 1 + 1 > cap) return -1;
         for (size_t i = 0; i < scheme_host_len; i++) out[i] = base_url[i];
         out[scheme_host_len] = '/';
         prefix_len = scheme_host_len + 1;
-    }
-    if (prefix_len > 0 && last_slash >= path_start) {
-        for (size_t i = 0; i < prefix_len; i++) out[i] = base_url[i];
     }
     size_t rl = br_strlen(ref);
     if (prefix_len + rl + 1 > cap) return -1;
@@ -613,11 +899,13 @@ static char *fetch_external_stylesheets(const struct dom_node *root,
             printf("[browser] skip sheet (cannot resolve): %s\n", hrefs[i]);
             continue;
         }
-        if (br_starts(abs, "https://")) {
-            printf("[browser] skip sheet (https not supported): %s\n", abs);
-            continue;
-        }
-        if (!br_starts(abs, "http://")) {
+        /* Chapter 112h: drop the legacy "skip https" guard.  Since
+         * chapter 112d `http_fetch` -> `http_fetch_one` ->
+         * `br_conn_open` handles https:// uniformly with http://
+         * (TLS handshake + chain validation happen inside
+         * br_conn_open), so a stylesheet served over https now
+         * just works.  Only non-http(s) schemes are skipped. */
+        if (!br_starts(abs, "http://") && !br_starts(abs, "https://")) {
             printf("[browser] skip sheet (unsupported scheme): %s\n", abs);
             continue;
         }
@@ -1170,8 +1458,10 @@ static int copy_text_for_gui(const struct layout_paint_cmd *c,
 
 /* Render a button.  Filled rect + 1-px border + centered glyph(s).
  * `enabled` controls the foreground color so disabled buttons
- * are visibly dim. */
-static void render_tb_button(int win_id, int x, int y,
+ * are visibly dim.  Chapter 108d: draws directly into
+ * the wsd-mapped framebuffer via draw_* primitives -- no syscall
+ * per rect. */
+static void render_tb_button(struct gui_fb *fb, int x, int y,
                               int w, int h,
                               const char *label,
                               int enabled, int hover)
@@ -1181,26 +1471,20 @@ static void render_tb_button(int win_id, int x, int y,
     uint32_t border = GUI_BGRA(120, 120, 160);
     uint32_t fg = enabled ? GUI_BGRA(230, 230, 245)
                           : GUI_BGRA(110, 110, 140);
-    gui_fill_rect(win_id, (uint32_t)x, (uint32_t)y,
-                  (uint32_t)w, (uint32_t)h, face);
+    draw_fill_rect(fb, x, y, (uint32_t)w, (uint32_t)h, face);
     /* 1-px border drawn as four thin rects. */
-    gui_fill_rect(win_id, (uint32_t)x, (uint32_t)y,
-                  (uint32_t)w, 1, border);
-    gui_fill_rect(win_id, (uint32_t)x, (uint32_t)(y + h - 1),
-                  (uint32_t)w, 1, border);
-    gui_fill_rect(win_id, (uint32_t)x, (uint32_t)y,
-                  1, (uint32_t)h, border);
-    gui_fill_rect(win_id, (uint32_t)(x + w - 1), (uint32_t)y,
-                  1, (uint32_t)h, border);
+    draw_fill_rect(fb, x, y, (uint32_t)w, 1, border);
+    draw_fill_rect(fb, x, y + h - 1, (uint32_t)w, 1, border);
+    draw_fill_rect(fb, x, y, 1, (uint32_t)h, border);
+    draw_fill_rect(fb, x + w - 1, y, 1, (uint32_t)h, border);
     /* Center the label horizontally; vertical center fixed for a
      * 16-px-tall glyph inside a 20-px-tall button (pad ~2 above).
      * Chapter 102 -- measure with the proportional kernel font. */
-    int tx = x + (w - gui_measure_text(label)) / 2;
+    int tx = x + (w - draw_measure_text(label)) / 2;
     int ty = y + (h - 16) / 2;
     if (tx < x + 1) tx = x + 1;
     if (ty < y + 1) ty = y + 1;
-    gui_draw_text(win_id, (uint32_t)tx, (uint32_t)ty, label,
-                  fg, face, 0);
+    draw_text(fb, tx, ty, label, fg, face, 0);
 }
 
 /* Render the toolbar: back/fwd/reload buttons + editable URL bar
@@ -1210,7 +1494,7 @@ static void render_tb_button(int win_id, int x, int y,
  * insertion-point index when focused (-1 = not focused, no caret).
  * back_ok / fwd_ok control button enable state.  hover_btn tells
  * which button (0..2) the mouse is over, or -1 for none. */
-static void render_toolbar(int win_id, int win_w,
+static void render_toolbar(struct gui_fb *fb, int win_w,
                             const char *url_buf, int url_len, int cursor,
                             int back_ok, int fwd_ok,
                             int hover_btn,
@@ -1224,15 +1508,15 @@ static void render_toolbar(int win_id, int win_w,
     uint32_t url_brd = GUI_BGRA( 120, 120, 160);
     uint32_t bar_dim = GUI_BGRA(160, 160, 200);
 
-    gui_fill_rect(win_id, 0, 0, (uint32_t)win_w, BR_GUI_STATUS_H, bar_bg);
+    draw_fill_rect(fb, 0, 0, (uint32_t)win_w, BR_GUI_STATUS_H, bar_bg);
 
-    render_tb_button(win_id, BR_TB_BACK_X,   BR_TB_BTN_Y,
+    render_tb_button(fb, BR_TB_BACK_X,   BR_TB_BTN_Y,
                      BR_TB_BTN_W, BR_TB_BTN_H, "<", back_ok,
                      hover_btn == 0);
-    render_tb_button(win_id, BR_TB_FWD_X,    BR_TB_BTN_Y,
+    render_tb_button(fb, BR_TB_FWD_X,    BR_TB_BTN_Y,
                      BR_TB_BTN_W, BR_TB_BTN_H, ">", fwd_ok,
                      hover_btn == 1);
-    render_tb_button(win_id, BR_TB_RELOAD_X, BR_TB_BTN_Y,
+    render_tb_button(fb, BR_TB_RELOAD_X, BR_TB_BTN_Y,
                      BR_TB_BTN_W, BR_TB_BTN_H, "R", 1,
                      hover_btn == 2);
 
@@ -1258,11 +1542,11 @@ static void render_toolbar(int win_id, int win_w,
         }
     }
     ind[ip] = '\0';
-    int ind_px_w = gui_measure_text(ind);
+    int ind_px_w = draw_measure_text(ind);
     int ind_x   = win_w - ind_px_w - BR_TB_PAD;
     if (ind_x < BR_TB_URL_X + 32) ind_x = BR_TB_URL_X + 32;
-    gui_draw_text(win_id, (uint32_t)ind_x, (BR_GUI_STATUS_H - 16) / 2,
-                  ind, bar_dim, bar_bg, 0);
+    draw_text(fb, ind_x, (BR_GUI_STATUS_H - 16) / 2,
+              ind, bar_dim, bar_bg, 0);
 
     /* URL field: ranges from BR_TB_URL_X to (ind_x - small gap). */
     int url_field_x = BR_TB_URL_X;
@@ -1272,22 +1556,22 @@ static void render_toolbar(int win_id, int win_w,
     int url_field_h = BR_TB_BTN_H;
 
     /* Field background + border. */
-    gui_fill_rect(win_id, (uint32_t)url_field_x, (uint32_t)url_field_y,
-                  (uint32_t)url_field_w, (uint32_t)url_field_h, url_bg);
-    gui_fill_rect(win_id, (uint32_t)url_field_x, (uint32_t)url_field_y,
-                  (uint32_t)url_field_w, 1, url_brd);
-    gui_fill_rect(win_id, (uint32_t)url_field_x, (uint32_t)(url_field_y + url_field_h - 1),
-                  (uint32_t)url_field_w, 1, url_brd);
-    gui_fill_rect(win_id, (uint32_t)url_field_x, (uint32_t)url_field_y,
-                  1, (uint32_t)url_field_h, url_brd);
-    gui_fill_rect(win_id, (uint32_t)(url_field_x + url_field_w - 1), (uint32_t)url_field_y,
-                  1, (uint32_t)url_field_h, url_brd);
+    draw_fill_rect(fb, url_field_x, url_field_y,
+                   (uint32_t)url_field_w, (uint32_t)url_field_h, url_bg);
+    draw_fill_rect(fb, url_field_x, url_field_y,
+                   (uint32_t)url_field_w, 1, url_brd);
+    draw_fill_rect(fb, url_field_x, url_field_y + url_field_h - 1,
+                   (uint32_t)url_field_w, 1, url_brd);
+    draw_fill_rect(fb, url_field_x, url_field_y,
+                   1, (uint32_t)url_field_h, url_brd);
+    draw_fill_rect(fb, url_field_x + url_field_w - 1, url_field_y,
+                   1, (uint32_t)url_field_h, url_brd);
 
     /* Visible window: scroll horizontally so the cursor stays in
      * view. Chapter 102 -- the proportional font means we can no
      * longer compute "max visible chars" as `width / 8`. We use a
      * conservative average of ~7 px/char to pick a max-char window,
-     * then rely on gui_measure_text for the actual pixel layout. */
+     * then rely on draw_measure_text for the actual pixel layout. */
     int interior_w   = url_field_w - 6;
     int max_visible  = interior_w / 7;
     if (max_visible < 1) max_visible = 1;
@@ -1302,7 +1586,7 @@ static void render_toolbar(int win_id, int win_w,
     if (win_start > url_len) win_start = url_len;
 
     /* Build the visible substring (sanitised) in a small buffer
-     * and draw it in ONE gui_draw_text call so the kernel's
+     * and draw it in ONE draw_text call so the kernel's
      * variable-width advance places each glyph correctly. */
     int x_pen = url_field_x + 3;
     int y_pen = url_field_y + (url_field_h - 16) / 2;
@@ -1316,8 +1600,8 @@ static void render_toolbar(int win_id, int win_w,
     }
     vis[max_show] = '\0';
     if (max_show > 0) {
-        gui_draw_text(win_id, (uint32_t)x_pen, (uint32_t)y_pen,
-                      vis, url_fg, url_bg, 0);
+        draw_text(fb, x_pen, y_pen,
+                  vis, url_fg, url_bg, 0);
     }
 
     /* Caret: position by measuring the prefix up to (caret -
@@ -1329,15 +1613,15 @@ static void render_toolbar(int win_id, int win_w,
         if (prefix_len > max_show) prefix_len = max_show;
         char saved = vis[prefix_len];
         vis[prefix_len] = '\0';
-        int prefix_px = gui_measure_text(vis);
+        int prefix_px = draw_measure_text(vis);
         vis[prefix_len] = saved;
         int cx = x_pen + prefix_px;
         if (cx < url_field_x + 1) cx = url_field_x + 1;
         if (cx > url_field_x + url_field_w - 2)
             cx = url_field_x + url_field_w - 2;
-        gui_fill_rect(win_id, (uint32_t)cx,
-                      (uint32_t)(url_field_y + 2),
-                      1, (uint32_t)(url_field_h - 4), url_fg);
+        draw_fill_rect(fb, cx,
+                       url_field_y + 2,
+                       1, (uint32_t)(url_field_h - 4), url_fg);
     }
 }
 
@@ -1372,7 +1656,102 @@ static uint32_t br_find_canvas_bg(const struct layout_box *b)
     return 0;
 }
 
-static void render_gui_frame(int win_id, int win_w, int win_h,
+static int br_eq_ci_ascii(const char *a, const char *b)
+{
+    if (!a || !b) return 0;
+    while (*a && *b) {
+        char ca = *a, cb = *b;
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + ('a' - 'A'));
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + ('a' - 'A'));
+        if (ca != cb) return 0;
+        a++; b++;
+    }
+    return *a == 0 && *b == 0;
+}
+
+static const struct dom_node *br_find_button_ancestor(const struct dom_node *n)
+{
+    for (const struct dom_node *p = n; p; p = p->parent) {
+        if (p->type != DOM_NODE_ELEMENT || !p->tag) continue;
+        if (css_streq(p->tag, "button")) return p;
+        if (css_streq(p->tag, "input")) {
+            const char *type = dom_node_attr(p, "type");
+            if (!type || !type[0] ||
+                br_eq_ci_ascii(type, "submit") ||
+                br_eq_ci_ascii(type, "button"))
+                return p;
+        }
+    }
+    return 0;
+}
+
+struct br_button_span {
+    const struct dom_node *dom;
+    int x0, y0, x1, y1;
+};
+
+static void br_draw_button_chrome_from_paints(struct gui_fb *fb,
+                                               int win_w, int content_top, int content_h,
+                                               const struct layout_paint_buf *pb,
+                                               int scroll_x, int scroll_y)
+{
+    struct br_button_span spans[64];
+    int ns = 0;
+
+    for (int i = 0; i < pb->n; i++) {
+        const struct layout_paint_cmd *c = &pb->cmds[i];
+        if (c->kind != LAY_PAINT_TEXT || !c->dom) continue;
+        const struct dom_node *btn = br_find_button_ancestor(c->dom);
+        if (!btn) continue;
+
+        int x = c->x - scroll_x;
+        int y = c->y - scroll_y + content_top;
+        int w = c->w;
+        int h = c->h;
+
+        if (w <= 0 || h <= 0) continue;
+        if (x + w <= 0 || x >= win_w) continue;
+        if (y + h <= content_top || y >= content_top + content_h) continue;
+
+        int x0 = x - 8;
+        int y0 = y - 4;
+        int x1 = x + w + 8;
+        int y1 = y + h + 4;
+        if (x0 < 0) x0 = 0;
+        if (y0 < content_top) y0 = content_top;
+        if (x1 > win_w) x1 = win_w;
+        if (y1 > content_top + content_h) y1 = content_top + content_h;
+
+        int merged = 0;
+        for (int s = 0; s < ns; s++) {
+            if (spans[s].dom != btn) continue;
+            /* Same button; grow span. */
+            if (x0 < spans[s].x0) spans[s].x0 = x0;
+            if (y0 < spans[s].y0) spans[s].y0 = y0;
+            if (x1 > spans[s].x1) spans[s].x1 = x1;
+            if (y1 > spans[s].y1) spans[s].y1 = y1;
+            merged = 1;
+            break;
+        }
+        if (!merged && ns < (int)(sizeof(spans) / sizeof(spans[0]))) {
+            spans[ns].dom = btn;
+            spans[ns].x0 = x0; spans[ns].y0 = y0;
+            spans[ns].x1 = x1; spans[ns].y1 = y1;
+            ns++;
+        }
+    }
+
+    for (int i = 0; i < ns; i++) {
+        int x = spans[i].x0;
+        int y = spans[i].y0;
+        int w = spans[i].x1 - spans[i].x0;
+        int h = spans[i].y1 - spans[i].y0;
+        if (w < 6 || h < 6) continue;
+        draw_button_chrome(fb, x, y, (uint32_t)w, (uint32_t)h);
+    }
+}
+
+static void render_gui_frame(struct gui_fb *fb, int win_w, int win_h,
                               const struct layout_doc *d,
                               const struct layout_paint_buf *pb,
                               int scroll_x, int scroll_y)
@@ -1388,13 +1767,28 @@ static void render_gui_frame(int win_id, int win_w, int win_h,
     uint32_t page_bg = canvas_color
         ? color_to_bgra(canvas_color)
         : GUI_BGRA(255, 255, 255);
-    gui_fill_rect(win_id, 0, (uint32_t)content_top,
-                  (uint32_t)win_w, (uint32_t)content_h, page_bg);
+    draw_fill_rect(fb, 0, content_top,
+                   (uint32_t)win_w, (uint32_t)content_h, page_bg);
 
     char text_buf[256];
 
-    for (int i = 0; i < pb->n; i++) {
-        const struct layout_paint_cmd *c = &pb->cmds[i];
+    /* Two-pass paint over the same cmd stream:
+     *   phase 0 — backgrounds & borders (LAY_PAINT_RECT)
+     *   phase 1 — button bevel chrome, then text/underline/image
+     * Splitting around chrome lets <body>'s background paint
+     * fully first, chrome then overwrites it inside button
+     * bounds, and text glyphs land on whichever surface
+     * survived underneath them. */
+    for (int phase = 0; phase < 2; phase++) {
+        if (phase == 1) {
+            br_draw_button_chrome_from_paints(fb, win_w, content_top,
+                                              content_h, pb,
+                                              scroll_x, scroll_y);
+        }
+        for (int i = 0; i < pb->n; i++) {
+            const struct layout_paint_cmd *c = &pb->cmds[i];
+            if (phase == 0 && c->kind != LAY_PAINT_RECT) continue;
+            if (phase == 1 && c->kind == LAY_PAINT_RECT) continue;
 
         /* Document-coords -> window-coords (translated for scroll
          * and shifted down past the status bar). */
@@ -1438,12 +1832,19 @@ static void render_gui_frame(int win_id, int win_w, int win_h,
         case LAY_PAINT_RECT: {
             /* Skip transparent rects (alpha == 0). */
             if ((c->color >> 24) == 0) break;
-            gui_fill_rect(win_id,
-                          (uint32_t)draw_x,
-                          (uint32_t)draw_y,
-                          (uint32_t)draw_w,
-                          (uint32_t)draw_h,
-                          color_to_bgra(c->color));
+            /* Skip bg/border rects belonging to a <button> or
+             * <input type=submit|button>; the bevel chrome drawn
+             * before this loop owns those pixels. Without this,
+             * layout's CSS background + border rects would
+             * overpaint the gray fill and leave us with a flat
+             * outlined box that no longer looks like a button. */
+            if (c->dom && br_find_button_ancestor(c->dom)) break;
+            draw_fill_rect(fb,
+                           draw_x,
+                           draw_y,
+                           (uint32_t)draw_w,
+                           (uint32_t)draw_h,
+                           color_to_bgra(c->color));
             break;
         }
         case LAY_PAINT_TEXT: {
@@ -1463,13 +1864,13 @@ static void render_gui_frame(int win_id, int win_w, int win_h,
              * variable widths the only honest answer is to let the
              * font do its own metrics. */
             (void)clip_left;
-            gui_draw_text(win_id,
-                          (uint32_t)draw_x,
-                          (uint32_t)draw_y,
-                          text_buf,
-                          fg,
-                          0,
-                          1);
+            draw_text(fb,
+                      draw_x,
+                      draw_y,
+                      text_buf,
+                      fg,
+                      0,
+                      1);
             break;
         }
         case LAY_PAINT_UNDERLINE: {
@@ -1477,29 +1878,27 @@ static void render_gui_frame(int win_id, int win_w, int win_h,
              * avoid drawing a thick band if the layout produced a
              * tall underline (it shouldn't, but defend against it). */
             int uh = draw_h > 2 ? 2 : draw_h;
-            gui_fill_rect(win_id,
-                          (uint32_t)draw_x,
-                          (uint32_t)draw_y,
-                          (uint32_t)draw_w,
-                          (uint32_t)uh,
-                          color_to_bgra(c->color));
+            draw_fill_rect(fb,
+                           draw_x,
+                           draw_y,
+                           (uint32_t)draw_w,
+                           (uint32_t)uh,
+                           color_to_bgra(c->color));
             break;
         }
         case LAY_PAINT_IMAGE: {
             /* Blit a sub-rect of the cached BGRA image at the
-             * box's clipped pixel coords.  We always copy through
-             * a tightly-packed temporary because gui_present's
-             * `src` argument is `w*h*4` contiguous bytes — we
-             * can't pass an interior pointer of a wider image
-             * (the kernel would walk straight off the end of the
-             * row).  For images that fit fully inside the window
-             * with no clipping the copy is the entire image, so
-             * the cost is one extra w*h*4 traversal per frame.
+             * box's clipped pixel coords.  Chapter 108d:
+             * writes pixels directly into the wsd-mapped
+             * framebuffer through draw_blit_bgra, which takes a
+             * (src, stride) pair so we can pass an interior
+             * pointer of the wider image without copying.  No
+             * temporary buffer, no syscall.
              *
              * The image's intrinsic size is (image_w, image_h);
              * the layout box's size is (c->w, c->h) which the
              * layout pass usually set to the intrinsic size as
-             * well.  We blit at intrinsic size and clip — no
+             * well.  We blit at intrinsic size and clip -- no
              * scaling.  If a future page sets <img width=...>
              * larger than the intrinsic size the excess gets
              * the page background colour painted later by the
@@ -1514,15 +1913,16 @@ static void render_gui_frame(int win_id, int win_w, int win_h,
             if (clip_left + blit_w > img_w) blit_w = img_w - clip_left;
             if (clip_top  + blit_h > img_h) blit_h = img_h  - clip_top;
             if (blit_w <= 0 || blit_h <= 0) break;
+            /* Alpha-compose the source over page_bg into a small
+             * scratch buffer, then blit the opaque result into the
+             * window.  Allocating the scratch once per image is
+             * cheap relative to the per-pixel blend loop, and it
+             * keeps the blend logic in one place (draw_blit_bgra
+             * itself is a straight memcpy). */
             uint8_t *tmp = (uint8_t *)malloc((size_t)blit_w *
                                               (size_t)blit_h * 4);
             if (!tmp) break;
             const uint8_t *src = (const uint8_t *)c->image_pixels;
-            /* Alpha-blend over the page background colour so
-             * transparent PNG pixels don't show as opaque black.
-             * Composition: out = src.rgb * src.a/255 + bg.rgb *
-             * (255 - src.a)/255.  We use page_bg's BGRA bytes
-             * directly. */
             uint8_t bg_b = (uint8_t)( page_bg        & 0xFF);
             uint8_t bg_g = (uint8_t)((page_bg >>  8) & 0xFF);
             uint8_t bg_r = (uint8_t)((page_bg >> 16) & 0xFF);
@@ -1555,17 +1955,17 @@ static void render_gui_frame(int win_id, int win_w, int win_h,
                     }
                 }
             }
-            gui_present(win_id,
-                        (uint32_t)draw_x,
-                        (uint32_t)draw_y,
-                        (uint32_t)blit_w,
-                        (uint32_t)blit_h,
-                        tmp);
+            draw_blit_bgra(fb,
+                           draw_x, draw_y,
+                           (uint32_t)blit_w, (uint32_t)blit_h,
+                           (const uint32_t *)tmp,
+                           (uint32_t)blit_w);
             free(tmp);
             break;
         }
         default: break;
         }
+    }
     }
 
     /* Toolbar is drawn separately by the caller (run_gui), since it
@@ -1631,6 +2031,16 @@ static int g_timing = 0;
 
 static char g_proxy_prefix[160] = BR_DEFAULT_PROXY;
 
+/* Chapter 112d: did BROWSER_PROXY get set in the environment?
+ * Distinguishes "user/test deliberately wants the legacy proxy
+ * rewrite path" from "default behaviour, please take the native
+ * TLS path".  canonicalize_url's case (3) (https:// rewriting)
+ * and case (6) (bare host rewriting) consult this so the new
+ * default is to let native HTTPS through unmodified; setting
+ * BROWSER_PROXY restores the chapter-106b proxy-rewrite
+ * behaviour for callers that still need it (proxytest et al). */
+static int g_proxy_was_set = 0;
+
 /* Chapter 106b: read BROWSER_PROXY from the env once at startup.
  * Called from main() BEFORE any mode dispatch so plain, ansi,
  * paint, and gui modes all share the same proxy address.  Before
@@ -1643,6 +2053,7 @@ static void load_proxy_from_env(void)
     char tmp[160];
     long got = getenv("BROWSER_PROXY", tmp, sizeof(tmp));
     if (got <= 0) return;
+    g_proxy_was_set = 1;
     int n = 0;
     while (tmp[n] && n < (int)sizeof(g_proxy_prefix) - 1) {
         g_proxy_prefix[n] = tmp[n]; n++;
@@ -1918,6 +2329,8 @@ static int br_resolve_img_src(const char *page_url,
  * positive entry ever landed, and every walk re-tried.  HN's
  * homepage was triggering ~30 spurious /news.ycombinator.com/
  * s.gif fetches per layout. */
+static int br_should_fetch_image_url(const char *url);
+
 static struct br_img_cache_entry *br_img_cache_install_sentinel(
     struct loaded_page *p, const char *url)
 {
@@ -1937,6 +2350,10 @@ static struct br_img_cache_entry *br_img_cache_install_sentinel(
 static struct br_img_cache_entry *br_img_cache_load(struct loaded_page *p,
                                                      const char *url)
 {
+    if (!br_should_fetch_image_url(url)) {
+        return br_img_cache_install_sentinel(p, url);
+    }
+
     if (p->img_cache_count >= BR_IMG_CACHE_MAX_ENTRIES) {
         printf("[browser] image cache full (%d entries); skipping %s\n",
                p->img_cache_count, url);
@@ -2680,8 +3097,21 @@ static char *canonicalize_url(const char *input, const char *current)
     if (br_starts(input, "http://"))
         return br_strdup(input);
 
-    /* (3) https:// -> proxy. */
+    /* (3) https:// -> proxy, OR native TLS passthrough.
+     *
+     * Chapter 112d: the browser now speaks TLS natively (BearSSL
+     * client engine + chapter-112c minimal X.509 validator).  By
+     * default we leave https:// URLs alone and let br_conn_open
+     * pick the TLS transport.  When BROWSER_PROXY is set in the
+     * env (proxytest, the hn_* GUI tests) we keep the legacy
+     * chapter-106b rewrite so the in-guest httpd can splice the
+     * request out through the host-side bridge: this preserves
+     * the test_browser_hn_* harnesses, and lets early callers
+     * exercise the proxy-forward path until chapter 112e wires
+     * up a real trust store. */
     if (br_starts(input, "https://")) {
+        if (!g_proxy_was_set)
+            return br_strdup(input);
         const char *rest = input + 8;
         size_t pn = br_strlen(g_proxy_prefix);
         size_t rn = br_strlen(rest);
@@ -2723,14 +3153,61 @@ static char *canonicalize_url(const char *input, const char *current)
         return out;
     }
 
-    /* (6) bare host or host/path -> proxy + input.  Prefix already
-     * ends in '/' so we just concatenate. */
+    /* (5a) Path-relative reference against an http(s):// base.
+     *
+     * Chapter 112g+ : without this case a relative link like
+     * "item?id=42" on https://news.ycombinator.com/ would fall
+     * through to case (6) and be treated as a bare hostname --
+     * either proxy-rewritten or https-prefixed -- when what we
+     * actually want is RFC 3986 §5.2.3 path merge against the
+     * current page's URL.  Reuse resolve_url() which already
+     * implements the merge correctly (form action handling has
+     * leaned on it since chapter 110a).
+     *
+     * Bare-hostname disambiguation: a hostname has either a '.'
+     * (TLD) or a ':' (port) in the authority position -- before
+     * the first '/' or '?'.  "item?id=42" has neither; "news"
+     * has neither; "news.ycombinator.com" has a dot;
+     * "localhost:8443" has a colon.  Image / stylesheet refs
+     * like "y18.svg" reach canonicalize_url with current=NULL
+     * (resource loaders pass 0) so they never hit this branch
+     * even though they contain a dot. */
+    if (current &&
+        (br_starts(current, "http://") || br_starts(current, "https://"))) {
+        int looks_like_host = 0;
+        for (const char *p = input; *p && *p != '/' && *p != '?'; p++) {
+            if (*p == '.' || *p == ':') { looks_like_host = 1; break; }
+        }
+        if (!looks_like_host) {
+            char merged[BR_URL_BUF_CAP];
+            if (resolve_url(current, input, merged, sizeof merged) == 0)
+                return br_strdup(merged);
+            /* If resolve_url overflows or otherwise fails, fall
+             * through to case (6) so load_page still gets a
+             * URL to error on rather than a silent NULL. */
+        }
+    }
+
+    /* (6) Bare host or host/path.
+     *
+     * Chapter 112g+ : default to https:// now that the browser
+     * speaks native TLS.  Typing "news.ycombinator.com" in the
+     * URL bar becomes https://news.ycombinator.com/ -- the
+     * shape every real browser produces -- and goes through
+     * br_conn_open's TLS path with the bundle anchors, no
+     * intermediary required.
+     *
+     * When BROWSER_PROXY is set in the env we keep the
+     * chapter-106b proxy rewrite so proxytest and the legacy
+     * test_browser_hn_* GUI suite continue to work without
+     * surgery.  See g_proxy_was_set above. */
     {
-        size_t pn = br_strlen(g_proxy_prefix);
+        const char *prefix = g_proxy_was_set ? g_proxy_prefix : "https://";
+        size_t pn = br_strlen(prefix);
         size_t in = br_strlen(input);
         char *out = (char *)malloc(pn + in + 1);
         if (!out) return 0;
-        for (size_t i = 0; i < pn; i++) out[i] = g_proxy_prefix[i];
+        for (size_t i = 0; i < pn; i++) out[i] = prefix[i];
         for (size_t i = 0; i < in; i++) out[pn + i] = input[i];
         out[pn + in] = '\0';
         return out;
@@ -2777,6 +3254,466 @@ static const char *link_href_at(struct layout_box *root, int px, int py)
     return 0;
 }
 
+/* Chapter 111: hit-test for onclick handlers.  Walks up from the
+ * box under the cursor looking for the deepest element with an
+ * `onclick="..."` attribute, mirroring HTML's bubble semantics.
+ * Returns the element on hit (with *out_src set to its onclick
+ * source); returns NULL if no onclick is in the ancestor chain.
+ * Source pointer aliases into the DOM and is valid until the page
+ * is freed -- callers must not retain it across navigation. */
+static struct dom_node *onclick_at(struct layout_box *root,
+                                    int px, int py,
+                                    const char **out_src)
+{
+    struct layout_box *box = box_at(root, px, py);
+    if (!box) return NULL;
+    for (struct dom_node *n = (struct dom_node *)box->dom; n; n = n->parent) {
+        if (n->type != DOM_NODE_ELEMENT) continue;
+        const char *src = dom_node_attr(n, "onclick");
+        if (src && src[0]) {
+            if (out_src) *out_src = src;
+            return n;
+        }
+    }
+    return NULL;
+}
+
+/* Chapter 111: evaluate one onclick handler.  Caller has already
+ * located the element + source via onclick_at().  Returns 1 if a
+ * relayout is required (caller invokes relayout_page+repaint), 0
+ * otherwise.  Errors during eval are logged but never propagated:
+ * a broken handler must not kill the click path or the browser
+ * itself.
+ *
+ * The arena lives on this stack frame; all bindings minted by
+ * jsdom_install() come out of it.  document.getElementById()
+ * returns malloc-backed wrappers, which leak per onclick: the
+ * bound is one wrapper per call, well within the per-handler
+ * budget for the size of pages we care about.  A future chapter
+ * can rework that to use the same arena once we've grown a way
+ * to thread `struct pj *` into get/method callbacks. */
+static int onclick_dispatch(struct loaded_page *page,
+                             struct dom_node *target,
+                             const char *source)
+{
+    if (!page || !target || !source) return 0;
+    /* Engine state and arena both live on the heap: `struct pj`
+     * carries a 512-token + 256-node pool which is ~30 KiB --
+     * comfortably oversized for the 64 KiB user stack.  Bound to
+     * this call's lifetime; everything is freed before return. */
+    enum { ARENA_BYTES = 8192 };
+    struct pj      *pj    = (struct pj *)malloc(sizeof(*pj));
+    char           *abuf  = (char *)malloc(ARENA_BYTES);
+    int relayout_needed = 0;
+    if (!pj || !abuf) {
+        printf("[browser] onclick: oom (engine alloc)\n");
+        goto done;
+    }
+    struct pj_arena arena;
+    pj_arena_init(&arena, abuf, ARENA_BYTES);
+    pj_init(pj, &arena);
+    struct jsdom_ctx ctx;
+    jsdom_ctx_init(&ctx, page->dom, page);
+    if (jsdom_install(pj, &ctx, target) < 0) {
+        printf("[browser] onclick: jsdom_install failed\n");
+        goto done;
+    }
+    (void)pj_eval(pj, source);
+    if (pj->err[0])
+        printf("[browser] onclick: %s\n", pj->err);
+    relayout_needed = ctx.needs_relayout ? 1 : (ctx.needs_repaint ? 1 : 0);
+done:
+    if (pj)   free(pj);
+    if (abuf) free(abuf);
+    return relayout_needed;
+}
+
+static int br_tolower_ascii(int c)
+{
+    if (c >= 'A' && c <= 'Z') return c + ('a' - 'A');
+    return c;
+}
+
+static int br_streq_ci(const char *a, const char *b)
+{
+    if (!a || !b) return 0;
+    while (*a && *b) {
+        if (br_tolower_ascii((unsigned char)*a) !=
+            br_tolower_ascii((unsigned char)*b))
+            return 0;
+        a++; b++;
+    }
+    return *a == 0 && *b == 0;
+}
+
+/* Case-insensitive suffix check on the URL path, ignoring
+ * query/fragment. */
+static int br_url_path_ends_ci(const char *url, const char *suf)
+{
+    size_t ul, sl, end;
+    if (!url || !suf) return 0;
+    ul = br_strlen(url);
+    sl = br_strlen(suf);
+    end = ul;
+    for (size_t i = 0; i < ul; i++) {
+        if (url[i] == '?' || url[i] == '#') {
+            end = i;
+            break;
+        }
+    }
+    if (sl > end) return 0;
+    {
+        size_t base = end - sl;
+        for (size_t i = 0; i < sl; i++) {
+            if (br_tolower_ascii((unsigned char)url[base + i]) !=
+                br_tolower_ascii((unsigned char)suf[i]))
+                return 0;
+        }
+    }
+    return 1;
+}
+
+/* PNG is the only decoded image format today; skip obvious
+ * non-PNG URLs so we don't generate avoidable upstream traffic. */
+static int br_should_fetch_image_url(const char *url)
+{
+    if (!url || !url[0]) return 0;
+    if (br_url_path_ends_ci(url, ".png") ||
+        br_url_path_ends_ci(url, ".apng"))
+        return 1;
+
+    if (br_url_path_ends_ci(url, ".gif")  ||
+        br_url_path_ends_ci(url, ".jpg")  ||
+        br_url_path_ends_ci(url, ".jpeg") ||
+        br_url_path_ends_ci(url, ".webp") ||
+        br_url_path_ends_ci(url, ".ico")  ||
+        br_url_path_ends_ci(url, ".svg")  ||
+        br_url_path_ends_ci(url, ".bmp")  ||
+        br_url_path_ends_ci(url, ".avif"))
+        return 0;
+
+    /* Unknown extension (or none): allow and let PNG sniffing
+     * decide after fetch. */
+    return 1;
+}
+
+static int br_urlenc_append(char *dst, size_t cap, size_t *off, const char *s)
+{
+    static const char HEX[] = "0123456789ABCDEF";
+    if (!dst || !off) return -1;
+    if (!s) s = "";
+    while (*s) {
+        unsigned char c = (unsigned char)*s++;
+        if ((c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~') {
+            if (*off + 1 >= cap) return -1;
+            dst[(*off)++] = (char)c;
+        } else if (c == ' ') {
+            if (*off + 1 >= cap) return -1;
+            dst[(*off)++] = '+';
+        } else {
+            if (*off + 3 >= cap) return -1;
+            dst[(*off)++] = '%';
+            dst[(*off)++] = HEX[(c >> 4) & 0xF];
+            dst[(*off)++] = HEX[c & 0xF];
+        }
+    }
+    if (*off >= cap) return -1;
+    dst[*off] = '\0';
+    return 0;
+}
+
+static int br_query_append_pair(char *dst, size_t cap, size_t *off,
+                                const char *name, const char *value,
+                                int *is_first)
+{
+    if (!name || !name[0]) return 0;
+    if (!dst || !off || !is_first) return -1;
+    if (!*is_first) {
+        if (*off + 1 >= cap) return -1;
+        dst[(*off)++] = '&';
+        dst[*off] = '\0';
+    }
+    if (br_urlenc_append(dst, cap, off, name) < 0) return -1;
+    if (*off + 1 >= cap) return -1;
+    dst[(*off)++] = '=';
+    dst[*off] = '\0';
+    if (br_urlenc_append(dst, cap, off, value ? value : "") < 0) return -1;
+    *is_first = 0;
+    return 0;
+}
+
+static char *form_resolve_action_url(const char *current_url, const char *action)
+{
+    if (!current_url || !current_url[0]) return 0;
+    if (!action || !action[0]) return br_strdup(current_url);
+
+    /* Resolve relative URLs against the current page URL for HTTP
+     * pages, then run through canonicalize_url so proxy rules are
+     * still applied to https:// and bare hosts. */
+    if (br_starts(current_url, "http://") || br_starts(current_url, "https://")) {
+        char abs[1024];
+        if (resolve_url(current_url, action, abs, sizeof(abs)) == 0)
+            return canonicalize_url(abs, current_url);
+    }
+    return canonicalize_url(action, current_url);
+}
+
+/* Chapter 110a: resolve a form action WITHOUT applying proxy
+ * canonicalisation.  The SOP rule must reason about the URL the
+ * author wrote -- if the page is at http://a/ and the action is
+ * "https://a/login", that's cross-origin (different scheme), even
+ * though chapter 106b's proxy will rewrite both into the same
+ * http://127.0.0.1:80/... transport URL.  Returns a malloc'd
+ * absolute URL or 0 on failure. */
+static char *form_resolve_action_url_raw(const char *current_url,
+                                         const char *action)
+{
+    if (!current_url) return 0;
+    const char *eff = (action && action[0]) ? action : current_url;
+    if (br_starts(eff, "http://") || br_starts(eff, "https://"))
+        return br_strdup(eff);
+    if (br_starts(current_url, "http://") || br_starts(current_url, "https://")) {
+        char abs[1024];
+        if (resolve_url(current_url, eff, abs, sizeof(abs)) == 0)
+            return br_strdup(abs);
+    }
+    return br_strdup(eff);
+}
+
+static int dom_is_tag(const struct dom_node *n, const char *tag)
+{
+    return n && n->type == DOM_NODE_ELEMENT && n->tag && dom_streq(n->tag, tag);
+}
+
+static int dom_has_attr(const struct dom_node *n, const char *name)
+{
+    const char *v = dom_node_attr(n, name);
+    return v != 0;
+}
+
+static int dom_is_submit_control(const struct dom_node *n)
+{
+    if (!n || n->type != DOM_NODE_ELEMENT || !n->tag) return 0;
+    if (dom_streq(n->tag, "button")) {
+        const char *t = dom_node_attr(n, "type");
+        return (!t || !t[0] || br_streq_ci(t, "submit"));
+    }
+    if (dom_streq(n->tag, "input")) {
+        const char *t = dom_node_attr(n, "type");
+        return (!t || !t[0] || br_streq_ci(t, "submit"));
+    }
+    return 0;
+}
+
+static const struct dom_node *dom_find_clicked_submit_control(
+    struct layout_box *root, int px, int py)
+{
+    struct layout_box *box = box_at(root, px, py);
+    if (!box) return 0;
+    for (const struct dom_node *n = box->dom; n; n = n->parent) {
+        if (dom_is_submit_control(n)) return n;
+    }
+    return 0;
+}
+
+static const struct dom_node *dom_find_ancestor_form(const struct dom_node *n)
+{
+    for (const struct dom_node *p = n; p; p = p->parent) {
+        if (dom_is_tag(p, "form")) return p;
+    }
+    return 0;
+}
+
+static int form_collect_get_query(const struct dom_node *form,
+                                  const struct dom_node *clicked_submit,
+                                  char *query, size_t query_cap,
+                                  size_t *out_len)
+{
+    const struct dom_node *stack[512];
+    int top = 0;
+    size_t off = 0;
+    int is_first = 1;
+
+    if (!form || !query || query_cap < 2 || !out_len) return -1;
+    stack[top++] = form;
+    query[0] = '\0';
+
+    while (top > 0) {
+        const struct dom_node *cur = stack[--top];
+
+        if (cur->type == DOM_NODE_ELEMENT && cur->tag) {
+            if (dom_streq(cur->tag, "input")) {
+                const char *name = dom_node_attr(cur, "name");
+                const char *type = dom_node_attr(cur, "type");
+                const char *value = dom_node_attr(cur, "value");
+
+                if (name && name[0]) {
+                    int include = 1;
+                    const char *emit_value = value ? value : "";
+
+                    if (type && type[0]) {
+                        if (br_streq_ci(type, "submit") || br_streq_ci(type, "button")) {
+                            include = (cur == clicked_submit);
+                        } else if (br_streq_ci(type, "checkbox") || br_streq_ci(type, "radio")) {
+                            include = dom_has_attr(cur, "checked");
+                            if (include && (!value || !value[0])) emit_value = "on";
+                        } else if (br_streq_ci(type, "reset") || br_streq_ci(type, "file")) {
+                            include = 0;
+                        }
+                    }
+
+                    if (include && br_query_append_pair(query, query_cap, &off,
+                                                        name, emit_value,
+                                                        &is_first) < 0)
+                        return -1;
+                }
+            } else if (dom_streq(cur->tag, "button")) {
+                const char *name = dom_node_attr(cur, "name");
+                const char *type = dom_node_attr(cur, "type");
+                const char *value = dom_node_attr(cur, "value");
+                int is_submit = (!type || !type[0] || br_streq_ci(type, "submit"));
+                if (is_submit && cur == clicked_submit && name && name[0]) {
+                    if (br_query_append_pair(query, query_cap, &off,
+                                             name, value ? value : "",
+                                             &is_first) < 0)
+                        return -1;
+                }
+            }
+        }
+
+        /* Push children in REVERSE order so the iterative DFS
+         * visits them in DOM order.  HTML requires form params to
+         * be serialized in document order, and a naive
+         * push-in-order on a LIFO stack would reverse them. */
+        const struct dom_node *kids[64];
+        int nkids = 0;
+        for (const struct dom_node *c = cur->first_child;
+             c && nkids < 64;
+             c = c->next_sibling) {
+            kids[nkids++] = c;
+        }
+        for (int i = nkids - 1; i >= 0 && top < 512; i--)
+            stack[top++] = kids[i];
+    }
+
+    *out_len = off;
+    return 0;
+}
+
+static char *form_build_get_url(const char *action_url,
+                                const char *query, size_t query_len)
+{
+    size_t alen;
+    size_t need;
+    char *out;
+    int has_qmark;
+    if (!action_url) return 0;
+    if (!query || query_len == 0) return br_strdup(action_url);
+
+    alen = br_strlen(action_url);
+    has_qmark = 0;
+    for (size_t i = 0; i < alen; i++) {
+        if (action_url[i] == '?') { has_qmark = 1; break; }
+    }
+    need = alen + 1 + query_len + 1;
+    out = (char *)malloc(need);
+    if (!out) return 0;
+    for (size_t i = 0; i < alen; i++) out[i] = action_url[i];
+    out[alen] = has_qmark ? '&' : '?';
+    for (size_t i = 0; i < query_len; i++) out[alen + 1 + i] = query[i];
+    out[alen + 1 + query_len] = '\0';
+    return out;
+}
+
+/* Chapter 109 (slice 1): submit GET forms when clicking a submit
+ * button/input.  This intentionally ignores typed input state for
+ * now and serializes name/value pairs from DOM attributes only. */
+static char *form_submit_url_at(struct loaded_page *page,
+                                struct layout_box *root,
+                                int px, int py)
+{
+    const struct dom_node *submit;
+    const struct dom_node *form;
+    const char *method;
+    const char *action;
+    char *resolved_action;
+    char query[4096];
+    size_t query_len = 0;
+
+    if (!page || !root) return 0;
+    submit = dom_find_clicked_submit_control(root, px, py);
+    if (!submit) return 0;
+
+    form = dom_find_ancestor_form(submit);
+    if (!form) return 0;
+
+    method = dom_node_attr(form, "method");
+    if (method && method[0] && !br_streq_ci(method, "get")) {
+        printf("[browser] form method '%s' not supported yet\n", method);
+        return 0;
+    }
+
+    action = dom_node_attr(form, "action");
+    resolved_action = form_resolve_action_url(page->url,
+                                              (action && action[0]) ? action : page->url);
+    if (!resolved_action) return 0;
+
+    /* Chapter 110a: same-origin policy, form-submission side.
+     *
+     *   - Same-origin submit:                         silent allow.
+     *   - Cross-origin, author wrote an absolute URL: log + allow.
+     *   - Cross-origin via a relative action:         BLOCK.
+     *
+     * The third case is currently unreachable in this codebase
+     * (no <base href>, no JS to mutate the action attribute), but
+     * the check is defensive: chapter 111's pocket JS could
+     * change form.action at click time, and chapter 113's VFS
+     * work might surface <base href> in static HTML.  We pay
+     * the eight-line cost now so neither chapter has to remember
+     * to wire SOP later.
+     *
+     * The compare uses the RAW (pre-proxy) URL.  The proxy from
+     * chapter 106b rewrites https://host/x into the loopback form
+     * http://127.0.0.1:80/host/x; that's a transport detail, not
+     * an origin change, and the SOP must not be fooled by it. */
+    if (page->url && br_starts(page->url, "http")) {
+        char *raw_for_sop = form_resolve_action_url_raw(page->url,
+            (action && action[0]) ? action : page->url);
+        const char *sop_url = raw_for_sop ? raw_for_sop : resolved_action;
+        int same = origin_eq(page->url, sop_url);
+        if (!same) {
+            if (origin_action_is_absolute(action)) {
+                printf("[browser] SOP: cross-origin form submit to %s "
+                       "(author-declared, allowed)\n", sop_url);
+            } else {
+                printf("[browser] SOP: blocked cross-origin form submit "
+                       "to %s (relative action resolved cross-origin)\n",
+                       sop_url);
+                if (raw_for_sop) free(raw_for_sop);
+                free(resolved_action);
+                return 0;
+            }
+        }
+        if (raw_for_sop) free(raw_for_sop);
+    }
+
+    if (form_collect_get_query(form, submit,
+                               query, sizeof(query),
+                               &query_len) < 0) {
+        free(resolved_action);
+        return 0;
+    }
+
+    {
+        char *u = form_build_get_url(resolved_action, query, query_len);
+        free(resolved_action);
+        return u;
+    }
+}
+
 /* Browser-wide event-loop state.  Lives on run_gui's stack. */
 struct browser_state {
     /* History: each entry is a malloc'd absolute URL.  hist_idx
@@ -2795,8 +3732,10 @@ struct browser_state {
     /* Currently displayed page. */
     struct loaded_page *page;
 
-    /* Window geometry. */
-    int   win_id;
+    /* Window geometry.  Chapter 108d: the wsd-backed
+     * window structure carries id + mapped framebuffer pointer
+     * + on-screen position; render_* functions consume win.fb. */
+    struct wm_window win;
     int   win_w, win_h;
     int   viewport_w;     /* layout viewport (== win_w on resize) */
     int   scroll_x, scroll_y;
@@ -2942,7 +3881,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
     s.hist_count = 0; s.hist_idx = -1;
     s.url_buf[0] = '\0'; s.url_len = 0; s.url_cursor = 0; s.url_focus = 0;
     s.page = 0;
-    s.win_id = -1;
+    s.win = (struct wm_window){0};
     s.win_w = initial_viewport; s.win_h = BR_GUI_DEFAULT_H;
     s.viewport_w = initial_viewport;
     s.scroll_x = 0; s.scroll_y = 0;
@@ -2985,21 +3924,24 @@ static int run_gui(const char *initial_url, int initial_viewport)
     if (s.win_h > BR_GUI_DEFAULT_H) s.win_h = BR_GUI_DEFAULT_H;
     if (s.win_h < 240) s.win_h = 240;
 
-    /* Title bar: stable "browser" so the WM shows a short label. */
-    s.win_id = gui_create_window_ex((uint32_t)s.win_w, (uint32_t)s.win_h,
-                                     "browser",
-                                     GUI_WIN_FLAG_RESIZABLE,
-                                     GUI_WIN_POS_AUTO, GUI_WIN_POS_AUTO);
-    if (s.win_id < 0) {
-        printf("browser: gui_create_window_ex(%d,%d) failed (%d)\n",
-               s.win_w, s.win_h, s.win_id);
+    /* Title bar: stable "browser" so wsd records a short label
+     * (surfaced by /bin/taskbar).
+     * chapter 108e -- RESIZABLE so wsd paints the grip and
+     * accepts grip-drags.  The handler below remaps the FB
+     * via wm_window_remap_fb and re-runs layout at the new
+     * viewport width. */
+    if (wm_create_window_input((uint32_t)s.win_w, (uint32_t)s.win_h,
+                                GUI_WIN_FLAG_RESIZABLE,
+                                "browser", &s.win) < 0) {
+        printf("browser: wm_create_window_input(%d,%d) failed\n",
+               s.win_w, s.win_h);
         free_page(s.page);
         return -1;
     }
     br_recompute_scroll(&s);
 
     printf("[browser] gui window=%d size=%dx%d content_h=%d doc=%dx%d\n",
-           s.win_id, s.win_w, s.win_h, s.win_h - BR_GUI_STATUS_H,
+           s.win.id, s.win_w, s.win_h, s.win_h - BR_GUI_STATUS_H,
            s.page->ldoc.doc_width_px, s.page->ldoc.doc_height_px);
 
     /* Chapter 94: spawn the parser/layout thread on CPU 1 with
@@ -3011,7 +3953,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
             (struct parser_state *)malloc(sizeof(*ps));
         if (!ps) {
             printf("browser: oom (parser_state)\n");
-            gui_destroy_window(s.win_id);
+            wm_destroy_window(&s.win);
             free_page(s.page);
             return -1;
         }
@@ -3038,10 +3980,10 @@ static int run_gui(const char *initial_url, int initial_viewport)
         }
         if (s.dirty) {
             unsigned long _t_frame = g_timing ? uptime_ms() : 0;
-            render_gui_frame(s.win_id, s.win_w, s.win_h,
+            render_gui_frame(&s.win.fb, s.win_w, s.win_h,
                               &s.page->ldoc, &s.page->pb,
                               s.scroll_x, s.scroll_y);
-            render_toolbar(s.win_id, s.win_w,
+            render_toolbar(&s.win.fb, s.win_w,
                             s.url_buf, s.url_len,
                             s.url_focus ? s.url_cursor : -1,
                             s.hist_idx > 0,
@@ -3051,7 +3993,8 @@ static int run_gui(const char *initial_url, int initial_viewport)
                             s.page->ldoc.doc_width_px,
                             s.page->ldoc.doc_height_px,
                             s.win_w, s.win_h - BR_GUI_STATUS_H);
-            gui_flush(s.win_id);
+            wm_window_dirty(&s.win, 0, 0,
+                            (uint32_t)s.win_w, (uint32_t)s.win_h);
             if (g_timing) {
                 printf("[timing] %-22s %lu ms (%d cmds)\n",
                        first_frame ? "first frame" : "redraw",
@@ -3062,7 +4005,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
         }
 
         struct gui_event ev;
-        if (!gui_poll_event(&ev)) {
+        if (!wm_poll_event(&ev)) {
             /* Chapter 94 stats: count the GUI loop iterations
              * that ran while parser work was pending.  This is
              * the number we expect to be > 0 in --bench-resize
@@ -3088,7 +4031,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
                 free(s.parser);
                 s.parser = 0;
             }
-            gui_destroy_window(s.win_id);
+            wm_destroy_window(&s.win);
             free_page(s.page);
             for (int i = 0; i < s.hist_count; i++)
                 if (s.history[i]) free(s.history[i]);
@@ -3099,6 +4042,23 @@ static int run_gui(const char *initial_url, int initial_viewport)
             int new_h = (int)ev.arg1;
             if (new_w < 64) new_w = 64;
             if (new_h < 64) new_h = 64;
+            /* chapter 108e (revised by follow-up #3) -- wsd
+             * resized our backing FB.  Our old FB VA stays
+             * valid until we call wm_window_remap_fb (the
+             * kernel's lazy-unmap holds the old pages alive
+             * for us); the remap call here is what "acks"
+             * the resize and switches us to the new pages. */
+            if (wm_window_remap_fb(&s.win) < 0) {
+                /* Mapping recovery failed -- skip this
+                 * resize; window stays at the previous
+                 * geometry from our point of view.  wsd
+                 * still updated its own w/h though, so the
+                 * grip is in the new place; user can try
+                 * again. */
+                printf("browser: remap_fb failed; ignoring resize %dx%d\n",
+                       new_w, new_h);
+                break;
+            }
             /* Update window geometry IMMEDIATELY (cheap; the
              * stale paint buffer will be cropped to the new
              * window in render_gui_frame).  The actual relayout
@@ -3192,6 +4152,34 @@ static int run_gui(const char *initial_url, int initial_viewport)
                 }
                 int doc_x = x + s.scroll_x;
                 int doc_y = (y - BR_GUI_STATUS_H) + s.scroll_y;
+
+                /* Chapter 111: dispatch onclick FIRST, before
+                 * link/form navigation.  The handler can mutate
+                 * attributes the link/form path then reads -- e.g.
+                 * setting form.action to a different URL -- so it
+                 * must run before form_submit_url_at(). */
+                {
+                    const char *js_src = NULL;
+                    struct dom_node *js_target =
+                        onclick_at(s.page->ldoc.root_box, doc_x, doc_y, &js_src);
+                    if (js_target && js_src) {
+                        int relayout = onclick_dispatch(s.page, js_target, js_src);
+                        if (relayout) {
+                            relayout_page(s.page, s.viewport_w);
+                            br_recompute_scroll(&s);
+                        }
+                        s.dirty = 1;
+                    }
+                }
+
+                char *submit_url = form_submit_url_at(s.page,
+                                                      s.page->ldoc.root_box,
+                                                      doc_x, doc_y);
+                if (submit_url) {
+                    navigate_to(&s, submit_url, /*push=*/1);
+                    free(submit_url);
+                    break;
+                }
                 const char *href = link_href_at(s.page->ldoc.root_box,
                                                  doc_x, doc_y);
                 if (href) {
@@ -3347,7 +4335,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
                         free(s.parser);
                         s.parser = 0;
                     }
-                    gui_destroy_window(s.win_id);
+                    wm_destroy_window(&s.win);
                     free_page(s.page);
                     for (int i = 0; i < s.hist_count; i++)
                         if (s.history[i]) free(s.history[i]);
@@ -3388,6 +4376,12 @@ static void usage(void)
     printf("                              relayout to <new_w> on the parser\n");
     printf("                              thread, count GUI-loop iterations\n");
     printf("                              that ran while parser was busy.\n");
+    printf("  --check-sop <page> <action> chapter-110a policy probe; prints\n");
+    printf("                              same-origin/cross-origin/blocked\n");
+    printf("                              for (page URL, form action attr).\n");
+    printf("  --check-js <expr>           chapter-111 expression probe; evaluates\n");
+    printf("                              <expr> through pocketjs with alert/console\n");
+    printf("                              bound and prints the result.\n");
     printf("  viewport                    layout width in px (default 800)\n");
 }
 
@@ -3469,7 +4463,10 @@ int main(int argc, char **argv)
     int mode_gui   = 0;
     int viewport   = 800;
     int bench_new_w = 0;       /* nonzero => --bench-resize mode */
+    int mode_check_sop = 0;    /* chapter 110a: --check-sop debug mode */
+    int mode_check_js  = 0;    /* chapter 111:  --check-js  debug mode */
     const char *src = 0;
+    const char *sop_action = 0;
 
     /* Parse flags. */
     int i = 1;
@@ -3487,6 +4484,26 @@ int main(int argc, char **argv)
             bench_new_w = br_atoi(argv[i]);
             if (bench_new_w < 64) bench_new_w = 64;
             i++; continue;
+        }
+        if (br_streq(argv[i], "--check-sop")) {
+            /* Chapter 110a: headless SOP policy check.  Used by
+             * scripts/test_browser_sop.py to exercise the
+             * cross-origin form-submit decision without spinning
+             * up a window server, virtio-tablet, or the network.
+             * Two positional args follow: <page-url> <action-attr>. */
+            mode_check_sop = 1;
+            i++;
+            continue;
+        }
+        if (br_streq(argv[i], "--check-js")) {
+            /* Chapter 111: headless pocketjs eval.  One positional
+             * arg follows: the expression source.  Bindings match
+             * onclick (alert, console, document) but `this` is
+             * undefined and `document.getElementById` returns
+             * undefined (no DOM is loaded). */
+            mode_check_js = 1;
+            i++;
+            continue;
         }
         if (br_streq(argv[i], "-h") || br_streq(argv[i], "--help")) {
             usage(); return 0;
@@ -3509,6 +4526,119 @@ int main(int argc, char **argv)
     } else {
         src = argv[i++];
     }
+
+    /* Chapter 110a: --check-sop is a no-network policy probe.  The
+     * second positional arg is the raw <form action=...> string
+     * (relative or absolute); src is the page URL.  An optional
+     * third arg overrides the resolved URL -- this lets the test
+     * exercise the "blocked" branch by simulating what <base href>
+     * (chapter 113+) would do: a relative action that resolves
+     * cross-origin.  Without the override the third branch is
+     * unreachable in today's codebase.  Print one of three
+     * deterministic lines and exit -- the regression test greps
+     * for them verbatim. */
+    if (mode_check_sop) {
+        if (i >= argc) {
+            printf("browser: --check-sop requires <page-url> <action> "
+                   "[resolved-override]\n");
+            return 1;
+        }
+        sop_action = argv[i++];
+        char *resolved = 0;
+        if (i < argc) {
+            resolved = br_strdup(argv[i++]);
+        } else {
+            /* Use the RAW resolver -- the proxy canonicalisation
+             * would mangle https://... actions into the loopback
+             * proxy form, defeating the SOP scheme check. */
+            resolved = form_resolve_action_url_raw(src,
+                (sop_action && sop_action[0]) ? sop_action : src);
+        }
+        if (!resolved) {
+            printf("SOP: resolve-failed\n");
+            return 1;
+        }
+        int same = (src && br_starts(src, "http"))
+                       ? origin_eq(src, resolved) : 1;
+        if (same) {
+            printf("SOP: same-origin (%s)\n", resolved);
+        } else if (origin_action_is_absolute(sop_action)) {
+            printf("SOP: cross-origin allowed (%s)\n", resolved);
+        } else {
+            printf("SOP: blocked (%s)\n", resolved);
+        }
+        free(resolved);
+        return 0;
+    }
+
+    /* Chapter 111: --check-js evaluates a single pocketjs
+     * expression with browser-style globals (alert, console,
+     * document) bound but no DOM loaded.  Prints one line of the
+     * form `JS: <type>=<value>` on success, or `JS: error <msg>`
+     * on failure.  Used by scripts/test_browser_js.py to exercise
+     * the engine without GUI/network/tablet. */
+    if (mode_check_js) {
+        /* The kernel's sys_spawn splits args on whitespace and
+         * ignores shell quoting (see kernel/core/syscall.c).  An
+         * expression like `1 + 2 * 3` therefore arrives as four
+         * argv tokens, of which `src` only captured the first.
+         * Re-join src plus any trailing tokens with single spaces
+         * so the engine sees the full expression. */
+        char expr_buf[2048];
+        size_t eo = 0;
+        const char *first = src;
+        if (first) {
+            for (const char *p = first; *p && eo + 1 < sizeof(expr_buf); p++)
+                expr_buf[eo++] = *p;
+        }
+        while (i < argc && eo + 1 < sizeof(expr_buf)) {
+            expr_buf[eo++] = ' ';
+            const char *p = argv[i++];
+            for (; p && *p && eo + 1 < sizeof(expr_buf); p++)
+                expr_buf[eo++] = *p;
+        }
+        expr_buf[eo] = '\0';
+        const char *expr = expr_buf;
+        enum { ARENA_BYTES = 16384 };
+        struct pj      *pj   = (struct pj *)malloc(sizeof(*pj));
+        char           *abuf = (char *)malloc(ARENA_BYTES);
+        if (!pj || !abuf) {
+            printf("JS: error oom (engine alloc)\n");
+            return 1;
+        }
+        struct pj_arena arena;
+        pj_arena_init(&arena, abuf, ARENA_BYTES);
+        pj_init(pj, &arena);
+        struct jsdom_ctx ctx;
+        jsdom_ctx_init(&ctx, /*dom=*/NULL, /*page=*/NULL);
+        if (jsdom_install(pj, &ctx, /*this_node=*/NULL) < 0) {
+            printf("JS: error jsdom_install failed\n");
+            return 1;
+        }
+        struct pj_value rv = pj_eval(pj, expr);
+        if (pj->err[0]) {
+            printf("JS: error %s\n", pj->err);
+            free(pj); free(abuf);
+            return 1;
+        }
+        switch (rv.type) {
+        case PJ_UNDEFINED: printf("JS: undefined=\n"); break;
+        case PJ_NULL:      printf("JS: null=\n"); break;
+        case PJ_BOOL:      printf("JS: bool=%s\n", rv.v.b ? "true" : "false"); break;
+        case PJ_NUM:       printf("JS: num=%lld\n", rv.v.n); break;
+        case PJ_STR:       printf("JS: str=%s\n", rv.v.s ? rv.v.s : ""); break;
+        case PJ_HOSTOBJ:   printf("JS: host=%s\n",
+                                  rv.v.h.cls && rv.v.h.cls->name
+                                  ? rv.v.h.cls->name : "?"); break;
+        default:           printf("JS: unknown\n"); break;
+        }
+        if (ctx.alert_set)    printf("JS: alert=%s\n",    ctx.alert_buf);
+        if (ctx.console_logs) printf("JS: logs=%d\n",     ctx.console_logs);
+        free(pj);
+        free(abuf);
+        return 0;
+    }
+
     if (i < argc) viewport = br_atoi(argv[i]);
     if (viewport < 64) viewport = 64;
     if (viewport > 4096) viewport = 4096;

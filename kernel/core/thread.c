@@ -31,6 +31,8 @@
 #include "vfs.h"
 #include "timer.h"
 #include "wm.h"
+#include "wsd_fb.h"
+#include "win_fb.h"
 #include "exception.h"
 #include "pipe.h"
 #include "pty.h"
@@ -1590,6 +1592,17 @@ void thread_exit(int code)
     /* Drop any GUI windows owned by this pid so the desktop
      * doesn't keep painting orphans after the app dies. */
     wm_destroy_owner((uint64_t)g_current->id);
+
+    /* Chapter 108d — if this thread was holding the
+     * framebuffer mapping (i.e. it was the WSD), release the
+     * single-owner slot so a respawned WSD can re-claim. */
+    wsd_fb_release_owner((uint64_t)g_current->id);
+
+    /* Chapter 108d — release every shareable per-
+     * window backing object this pid owned or mapped.  Must
+     * run BEFORE address_space_destroy so the mapping-AS
+     * pointers in g_table[] never dangle. */
+    win_fb_release_pid((uint64_t)g_current->id);
 
     /* Close every fd before we tear down — pipe refcounts must
      * drop so the other side of any pipe sees EOF / -EPIPE.

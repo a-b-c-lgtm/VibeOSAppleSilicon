@@ -98,6 +98,14 @@ enum {
     /* Chapter 102 -- measure text in the kernel's default font. */
     SYS_GUI_MEASURE_TEXT    = 52,
 
+    /* Chapter 108a -- userspace access to window pixel buffers.
+     * See kernel/core/syscall.h for the contract; the userspace
+     * wrappers are gui_window_fb / gui_window_damage /
+     * gui_window_unmap below. */
+    SYS_GUI_MAP_WINDOW      = 53,
+    SYS_GUI_UNMAP_WINDOW    = 54,
+    SYS_GUI_DAMAGE          = 55,
+
     /* Milestone 56 — sockets (active-open client side). */
     SYS_SOCKET_CONNECT  = 60,
     SYS_SOCKET_STATE    = 61,
@@ -162,6 +170,53 @@ enum {
     SYS_SRV_BIND    = 81,
     SYS_SRV_ACCEPT  = 82,
     SYS_SRV_CONNECT = 83,
+
+    /* Chapter 108d — userspace WSD foundation.  Single-
+     * caller-wins claim on the active scanout framebuffer; the
+     * caller's AS gets a RW user mapping of the FB's physical
+     * pages, RW from EL0, non-executable, NOT inherited by
+     * fork().  Idempotent for the holder; -EBUSY for other
+     * callers; -EAGAIN if the FB isn't ready yet. */
+    SYS_FB_MAP_SCANOUT = 84,
+    SYS_WIN_FB_ALLOC   = 85,
+    SYS_WIN_FB_MAP     = 86,
+    SYS_WIN_FB_FREE    = 87,
+    SYS_FB_PRESENT     = 88,
+
+    /* chapter 108e -- userspace decorations + cursor.  wsd uses
+     * these to poll the pointer state (sprite + hit-test),
+     * reposition kernel "input shadow" windows when the user
+     * drags a title bar, and inject a synthetic GUI_EVENT_CLOSE
+     * when the user clicks the close button.  See the wrapper
+     * comments below for the contract; the kernel implementations
+     * live in kernel/core/wm.c. */
+    SYS_POINTER_STATE    = 89,
+    SYS_GUI_MOVE_WINDOW  = 90,
+    SYS_GUI_DELIVER_EVENT = 91,
+
+    /* chapter 108e -- toggle wsd-routed pointer-passthrough on
+     * a kernel WM shadow.  When `on != 0`, the kernel WM's
+     * pointer router skips this window entirely; wsd becomes
+     * the sole authority on which window receives MOUSE_DOWN /
+     * MOUSE_UP / MOUSE_MOVE for the shadow's pixels, and routes
+     * them itself via gui_deliver_event.  Keyboard input still
+     * flows via the kernel's focus tracker, which wsd keeps in
+     * sync by calling gui_raise_window after each click-to-raise. */
+    SYS_GUI_SET_INPUT_PASSTHROUGH = 92,
+    /* chapter 108e -- in-place resize of an owned win_fb.
+     * Owner-only.  See kernel/core/syscall.h for the full
+     * contract; tl;dr: kernel allocs new pages, copies the
+     * top-left of the old contents, uninstalls every existing
+     * mapping (owner + mappers), frees old pages.  Owner and
+     * mappers must re-call SYS_WIN_FB_MAP afterwards. */
+    SYS_WIN_FB_RESIZE = 93,
+
+    /* Chapter 112 — entropy source.  See getrandom() wrapper
+     * further below for the public API.  Backed by virtio-rng +
+     * ChaCha20 CSPRNG; do NOT use the bytes returned for TLS if
+     * /proc/random/strong reads 0 (a future chapter exposes that
+     * flag; today the only signal is the kernel boot log warning). */
+    SYS_GETRANDOM     = 94,
 };
 
 /* Chapter 95 — POSIX-shaped wall-clock value.  Layout matches
@@ -340,12 +395,22 @@ static inline void yield(void)
     _svc0(SYS_YIELD);
 }
 
+/* chapter 112b: cross-guarded with vendor/bearssl-shim/string.h so
+ * TUs that include both syscall.h and bearssl.h (e.g. tls_socket.c,
+ * httpsd.c, tlstest.c --handshake) don't get a duplicate-with-
+ * different-linkage error from gcc.  The shim is non-static (it
+ * forward-declares cstring.c's extern definition); ours is static
+ * inline.  Whichever header is included first installs the symbol;
+ * the other one's guard fires and skips. */
+#ifndef OSDEV_STRLEN_PROVIDED
+#define OSDEV_STRLEN_PROVIDED
 static inline size_t strlen(const char *s)
 {
     size_t n = 0;
     while (s[n]) n++;
     return n;
 }
+#endif
 
 static inline void puts(const char *s)
 {
@@ -671,6 +736,24 @@ static inline int beep(unsigned int freq_hz, unsigned int duration_ms)
 static inline int trace_me(void)
 {
     return (int)_svc0(SYS_TRACE_ME);
+}
+
+/* Chapter 112 — fill `buf` with `len` bytes of cryptographically-
+ * random data sourced from the kernel CSPRNG (which pulls its
+ * seed from the virtio-rng device when present).
+ *
+ *   flags   reserved; must currently be 0 (-EINVAL otherwise)
+ *   len     0 .. 1 MiB; larger requests should loop in userspace
+ *
+ * Returns the number of bytes written (== len on success) or a
+ * negative errno on failure.  Never partial-fills: on success
+ * exactly `len` bytes are present in `buf`. */
+static inline long getrandom(void *buf, unsigned long len, unsigned int flags)
+{
+    return _svc3(SYS_GETRANDOM,
+                 (long)(uintptr_t)buf,
+                 (long)len,
+                 (long)flags);
 }
 
 /* Allocate an anonymous pipe.  On success, fds[0] is the read
@@ -1009,6 +1092,238 @@ static inline int gui_measure_text(const char *s)
     return (int)r;
 }
 
+/* ── Chapter 108a: direct window-buffer access ─────────────── */
+
+/* Descriptor returned by gui_window_fb().  `pixels` points at a
+ * page-aligned BGRA framebuffer for the window; rows are
+ * `stride` bytes apart (today always `w*4`); dimensions match
+ * the window's content area.
+ *
+ * Chapter 108c added the `id` field so libgui's draw_* and
+ * gui_window_dirty helpers can take a gui_fb* alone and still
+ * issue the SYS_GUI_DAMAGE call without the app having to pass
+ * the window id everywhere alongside it.  Pre-108c callers that
+ * built a struct gui_fb by hand left `id` zero, which would
+ * route damage to window 0; new callers should always obtain
+ * the struct via gui_window_fb() (which fills it). */
+struct gui_fb {
+    uint8_t *pixels;
+    uint32_t stride;
+    uint32_t w, h;
+    int32_t  id;
+};
+
+struct gui_map_window_args {
+    int32_t  id;
+    uint64_t va_out;        /* uint64_t * (cast to ptr) */
+    uint64_t stride_out;    /* uint32_t * */
+    uint64_t w_out;         /* uint32_t * */
+    uint64_t h_out;         /* uint32_t * */
+};
+
+struct gui_damage_args {
+    int32_t  id;
+    uint32_t x, y, w, h;
+};
+
+/* Chapter 108a -- map this process's view onto a window's pixel
+ * buffer.  On success returns 0 and populates *out with a
+ * page-aligned BGRA framebuffer the app can draw into directly.
+ * The mapping persists across multiple gui_poll_event /
+ * gui_window_damage cycles -- callers typically map once at
+ * startup and reuse the pointer forever.
+ *
+ * The window must NOT have been created with
+ * GUI_WIN_FLAG_RESIZABLE (chapter 108a defers resize coherence).
+ *
+ * Returns -1 on error (the kernel return code is lost; callers
+ * who need it can call the raw _svc1 form directly).  In
+ * particular the app gets a hard "no" if it tries to map a
+ * window it doesn't own or if pmem is exhausted. */
+static inline int gui_window_fb(int id, struct gui_fb *out)
+{
+    if (!out) return -1;
+    uint64_t va = 0;
+    uint32_t stride = 0, ww = 0, hh = 0;
+    struct gui_map_window_args a = {
+        .id         = id,
+        .va_out     = (uint64_t)(uintptr_t)&va,
+        .stride_out = (uint64_t)(uintptr_t)&stride,
+        .w_out      = (uint64_t)(uintptr_t)&ww,
+        .h_out      = (uint64_t)(uintptr_t)&hh,
+    };
+    long r = _svc1(SYS_GUI_MAP_WINDOW, (long)(uintptr_t)&a);
+    if (r < 0) return -1;
+    out->pixels = (uint8_t *)(uintptr_t)va;
+    out->stride = stride;
+    out->w      = ww;
+    out->h      = hh;
+    out->id     = id;
+    return 0;
+}
+
+/* Chapter 108a -- tell the WM that the rect (x,y,w,h) of the
+ * mapped framebuffer has been written and needs to make it to
+ * the screen.  Coordinates are window-content relative;
+ * over-large rects are silently clipped to the window so a
+ * blanket gui_window_damage(id, 0, 0, fb.w, fb.h) call after a
+ * full repaint Just Works. */
+static inline int gui_window_damage(int id,
+                                    uint32_t x, uint32_t y,
+                                    uint32_t w, uint32_t h)
+{
+    struct gui_damage_args a = {
+        .id = id, .x = x, .y = y, .w = w, .h = h,
+    };
+    return (int)_svc1(SYS_GUI_DAMAGE, (long)(uintptr_t)&a);
+}
+
+/* Chapter 108a -- drop a previous gui_window_fb mapping.
+ * Implicit on gui_destroy_window / process exit, so most apps
+ * never need to call this; useful in tests that want to verify
+ * the AS layer has actually released the VA range. */
+static inline int gui_window_unmap(int id)
+{
+    return (int)_svc1(SYS_GUI_UNMAP_WINDOW, (long)id);
+}
+
+/* ── Chapter 108d: framebuffer mapping for WSD ──────── */
+
+/* Layout matches struct fb_map_args_k in kernel/core/wsd_fb.c
+ * byte-for-byte; do not reorder. */
+struct fb_map_args {
+    uint64_t va;        /* OUT: user VA where the FB is mapped     */
+    uint32_t w;         /* OUT: scanout width  in pixels           */
+    uint32_t h;         /* OUT: scanout height in pixels           */
+    uint32_t stride;    /* OUT: bytes per scanline (= w*4)         */
+    uint32_t size;      /* OUT: total bytes mapped, page-aligned   */
+};
+
+/* Map the active virtio-gpu scanout buffer's physical pages
+ * into the caller's address space, RW from EL0, non-executable.
+ * On success returns 0 and populates *out with the user VA,
+ * dimensions, stride, and total mapped byte count.
+ *
+ * First-caller-wins: subsequent callers from other pids see
+ * -EBUSY (= -16).  When the holding process exits the kernel
+ * automatically releases the slot so a respawn can re-claim.
+ * Idempotent for the holding pid.
+ *
+ * -EAGAIN (= -11) if the framebuffer isn't ready yet (very
+ * early boot, or no virtio-gpu present).
+ *
+ * Intended for /bin/wsd (the window-server daemon).  Other
+ * processes that try to call this will find -EBUSY once wsd
+ * has claimed the FB, and -EAGAIN if they get in before
+ * fb_init completes. */
+static inline int fb_map_scanout(struct fb_map_args *out)
+{
+    if (!out) return -1;
+    return (int)_svc1(SYS_FB_MAP_SCANOUT, (long)(uintptr_t)out);
+}
+
+/* ── Chapter 108d: per-window shareable framebuffer ── */
+
+/* Layout matches struct win_fb_alloc_args_k in
+ * kernel/core/win_fb.c byte-for-byte; do not reorder.  The
+ * 4-byte _pad0 keeps `va` 8-aligned across both ILP32 and
+ * LP64 hosts (the kernel is LP64; this matters only for
+ * struct stability if any tool ever cross-compiles). */
+struct win_fb_alloc_args {
+    uint32_t w;         /* IN  */
+    uint32_t h;         /* IN  */
+    uint32_t id;        /* OUT: assigned win-fb id (monotonic) */
+    uint32_t _pad0;
+    uint64_t va;        /* OUT: caller-AS user VA              */
+    uint32_t stride;    /* OUT: bytes per row (= w * 4)        */
+    uint32_t size;      /* OUT: total mapped bytes (page-aligned) */
+};
+
+/* Layout matches struct win_fb_map_args_k. */
+struct win_fb_map_args {
+    uint32_t id;        /* IN  */
+    uint32_t w;         /* OUT */
+    uint32_t h;         /* OUT */
+    uint32_t _pad0;
+    uint64_t va;        /* OUT */
+    uint32_t stride;    /* OUT */
+    uint32_t size;      /* OUT */
+};
+
+/* Allocate a fresh shareable per-window framebuffer of
+ * w*h*4 BGRA bytes (rounded up to a page).  Caller becomes
+ * the owner and gets it mapped into its own AS.  On success
+ * fills in {id, va, stride, size}.  -ENOMEM if no pages, no
+ * mapping room or no table slot; -EINVAL on zero / out-of-
+ * range dimensions.
+ *
+ * The id is the handle to pass to peers (typically: wsd
+ * returns it to the client over /srv/wm).  Peers then call
+ * win_fb_map(id, ...) to install the same physical pages
+ * into their own AS at a fresh VA. */
+static inline int win_fb_alloc(uint32_t w, uint32_t h,
+                               struct win_fb_alloc_args *out)
+{
+    if (!out) return -1;
+    out->w = w;
+    out->h = h;
+    return (int)_svc1(SYS_WIN_FB_ALLOC, (long)(uintptr_t)out);
+}
+
+/* Install a shareable per-window FB into the caller's AS.
+ * `id` is the handle returned by the allocator (and passed
+ * through the wm protocol).  On success fills in {va, w, h,
+ * stride, size}.  -ENOENT if the id is unknown; -ENOSPC if
+ * the per-FB mapping table is full.  Idempotent per AS:
+ * calling twice from the same address space returns the
+ * cached VA. */
+static inline int win_fb_map(uint32_t id, struct win_fb_map_args *out)
+{
+    if (!out) return -1;
+    out->id = id;
+    return (int)_svc1(SYS_WIN_FB_MAP, (long)(uintptr_t)out);
+}
+
+/* Free a shareable per-window FB.  Owner-only; -EPERM
+ * otherwise.  Uninstalls every mapper's user-VA range
+ * before freeing the backing pages.  Returns -ENOENT if
+ * the id is unknown. */
+static inline int win_fb_free(uint32_t id)
+{
+    return (int)_svc1(SYS_WIN_FB_FREE, (long)id);
+}
+
+/* chapter 108e — resize an owned win_fb in place.  Owner-
+ * only.  Allocates a fresh backing of new_w*new_h*4 bytes
+ * (page-rounded), copies the top-left of the old contents
+ * over, then uninstalls EVERY existing mapping (owner +
+ * mappers) and frees the old pages.  Owner and mappers
+ * must re-call win_fb_map afterwards to get a fresh VA
+ * (their old VA is invalid; touching it translation-faults).
+ *
+ * Errors: -EINVAL (zero or oversized dims), -ENOENT (bad
+ * id), -EPERM (not owner), -ENOMEM (alloc of new pages
+ * failed).  On any error the FB is unchanged: old pages,
+ * old mappings, old dims all intact. */
+static inline int win_fb_resize(uint32_t id,
+                                uint32_t new_w, uint32_t new_h)
+{
+    return (int)_svc3(SYS_WIN_FB_RESIZE,
+                      (long)id, (long)new_w, (long)new_h);
+}
+
+/* Chapter 108d — userspace-driven GPU flush.  Tell
+ * the kernel to submit a TRANSFER_TO_HOST_2D + RESOURCE_FLUSH
+ * for the given scanout rect.  Passing w=h=0 means "entire
+ * scanout".  Used by wsd's compositor; legacy GUI apps don't
+ * need it (their kernel-WM path is being retired). */
+static inline int fb_present(uint32_t x, uint32_t y,
+                             uint32_t w, uint32_t h)
+{
+    return (int)_svc4(SYS_FB_PRESENT,
+                      (long)x, (long)y, (long)w, (long)h);
+}
+
 static inline int gui_flush(int id)
 {
     return (int)_svc1(SYS_GUI_FLUSH, (long)id);
@@ -1017,6 +1332,60 @@ static inline int gui_flush(int id)
 static inline int gui_poll_event(struct gui_event *out)
 {
     return (int)_svc1(SYS_GUI_POLL_EVENT, (long)(uintptr_t)out);
+}
+
+/* chapter 108e -- userspace decorations + cursor.  All three
+ * are wsd-private in practice; nothing else in the tree links
+ * against them.  Kept here (and not in a wsd-only header) so
+ * any future userspace tool that wants the same hooks (e.g.
+ * a debug overlay or screen recorder) can use them without a
+ * separate kernel surface.
+ *
+ * pointer_state(): snapshot of the cursor.  Any out pointer
+ *   may be NULL; (x,y) are in scanout pixel coords; buttons
+ *   is the GUI_BTN_* bitmap.  Returns 0 / -EFAULT.
+ *
+ * gui_move_window(): relocate a kernel-WM window (typically a
+ *   wsd "input shadow") to (x,y).  Used by wsd after dragging
+ *   a title bar so body-click hit-testing lands in the right
+ *   place.  Returns 0 / -EINVAL / -ENOENT.
+ *
+ * gui_deliver_event(): inject a gui_event into a kernel-WM
+ *   window's event ring so the owner's next gui_poll_event
+ *   returns it.  ev.window_id is overwritten by the kernel
+ *   with `id`.  Used by wsd to deliver GUI_EVENT_CLOSE on a
+ *   close-button click.  Returns 0 / -EINVAL / -ENOENT /
+ *   -EFAULT / -ENOSPC. */
+static inline int pointer_state(int32_t *out_x, int32_t *out_y,
+                                uint32_t *out_btn)
+{
+    return (int)_svc3(SYS_POINTER_STATE,
+                      (long)(uintptr_t)out_x,
+                      (long)(uintptr_t)out_y,
+                      (long)(uintptr_t)out_btn);
+}
+
+static inline int gui_move_window(int id, int32_t x, int32_t y)
+{
+    return (int)_svc3(SYS_GUI_MOVE_WINDOW,
+                      (long)id, (long)x, (long)y);
+}
+
+static inline int gui_deliver_event(int id, const struct gui_event *ev)
+{
+    return (int)_svc2(SYS_GUI_DELIVER_EVENT,
+                      (long)id, (long)(uintptr_t)ev);
+}
+
+/* chapter 108e -- turn on/off wsd-routed pointer passthrough on
+ * a kernel WM shadow.  See SYS_GUI_SET_INPUT_PASSTHROUGH for the
+ * routing semantics; on success the kernel pointer router stops
+ * (or resumes) auto-delivering MOUSE events to this shadow.
+ * Idempotent. */
+static inline int gui_set_input_passthrough(int id, int on)
+{
+    return (int)_svc2(SYS_GUI_SET_INPUT_PASSTHROUGH,
+                      (long)id, (long)on);
 }
 
 /* ─── Milestone 47: window list + raise + extended create ─── */

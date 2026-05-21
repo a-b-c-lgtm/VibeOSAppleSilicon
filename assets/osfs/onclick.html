@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Pocket JS demo</title>
+  <style>
+    body { font-family: sans-serif; margin: 24px; line-height: 1.5; }
+    .card { border: 1px solid #333; padding: 12px; margin: 12px 0; }
+    button { padding: 6px 14px; margin-right: 8px; }
+    input { padding: 4px; margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <h1>onclick handlers (chapter 111)</h1>
+  <p>
+    Each button below carries a real <code>onclick=&quot;...&quot;</code>
+    attribute.  The pocketjs engine in
+    <code>userspace/libc/pocketjs.h</code> evaluates the source on
+    every click and the jsdom bridge in
+    <code>userspace/browser/jsdom.h</code> mutates the live DOM /
+    layout.
+  </p>
+
+  <div class="card">
+    <h2>1. Hide the clicked element</h2>
+    <button onclick="this.style.display='none'">Hide me</button>
+    <p>Sets <code>display:none</code> on the button.  Triggers
+       relayout, so the paragraphs that follow flow up.</p>
+  </div>
+
+  <div class="card">
+    <h2>2. alert()</h2>
+    <button onclick="alert('hello from pocketjs')">Greet</button>
+    <p>Latches the message in the page's alert buffer and mirrors
+       it to the serial log.  No modal yet.</p>
+  </div>
+
+  <div class="card">
+    <h2>3. document.getElementById + alert</h2>
+    <input id="name" value="world" />
+    <button onclick="alert('hi ' + document.getElementById('name').value)">Show</button>
+    <p>Reads the input's <code>value</code> attribute, concats with
+       a string literal, fires alert.</p>
+  </div>
+
+  <div class="card">
+    <h2>4. Mutating a sibling's style</h2>
+    <p id="target">I will turn invisible.</p>
+    <button onclick="document.getElementById('target').style.display='none'">Hide paragraph</button>
+  </div>
+</body>
+</html>

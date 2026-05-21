@@ -29,9 +29,9 @@
  *     editor sees them).
  *
  * Limitations the chapter intentionally leaves for later:
- *   - PgUp/PgDn navigate the in-memory history ring (256 lines
- *     deep, set by HISTORY_ROWS); there is NO disk-backed
- *     scrollback yet.
+ *   - PgUp/PgDn navigate the in-memory history ring (2048
+ *     lines deep, set by HISTORY_ROWS); there is NO disk-
+ *     backed scrollback yet.
  *   - No SIGTSTP / Ctrl-Z; SIGSTOP doesn't exist as a signum
  *     yet.  Lands with chapter 79.
  *   - One terminal emulator per gui_term process; no `tmux`-
@@ -39,6 +39,8 @@
  */
 #include "../libc/syscall.h"
 #include "../libc/clipboard.h"
+#include "../libgui/draw.h"
+#include "../libgui/wmclient.h"
 
 #define WIN_W        720
 #define WIN_H        440
@@ -50,7 +52,7 @@
 #define GUTTER_X     8
 #define GUTTER_Y     6
 #define COLS         ((WIN_W - 2 * GUTTER_X) / GLYPH_W)         /* 88 */
-#define HISTORY_ROWS 256
+#define HISTORY_ROWS 2048
 #define VISIBLE_ROWS (((WIN_H) - 2 * GUTTER_Y - GLYPH_H) / GLYPH_H)
 
 #define BG_BGRA      GUI_BGRA(0x10, 0x18, 0x28)
@@ -71,6 +73,7 @@ static int  cur_len = 0;
 
 static int  win_id    = -1;
 static int  master_fd = -1;
+static struct wm_window g_win;
 
 /* Scrollback offset in rows.  0 means "show the most recent
  * lines"; positive values shift the view backwards in time by
@@ -104,18 +107,103 @@ static void commit_current(void)
 
 /* Process one byte of shell output through the tiny terminal
  * emulator.  Recognises:
- *   '\n'  : finalise current line.
- *   '\r'  : carriage return - go back to column 0 without
- *           pushing.  sh's raw-mode editor uses this to redraw
- *           a line in place after history navigation.
+ *   '\n'  : finalise current line.  Whether or not a '\r'
+ *           immediately preceded it, the typed/echoed content
+ *           in cur_line is committed -- this is what makes the
+ *           user's typed command appear in scrollback on Enter
+ *           (the shell echoes the byte stream and then writes
+ *           "\r\n" to terminate the line).
+ *   '\r'  : carriage return.  We DON'T wipe cur_line on its
+ *           own -- that would discard the just-echoed command
+ *           in the "\r\n" pair the shell sends on Enter.
+ *           Instead we set a flag and look at the next byte:
+ *             - if it's '\n', the commit path above runs and
+ *               the flag is cleared;
+ *             - if it's anything else, the shell is doing the
+ *               classic "carriage return + redraw" trick for
+ *               in-place line editing -- we reset cur_len so
+ *               the following bytes overwrite from column 0.
  *   '\b'  : non-destructive backspace (move cursor left).  sh
  *           writes "\b \b" to delete a char.
+ *   '\x1b': start of an ANSI CSI escape (e.g. "\x1b[2K" to
+ *           erase the line as part of redraw_line()).  We
+ *           absorb the sequence through to its final byte
+ *           (0x40..0x7E) so it never appears as literal
+ *           garbage in cur_line.  "\x1b[2K" is handled as
+ *           "clear current line".
  *   else  : append printable; hard-wrap at COLS.
  */
+enum esc_state {
+    ESC_NONE = 0,    /* default */
+    ESC_AFTER_ESC,   /* just saw \x1b, expecting '['  */
+    ESC_IN_CSI,      /* inside \x1b[ ... <final>      */
+};
+static int esc_state    = ESC_NONE;
+static int saw_cr       = 0;
+static int csi_param_n  = 0;          /* numeric value of trailing CSI param */
+static int csi_has_param = 0;
+
 static void emu_byte(uint8_t c)
 {
-    if (c == '\n') { commit_current(); return; }
-    if (c == '\r') { cur_len = 0; cur_line[0] = '\0'; return; }
+    /* ---- ANSI CSI absorbing state machine ---- */
+    if (esc_state == ESC_AFTER_ESC) {
+        if (c == '[') {
+            esc_state     = ESC_IN_CSI;
+            csi_param_n   = 0;
+            csi_has_param = 0;
+        } else {
+            esc_state = ESC_NONE;     /* unknown ESC X -- drop */
+        }
+        return;
+    }
+    if (esc_state == ESC_IN_CSI) {
+        if (c >= '0' && c <= '9') {
+            csi_param_n = csi_param_n * 10 + (c - '0');
+            csi_has_param = 1;
+            return;
+        }
+        if ((c >= 0x20 && c <= 0x2F) || c == ';') {
+            return;                   /* intermediate -- ignore */
+        }
+        if (c >= 0x40 && c <= 0x7E) {
+            /* Final byte -- act on the few sequences sh uses. */
+            if (c == 'K') {
+                /* ESC [ K   -> erase from cursor to end of line.
+                 * ESC [ 2 K -> erase entire line.
+                 * In our column-less buffer both collapse to
+                 * "drop everything in cur_line". */
+                cur_len      = 0;
+                cur_line[0]  = '\0';
+            }
+            /* Other CSI finals (cursor moves, colours, etc.)
+             * are silently dropped. */
+            esc_state = ESC_NONE;
+            return;
+        }
+        /* Garbage in CSI -- abort the sequence so we don't
+         * eat the rest of the stream. */
+        esc_state = ESC_NONE;
+        return;
+    }
+
+    if (c == 0x1B) { esc_state = ESC_AFTER_ESC; return; }
+
+    /* ---- \r / \n pair handling ---- */
+    if (c == '\r') { saw_cr = 1; return; }
+    if (c == '\n') {
+        commit_current();
+        saw_cr = 0;
+        return;
+    }
+    if (saw_cr) {
+        /* \r followed by non-\n -- shell is rewriting the
+         * line in place.  Reset the buffer so the incoming
+         * bytes start at column 0. */
+        cur_len     = 0;
+        cur_line[0] = '\0';
+        saw_cr      = 0;
+    }
+
     if (c == '\b' || c == 0x7F) {
         if (cur_len > 0) {
             cur_len--;
@@ -147,7 +235,7 @@ static void emu_status(const char *s)
 
 static void render(void)
 {
-    gui_fill_rect(win_id, 0, 0, WIN_W, WIN_H, BG_BGRA);
+    draw_fill_rect(&g_win.fb, 0, 0, WIN_W, WIN_H, BG_BGRA);
 
     /* Show last (VISIBLE_ROWS - 1) committed lines, leaving the
      * bottom row for the in-progress cur_line.  When
@@ -175,8 +263,8 @@ static void render(void)
     for (int r = first; r < last; r++) {
         int slot = r % HISTORY_ROWS;
         uint32_t y = (uint32_t)(GUTTER_Y + (r - first) * GLYPH_H);
-        gui_draw_text(win_id, GUTTER_X, y, history[slot],
-                      FG_BGRA, BG_BGRA, 1);
+        draw_text(&g_win.fb, GUTTER_X, y, history[slot],
+                  FG_BGRA, BG_BGRA, 1);
     }
 
     /* In-progress current line (shell prompt + typed input).
@@ -185,15 +273,15 @@ static void render(void)
     uint32_t cur_y = (uint32_t)(GUTTER_Y + rows_to_show * GLYPH_H);
     if (scroll_offset == 0) {
         if (cur_len > 0) {
-            gui_draw_text(win_id, GUTTER_X, cur_y, cur_line,
-                          FG_BGRA, BG_BGRA, 1);
+            draw_text(&g_win.fb, GUTTER_X, cur_y, cur_line,
+                      FG_BGRA, BG_BGRA, 1);
         }
         /* Block cursor at the end of cur_line. Chapter 102 --
          * the proportional kernel font means we measure the
          * rendered width rather than counting characters * 8. */
         uint32_t cur_x = (uint32_t)GUTTER_X;
-        if (cur_len > 0) cur_x += (uint32_t)gui_measure_text(cur_line);
-        gui_fill_rect(win_id, cur_x, cur_y, GLYPH_W, GLYPH_H, FG_BGRA);
+        if (cur_len > 0) cur_x += (uint32_t)draw_measure_text(cur_line);
+        draw_fill_rect(&g_win.fb, cur_x, cur_y, GLYPH_W, GLYPH_H, FG_BGRA);
     } else {
         /* Scrollback indicator: a dim banner at the bottom row
          * reminds the user the live shell is hidden above. */
@@ -202,11 +290,11 @@ static void render(void)
         int i = 0;
         while (msg[i] && i < COLS) { banner[i] = msg[i]; i++; }
         banner[i] = '\0';
-        gui_draw_text(win_id, GUTTER_X, cur_y, banner,
-                      FG_BGRA, BG_BGRA, 1);
+        draw_text(&g_win.fb, GUTTER_X, cur_y, banner,
+                  FG_BGRA, BG_BGRA, 1);
     }
 
-    gui_flush(win_id);
+    wm_window_dirty(&g_win, 0, 0, WIN_W, WIN_H);
 }
 
 /* ---------------- key translation ---------------- */
@@ -240,11 +328,11 @@ static int key_to_bytes(uint32_t key, char *out)
 int main(int argc, char **argv)
 {
     (void)argc; (void)argv;
-    win_id = gui_create_window(WIN_W, WIN_H, "gui_term");
-    if (win_id < 0) {
-        write(1, "[gui_term] gui_create_window failed\n", 36);
+    if (wm_create_window_input(WIN_W, WIN_H, 0, "gui_term", &g_win) < 0) {
+        write(1, "[gui_term] wm_create_window failed\n", 35);
         return 1;
     }
+    win_id = (int)g_win.id;
 
     emu_status("gui_term: spawning /bin/sh...");
     render();
@@ -287,7 +375,7 @@ int main(int argc, char **argv)
     for (;;) {
         /* 1. Drain GUI events. */
         struct gui_event ev;
-        while (gui_poll_event(&ev)) {
+        while (wm_poll_event(&ev) > 0) {
             if (ev.type == GUI_EVENT_CLOSE) {
                 /* Tell the shell to leave (SIGINT first; if it
                  * was sitting at the prompt that just clears
@@ -300,7 +388,7 @@ int main(int argc, char **argv)
                 /* Reap the shell so it doesn't become a zombie
                  * for init to mop up. */
                 (void)waitpid(child, 0, 0);
-                gui_destroy_window(win_id);
+                wm_destroy_window(&g_win);
                 return 0;
             }
             if (ev.type == GUI_EVENT_KEY) {
@@ -434,7 +522,7 @@ int main(int argc, char **argv)
         int reaped = waitpid(child, &status, WNOHANG);
         if (reaped == child) {
             close(master_fd);
-            gui_destroy_window(win_id);
+            wm_destroy_window(&g_win);
             return 0;
         }
 

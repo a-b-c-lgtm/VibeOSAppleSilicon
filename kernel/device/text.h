@@ -2,7 +2,7 @@
  * Text rendering — Chapter 23.
  *
  * Built on top of:
- *   - font.h          (struct bitmap_font, font_get_default, font_glyph)
+ *   - font.h          (struct bitmap_font, font_get_bitmap, font_glyph)
  *   - framebuffer.h   (fb_draw_pixel, fb_fill_rect, fb_get_info)
  *
  * Three-layer pipeline:

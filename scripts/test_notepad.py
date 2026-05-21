@@ -16,7 +16,14 @@ DUMP_PATH   = "/tmp/osdev-fb-np.ppm"
 FB_W = 1280
 FB_H = 800
 
-WIN_X, WIN_Y = 80, 60
+# wsd cascade lays the first cascade-positioned window at (100,100)
+# and steps by 40 per subsequent cascade-positioned window.  The
+# launcher auto-runs at boot but uses wm_create_window_at (anchored
+# above the taskbar as a Start-menu panel), which does NOT advance
+# the cascade.  notepad spawned next is therefore the first cascade
+# client and lands at slot 0 -> (100,100).  chapter 108e paints a
+# 24-px title bar above each decorated body.
+WIN_X, WIN_Y = 100, 100
 WIN_W, WIN_H = 720, 440
 TITLE_H      = 24
 

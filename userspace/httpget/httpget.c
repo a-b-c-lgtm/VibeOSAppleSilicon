@@ -22,6 +22,7 @@
 #include "../libc/malloc.h"
 #include "../libc/url.h"
 #include "../libc/http.h"
+#include "../libc/cookies.h"
 
 static int parse_dotted(const char *s, uint32_t *out_be)
 {
@@ -162,7 +163,7 @@ static int fetch_one(const char *raw_url, char **out_redirect)
     }
 
     /* Build HTTP/1.1 request in a heap buffer. */
-    size_t req_cap = URL_PATH_MAX + URL_HOST_MAX + 128;
+    size_t req_cap = URL_PATH_MAX + URL_HOST_MAX + 128 + 2048; /* +2K for Cookie: */
     char  *req     = (char *)malloc(req_cap);
     if (!req) { printf("httpget: oom (req)\n"); close(fd); return -1; }
     int n = 0;
@@ -176,7 +177,21 @@ static int fetch_one(const char *raw_url, char **out_redirect)
                       "Host: %s:%u\r\n", u.host, u.port);
     n += snprintf(req + n, req_cap - (size_t)n,
                   "User-Agent: hobbyos-httpget/1.0\r\n"
-                  "Accept: */*\r\n"
+                  "Accept: */*\r\n");
+    /* Chapter 110: read /data/cookies/<host> and inject Cookie:.
+     * Same jar the browser uses, so both clients see the same
+     * session state on this host. */
+    {
+        char cookhdr[1536];
+        int  nck = cookie_store_get(u.host, u.path, time(0),
+                                     cookhdr, sizeof(cookhdr));
+        if (nck > 0 && cookhdr[0]) {
+            n += snprintf(req + n, req_cap - (size_t)n,
+                          "Cookie: %s\r\n", cookhdr);
+            printf("[httpget] sending %d cookie(s) to %s\n", nck, u.host);
+        }
+    }
+    n += snprintf(req + n, req_cap - (size_t)n,
                   "Connection: close\r\n\r\n");
     long wr = write(fd, req, (unsigned long)n);
     free(req);
@@ -209,6 +224,22 @@ static int fetch_one(const char *raw_url, char **out_redirect)
     write(1, " (", 2);
     if (ct) print_slice(ct, ct_len); else write_cstr("no content-type");
     printf(", body=%lu bytes)\n", (unsigned long)resp->body_len);
+
+    /* Chapter 110: capture Set-Cookie headers into /data/cookies/<host>. */
+    {
+        time_t now = time(0);
+        int    stored = 0;
+        for (size_t hi = 0; hi < resp->header_count; hi++) {
+            const struct http_header *h = &resp->headers[hi];
+            if (!http_name_eq(h->name, h->name_len, "set-cookie")) continue;
+            struct cookie_attr ck;
+            if (cookie_parse_set(h->value, h->value_len, now, &ck) < 0)
+                continue;
+            if (cookie_store_set(u.host, &ck) == 0) stored++;
+        }
+        if (stored) printf("[httpget] stored %d cookie(s) from %s\n",
+                            stored, u.host);
+    }
 
     /* Capture Location header (if any) on the heap. */
     int status = resp->status;

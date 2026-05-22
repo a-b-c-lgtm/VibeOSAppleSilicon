@@ -29,8 +29,8 @@
 #include "osfs2.h"
 #include "tcp.h"
 #include "net.h"
-#include "procfs.h"
 #include "srv.h"
+#include "userfs.h"
 #include "../arch/atomic.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -117,6 +117,131 @@ int vfs_ramfs_lookup(const char *name)
 }
 
 /* ------------------------------------------------------------------
+ * Chapter 113 — struct fs_ops adapter for the embedded ramfs.
+ *
+ * The ramfs is the catchall root mount.  Every path that doesn't
+ * match a more-specific mount (/tmp, /proc, /data, /mnt, /bin,
+ * /srv, …) resolves here.  Misses (e.g. "/foo" with no entry
+ * in g_ramfs) return -ENOENT_VFS exactly as the legacy
+ * `ramfs_lookup(name) < 0` branch did.
+ *
+ * Read-only by design.  rel is the full path with leading slash
+ * because vfs_resolve returns the unstripped path for root
+ * mounts (see the special case in vfs_resolve).
+ * ------------------------------------------------------------------ */
+static long ramfs_op_open(void *cookie, const char *rel, int flags,
+                          struct fd_entry *out)
+{
+    (void)cookie; (void)flags;
+    if (!out || !rel) return -EINVAL_VFS;
+    int idx = ramfs_lookup(rel);
+    if (idx < 0) return -ENOENT_VFS;
+    out->kind        = FD_FILE;
+    out->offset      = 0;
+    out->ramfs_index = idx;
+    out->osfs_start  = 0;
+    out->osfs_size   = 0;
+    out->pipe        = NULL;
+    out->socket_cid  = -1;
+    out->pty         = NULL;
+    out->osfs2_ino   = 0;
+    out->srv_l       = NULL;
+    out->srv_c       = NULL;
+    out->srv_is_service = 0;
+    out->userfs_ch     = NULL;
+    out->userfs_handle = 0;
+    return 0;
+}
+
+static long ramfs_op_read(void *cookie, struct fd_entry *e,
+                          void *buf, size_t n)
+{
+    (void)cookie;
+    if (!e || !buf) return -EINVAL_VFS;
+    if (e->ramfs_index < 0 || (size_t)e->ramfs_index >= RAMFS_COUNT)
+        return -EBADF;
+    const struct ramfs_file *f = &g_ramfs[e->ramfs_index];
+    size_t sz = ramfs_size(f);
+    if (e->offset >= sz) return 0;
+    size_t left = sz - (size_t)e->offset;
+    if (n > left) n = left;
+    const uint8_t *src = f->data + e->offset;
+    uint8_t *dst = (uint8_t *)buf;
+    for (size_t i = 0; i < n; i++) dst[i] = src[i];
+    e->offset += (uint64_t)n;
+    return (long)n;
+}
+
+static long ramfs_op_close(void *cookie, struct fd_entry *e)
+{
+    (void)cookie; (void)e;
+    return 0;
+}
+
+static int ramfs_op_listdir(void *cookie, const char *rel, int idx,
+                            char *name, size_t cap, uint32_t *type)
+{
+    (void)cookie;
+    /* Root mount: rel == "/" or rel == path-of-mountpoint.  We
+     * only enumerate when the caller asked for "/" exactly; any
+     * deeper path is a miss because ramfs has no subdirs. */
+    if (!rel || (rel[0] != '/' || (rel[1] != '\0'))) return -1;
+    if (idx < 0 || (size_t)idx >= RAMFS_COUNT) return -1;
+    const char *src = g_ramfs[idx].name;
+    /* Names are stored with a leading slash (e.g. "/motd"); the
+     * listdir convention is bare names, so skip past the '/'. */
+    if (*src == '/') src++;
+    size_t i = 0;
+    for (; i + 1 < cap && src[i]; i++) name[i] = src[i];
+    name[i] = '\0';
+    if (type) *type = 0;
+    return (int)i;
+}
+
+static int ramfs_op_is_dir(void *cookie, const char *rel)
+{
+    (void)cookie;
+    if (!rel || (rel[0] == '/' && rel[1] == '\0')) return 1;
+    return 0;
+}
+
+static long ramfs_op_load(void *cookie, const char *rel,
+                          uint8_t **out_buf, size_t *out_size)
+{
+    (void)cookie;
+    if (!out_buf || !out_size) return -EINVAL_VFS;
+    *out_buf = NULL; *out_size = 0;
+    int idx = ramfs_lookup(rel);
+    if (idx < 0) return -ENOENT_VFS;
+    size_t sz = ramfs_size(&g_ramfs[idx]);
+    uint8_t *buf = (uint8_t *)kmalloc(sz);
+    if (!buf && sz > 0) return -ENOMEM_VFS;
+    const uint8_t *src = g_ramfs[idx].data;
+    for (size_t i = 0; i < sz; i++) buf[i] = src[i];
+    *out_buf = buf;
+    *out_size = sz;
+    return 0;
+}
+
+static const struct fs_ops g_ramfs_root_ops = {
+    .open    = ramfs_op_open,
+    .read    = ramfs_op_read,
+    .write   = NULL,
+    .close   = ramfs_op_close,
+    .lseek   = NULL,
+    .listdir = ramfs_op_listdir,
+    .unlink  = NULL,
+    .mkdir   = NULL,
+    .is_dir  = ramfs_op_is_dir,
+    .load    = ramfs_op_load,
+};
+
+static void ramfs_register_root_mount(void)
+{
+    (void)vfs_mount_register("/", &g_ramfs_root_ops, NULL, MOUNT_RO);
+}
+
+/* ------------------------------------------------------------------
  * Public VFS API.
  * ------------------------------------------------------------------ */
 void vfs_init(void)
@@ -130,6 +255,17 @@ void vfs_init(void)
         serial_puts(" bytes)\n");
     }
     tmpfs_init();
+    /* Chapter 113 — register mount-table entries for every
+     * kernel filesystem that has been ported to the fs_ops
+     * vtable.  Each step of the section-16 refactor adds one
+     * registration here and deletes the matching prefix branch
+     * in vfs_open / syscall.c.  Chapter 114e dropped procfs
+     * from this list — /proc is now served by /bin/procd via
+     * a userfs mount installed at boot by init's supervisor. */
+    tmpfs_register_mount();
+    osfs1_register_mount();   /* /mnt + /bin (MOUNT_RO) */
+    osfs2_register_mount();   /* /data (writable) */
+    ramfs_register_root_mount();  /* "/" catchall (MOUNT_RO) */
 }
 
 void vfs_init_fdtable(struct thread *t)
@@ -177,6 +313,11 @@ struct fd_table *fd_table_create(void)
         ft->fds[i].socket_cid  = -1;
         ft->fds[i].pty         = NULL;
         ft->fds[i].osfs2_ino   = 0;
+        ft->fds[i].srv_l       = NULL;
+        ft->fds[i].srv_c       = NULL;
+        ft->fds[i].srv_is_service = 0;
+        ft->fds[i].userfs_ch     = NULL;
+        ft->fds[i].userfs_handle = 0;
     }
     /* fds 0, 1, 2 = console (ramfs_index = -1 sentinel, osfs_size = 0). */
     for (int i = 0; i < 3; i++) {
@@ -190,6 +331,11 @@ struct fd_table *fd_table_create(void)
         ft->fds[i].socket_cid  = -1;
         ft->fds[i].pty         = NULL;
         ft->fds[i].osfs2_ino   = 0;
+        ft->fds[i].srv_l       = NULL;
+        ft->fds[i].srv_c       = NULL;
+        ft->fds[i].srv_is_service = 0;
+        ft->fds[i].userfs_ch     = NULL;
+        ft->fds[i].userfs_handle = 0;
     }
     return ft;
 }
@@ -233,6 +379,8 @@ void fd_table_unref(struct fd_table *ft)
             srv_unref_listen(e->srv_l);
         else if (e->kind == FD_SRV_CONN && e->srv_c)
             srv_unref_conn(e->srv_c, e->srv_is_service);
+        else if (e->kind == FD_USERFS_FILE && e->userfs_ch)
+            (void)g_userfs_ops.close(e->userfs_ch, e);
         e->in_use = 0;
     }
     kfree(ft);
@@ -248,85 +396,160 @@ static int path_starts_with(const char *path, const char *prefix)
     return 1;
 }
 
+/* ------------------------------------------------------------------
+ * Chapter 113 — mount table + vfs_resolve.
+ *
+ * Step 1 of the section-16 refactor: introduce the types and the
+ * resolver.  No callers yet — the prefix ladders below this point
+ * keep working unchanged.  Subsequent steps port one filesystem
+ * driver at a time (procfs, tmpfs, OSFS-1, OSFS-2, ramfs) and
+ * delete the corresponding branch from the ladder.
+ * ------------------------------------------------------------------ */
+
+static struct mount g_mounts[MOUNT_MAX];
+static int          g_mounts_n;
+
+static size_t k_strlen(const char *s)
+{
+    size_t n = 0;
+    while (s && s[n]) n++;
+    return n;
+}
+
+int vfs_mount_register(const char *prefix, const struct fs_ops *ops,
+                       void *cookie, uint32_t flags)
+{
+    if (!prefix || !ops) return -EINVAL_VFS;
+    if (prefix[0] != '/') return -EINVAL_VFS;
+    size_t plen = k_strlen(prefix);
+    /* "/" is the only allowed trailing-slash prefix; anything else
+     * with a trailing slash is malformed (use "/data", not
+     * "/data/").  This keeps vfs_resolve's boundary check simple. */
+    if (plen > 1 && prefix[plen - 1] == '/') return -EINVAL_VFS;
+    if (g_mounts_n >= MOUNT_MAX) return -ENOSPC;
+
+    g_mounts[g_mounts_n].prefix = prefix;
+    g_mounts[g_mounts_n].ops    = ops;
+    g_mounts[g_mounts_n].cookie = cookie;
+    g_mounts[g_mounts_n].flags  = flags;
+    g_mounts_n++;
+    return 0;
+}
+
+const struct mount *vfs_resolve(const char *path, const char **rel_out)
+{
+    if (!path) return NULL;
+    const struct mount *best = NULL;
+    size_t best_len = 0;
+
+    for (int i = 0; i < g_mounts_n; i++) {
+        const struct mount *m = &g_mounts[i];
+        size_t plen = k_strlen(m->prefix);
+        /* "/" matches anything but loses every tie to a longer
+         * prefix.  For any other prefix we require the next char
+         * in path to be '\0' or '/' so "/data" does not match
+         * "/database". */
+        if (plen == 1 && m->prefix[0] == '/') {
+            if (best_len == 0) { best = m; best_len = 1; }
+            continue;
+        }
+        if (!path_starts_with(path, m->prefix)) continue;
+        char next = path[plen];
+        if (next != '\0' && next != '/') continue;
+        if (plen > best_len) { best = m; best_len = plen; }
+    }
+
+    if (!best) {
+        if (rel_out) *rel_out = path;
+        return NULL;
+    }
+    if (rel_out) {
+        if (best_len == 1 && best->prefix[0] == '/') {
+            /* Root mount: rel is the full path. */
+            *rel_out = path;
+        } else {
+            /* Non-root mount: rel begins at the first char past
+             * the prefix.  For path == prefix exactly this is the
+             * trailing '\0' which makes rel an empty string. */
+            *rel_out = path + best_len;
+        }
+    }
+    return best;
+}
+
+int vfs_mount_count(void) { return g_mounts_n; }
+
+const struct mount *vfs_mount_at(int idx)
+{
+    if (idx < 0 || idx >= g_mounts_n) return NULL;
+    return &g_mounts[idx];
+}
+
+int vfs_mount_remove(int idx)
+{
+    if (idx < 0 || idx >= g_mounts_n) return -EINVAL_VFS;
+    /* Compact: shift every later slot down by one.  The
+     * mount-table is small (MOUNT_MAX=16) so an in-place
+     * memmove is fine.  We deliberately do NOT preserve the
+     * old indices — userspace only ever sees indices through
+     * SYS_MOUNTS snapshots, so a concurrent shift is no
+     * worse than two snapshots taken across an unrelated
+     * mount/umount pair. */
+    for (int i = idx; i + 1 < g_mounts_n; i++) {
+        g_mounts[i] = g_mounts[i + 1];
+    }
+    g_mounts_n--;
+    g_mounts[g_mounts_n].prefix = NULL;
+    g_mounts[g_mounts_n].ops    = NULL;
+    g_mounts[g_mounts_n].cookie = NULL;
+    g_mounts[g_mounts_n].flags  = 0;
+    return 0;
+}
+
 int vfs_open(const char *name, int flags)
 {
     if (!name) return -EINVAL_VFS;
 
-    /* /tmp/<name> -> writable in-memory tmpfs.  O_CREAT means
-     * "create if missing".  O_TRUNC (implied for `>` redirects)
-     * truncates an existing file; O_APPEND skips truncation so
-     * subsequent writes accumulate.  Without O_CREAT, a missing
-     * file -> -ENOENT. */
-    if (path_starts_with(name, "/tmp/")) {
-        const char *bare = name + 5;
-        int tidx;
-        if (flags & O_CREAT) {
-            int found = tmpfs_lookup(bare);
-            if (found >= 0) {
-                tidx = found;
-                if (!(flags & O_APPEND)) {
-                    /* Truncate existing.  create_or_truncate on a
-                     * known-extant slot is a no-fail truncation. */
-                    (void)tmpfs_create_or_truncate(bare);
+    /* Chapter 113 — vtable dispatch.  Resolve `name` against the
+     * mount table; if a registered mount with an `open` method
+     * covers it, hand the open off to the driver and the legacy
+     * prefix ladder below is bypassed entirely.  Filesystems not
+     * yet ported (today: tmpfs, OSFS-2, OSFS-1, root ramfs) fall
+     * through.  Each subsequent chapter-113 step registers one
+     * more mount here and deletes the matching branch below. */
+    {
+        const char *rel = NULL;
+        const struct mount *m = vfs_resolve(name, &rel);
+        if (m && m->ops && m->ops->open) {
+            if ((m->flags & MOUNT_RO) &&
+                ((flags & O_WRONLY) || (flags & O_RDWR) ||
+                 (flags & O_CREAT)  || (flags & O_TRUNC)))
+                return -EROFS_VFS;
+            struct thread *t = thread_current();
+            for (int fd = 3; fd < FD_TABLE_SIZE; fd++) {
+                if (!t->fdt->fds[fd].in_use) {
+                    long r = m->ops->open(m->cookie, rel, flags,
+                                          &t->fdt->fds[fd]);
+                    if (r < 0) return r;
+                    t->fdt->fds[fd].in_use = 1;
+                    return fd;
                 }
-            } else {
-                tidx = tmpfs_create_or_truncate(bare);
-                if (tidx < 0) return -ENOMEM_VFS;
             }
-        } else {
-            tidx = tmpfs_lookup(bare);
-            if (tidx < 0) return -ENOENT_VFS;
+            /* Table full — the driver's open didn't run, so no
+             * cleanup needed. */
+            return -EMFILE;
         }
-        struct thread *t = thread_current();
-        for (int fd = 3; fd < FD_TABLE_SIZE; fd++) {
-            if (!t->fdt->fds[fd].in_use) {
-                t->fdt->fds[fd].in_use      = 1;
-                t->fdt->fds[fd].kind        = FD_TMPFS_RW;
-                t->fdt->fds[fd].offset      = 0;
-                t->fdt->fds[fd].ramfs_index = tidx;
-                t->fdt->fds[fd].osfs_start  = 0;
-                t->fdt->fds[fd].osfs_size   = 0;
-                t->fdt->fds[fd].pipe        = NULL;
-                t->fdt->fds[fd].osfs2_ino   = 0;
-                return fd;
-            }
-        }
-        return -EMFILE;
     }
 
-    /* /data/<name> -> writable OSFS-2 (chapter 81+).  O_CREAT means
-     * "create if missing".  O_TRUNC truncates an existing file to
-     * zero bytes; O_APPEND keeps existing content but read/write
-     * still start at offset 0 (sys_write may seek to EOF when the
-     * O_APPEND-equivalent semantics get added).  Without O_CREAT,
-     * a missing file -> -ENOENT. */
-    if (path_starts_with(name, "/data/")) {
-        const char *bare = name + 6;
-        if (!osfs2_present()) return -ENOENT_VFS;
-        uint32_t ino = osfs2_lookup(bare);
-        if (ino == 0) {
-            if (!(flags & O_CREAT)) return -ENOENT_VFS;
-            ino = osfs2_create(bare);
-            if (ino == 0) return -ENOMEM_VFS;
-        } else if ((flags & O_TRUNC) && !(flags & O_APPEND)) {
-            if (osfs2_truncate(ino, 0) != 0) return -EIO;
-        }
-        struct thread *t = thread_current();
-        for (int fd = 3; fd < FD_TABLE_SIZE; fd++) {
-            if (!t->fdt->fds[fd].in_use) {
-                t->fdt->fds[fd].in_use      = 1;
-                t->fdt->fds[fd].kind        = FD_OSFS2_FILE;
-                t->fdt->fds[fd].offset      = 0;
-                t->fdt->fds[fd].ramfs_index = -1;
-                t->fdt->fds[fd].osfs_start  = 0;
-                t->fdt->fds[fd].osfs_size   = 0;
-                t->fdt->fds[fd].pipe        = NULL;
-                t->fdt->fds[fd].osfs2_ino   = ino;
-                return fd;
-            }
-        }
-        return -EMFILE;
-    }
+    /* /tmp/<name>: handled by the chapter-113 vtable dispatch at
+     * the top of this function (tmpfs_fs_ops, registered by
+     * tmpfs_register_mount in vfs_init).  No legacy branch
+     * remains here. */
+
+    /* /data/<name>: handled by the chapter-113 vtable dispatch
+     * at the top of this function (osfs2_fs_ops, registered by
+     * osfs2_register_mount in vfs_init).  No legacy branch
+     * remains here. */
 
     /* /srv/<name> -> chapter 107 named-IPC connect.
      * open("/srv/foo", O_RDWR) becomes srv_connect("/srv/foo")
@@ -350,93 +573,21 @@ int vfs_open(const char *name, int flags)
         return fd;
     }
 
-    /* /proc/<path> -> chapter 99 read-only snapshot pseudo-FS.
-     * Snapshots the rendered content at open time into a
-     * kheap buffer so subsequent reads see consistent data
-     * even if a thread spawns / exits mid-read.  vfs_close
-     * frees the buffer.  Also accept "/proc" with no trailing
-     * slash — that maps to the empty suffix, which procfs_render
-     * turns into a directory listing. */
-    {
-        const char *rel = NULL;
-        if (path_starts_with(name, "/proc/"))
-            rel = name + 6;
-        else if (name[0] == '/' && name[1] == 'p' && name[2] == 'r' &&
-                 name[3] == 'o' && name[4] == 'c' && name[5] == '\0')
-            rel = "";
-        if (rel) {
-            char *buf = (char *)kmalloc(PROCFS_MAX_FILE);
-            if (!buf) return -ENOMEM_VFS;
-            long n = procfs_render(rel, buf, PROCFS_MAX_FILE);
-            if (n < 0) { kfree(buf); return -ENOENT_VFS; }
-            struct thread *t = thread_current();
-            for (int fd = 3; fd < FD_TABLE_SIZE; fd++) {
-                if (!t->fdt->fds[fd].in_use) {
-                    t->fdt->fds[fd].in_use      = 1;
-                    t->fdt->fds[fd].kind        = FD_PROCFS;
-                    t->fdt->fds[fd].offset      = 0;
-                    t->fdt->fds[fd].ramfs_index = -1;
-                    t->fdt->fds[fd].osfs_start  = 0;
-                    t->fdt->fds[fd].osfs_size   = 0;
-                    t->fdt->fds[fd].pipe        = NULL;
-                    t->fdt->fds[fd].osfs2_ino   = 0;
-                    t->fdt->fds[fd].procfs_buf  = buf;
-                    t->fdt->fds[fd].procfs_len  = (uint32_t)n;
-                    return fd;
-                }
-            }
-            kfree(buf);
-            return -EMFILE;
-        }
-    }
+    /* /proc/<path>: handled by the chapter-113 vtable dispatch
+     * at the top of this function (procfs_fs_ops, registered by
+     * procfs_register_mount in vfs_init).  No legacy branch
+     * remains here. */
 
-    /* /mnt/<name> -> OSFS-1 disk mount.
-     * /bin/<name> -> OSFS-1 disk mount (binaries live on disk
-     *               since milestone 13; the prefix is stripped
-     *               before the OSFS lookup). */
-    const char *bare = NULL;
-    if (path_starts_with(name, "/mnt/")) bare = name + 5;
-    else if (path_starts_with(name, "/bin/")) bare = name + 5;
-    if (bare) {
-        uint32_t start = 0, size = 0;
-        if (osfs_lookup(bare, &start, &size) != 0)
-            return -ENOENT_VFS;
-        struct thread *t = thread_current();
-        for (int fd = 3; fd < FD_TABLE_SIZE; fd++) {
-            if (!t->fdt->fds[fd].in_use) {
-                t->fdt->fds[fd].in_use      = 1;
-                t->fdt->fds[fd].kind        = FD_FILE;
-                t->fdt->fds[fd].offset      = 0;
-                t->fdt->fds[fd].ramfs_index = -1;
-                t->fdt->fds[fd].osfs_start  = start;
-                t->fdt->fds[fd].osfs_size   = size;
-                t->fdt->fds[fd].pipe        = NULL;
-                t->fdt->fds[fd].osfs2_ino   = 0;
-                return fd;
-            }
-        }
-        return -EMFILE;
-    }
+    /* /mnt/<name> and /bin/<name>: handled by the chapter-113
+     * vtable dispatch (osfs1_fs_ops, registered twice by
+     * osfs1_register_mount in vfs_init — once per prefix).  No
+     * legacy branch remains here. */
 
-    int idx = ramfs_lookup(name);
-    if (idx < 0) return -ENOENT_VFS;
-
-    struct thread *t = thread_current();
-    /* Lowest free slot at or above 3 (POSIX semantics). */
-    for (int fd = 3; fd < FD_TABLE_SIZE; fd++) {
-        if (!t->fdt->fds[fd].in_use) {
-            t->fdt->fds[fd].in_use      = 1;
-            t->fdt->fds[fd].kind        = FD_FILE;
-            t->fdt->fds[fd].offset      = 0;
-            t->fdt->fds[fd].ramfs_index = idx;
-            t->fdt->fds[fd].osfs_start  = 0;
-            t->fdt->fds[fd].osfs_size   = 0;
-            t->fdt->fds[fd].pipe        = NULL;
-            t->fdt->fds[fd].osfs2_ino   = 0;
-            return fd;
-        }
-    }
-    return -EMFILE;
+    /* Ramfs catchall ("/") is handled by the chapter-113 vtable
+     * dispatch at the top of this function via g_ramfs_root_ops.
+     * Any path that didn't match a more-specific mount AND
+     * isn't in g_ramfs returns -ENOENT_VFS from ramfs_op_open. */
+    return -ENOENT_VFS;
 }
 
 /* Open `name` directly into thread `t`'s slot `fd`, overwriting
@@ -447,7 +598,6 @@ int vfs_open(const char *name, int flags)
  * unchanged. */
 int vfs_open_into(struct thread *t, int fd, const char *name, int flags)
 {
-    (void)flags;
     if (!t || !name) return -EINVAL_VFS;
     if (fd < 0 || fd >= FD_TABLE_SIZE) return -EBADF;
 
@@ -471,61 +621,32 @@ int vfs_open_into(struct thread *t, int fd, const char *name, int flags)
         slot->srv_c = NULL;
     }
 
-    const char *bare = NULL;
-    if (path_starts_with(name, "/mnt/")) bare = name + 5;
-    else if (path_starts_with(name, "/bin/")) bare = name + 5;
-
-    if (bare) {
-        uint32_t start = 0, size = 0;
-        if (osfs_lookup(bare, &start, &size) != 0)
-            return -ENOENT_VFS;
-        t->fdt->fds[fd].in_use      = 1;
-        t->fdt->fds[fd].kind        = FD_FILE;
-        t->fdt->fds[fd].offset      = 0;
-        t->fdt->fds[fd].ramfs_index = -1;
-        t->fdt->fds[fd].osfs_start  = start;
-        t->fdt->fds[fd].osfs_size   = size;
-        t->fdt->fds[fd].pipe        = NULL;
-        t->fdt->fds[fd].osfs2_ino   = 0;
-        return 0;
-    }
-
-    /* /data/<name> -> writable OSFS-2.  Same flags semantics as
-     * the /tmp/ branch in vfs_open: O_CREAT creates on miss,
-     * O_TRUNC zeros an existing file unless O_APPEND is set. */
-    if (path_starts_with(name, "/data/")) {
-        const char *bare2 = name + 6;
-        if (!osfs2_present()) return -ENOENT_VFS;
-        uint32_t ino = osfs2_lookup(bare2);
-        if (ino == 0) {
-            if (!(flags & O_CREAT)) return -ENOENT_VFS;
-            ino = osfs2_create(bare2);
-            if (ino == 0) return -ENOMEM_VFS;
-        } else if ((flags & O_TRUNC) && !(flags & O_APPEND)) {
-            if (osfs2_truncate(ino, 0) != 0) return -EIO;
+    /* Chapter 113 \u2014 try the mount-table vtable first.  This
+     * gives `vfs_open_into` the same dispatch as `vfs_open`, so
+     * fork+exec-style redirections (sys_spawn_redir / dup2)
+     * route through registered filesystems exactly as the public
+     * open syscall does. */
+    {
+        const char *rel = NULL;
+        const struct mount *m = vfs_resolve(name, &rel);
+        if (m && m->ops && m->ops->open) {
+            if ((m->flags & MOUNT_RO) &&
+                ((flags & O_WRONLY) || (flags & O_RDWR) ||
+                 (flags & O_CREAT)  || (flags & O_TRUNC)))
+                return -EROFS_VFS;
+            long r = m->ops->open(m->cookie, rel, flags, &t->fdt->fds[fd]);
+            if (r < 0) return (int)r;
+            t->fdt->fds[fd].in_use = 1;
+            return 0;
         }
-        t->fdt->fds[fd].in_use      = 1;
-        t->fdt->fds[fd].kind        = FD_OSFS2_FILE;
-        t->fdt->fds[fd].offset      = 0;
-        t->fdt->fds[fd].ramfs_index = -1;
-        t->fdt->fds[fd].osfs_start  = 0;
-        t->fdt->fds[fd].osfs_size   = 0;
-        t->fdt->fds[fd].pipe        = NULL;
-        t->fdt->fds[fd].osfs2_ino   = ino;
-        return 0;
     }
 
-    int idx = ramfs_lookup(name);
-    if (idx < 0) return -ENOENT_VFS;
-    t->fdt->fds[fd].in_use      = 1;
-    t->fdt->fds[fd].kind        = FD_FILE;
-    t->fdt->fds[fd].offset      = 0;
-    t->fdt->fds[fd].ramfs_index = idx;
-    t->fdt->fds[fd].osfs_start  = 0;
-    t->fdt->fds[fd].osfs_size   = 0;
-    t->fdt->fds[fd].pipe        = NULL;
-    t->fdt->fds[fd].osfs2_ino   = 0;
-    return 0;
+    /* /mnt/, /bin/, /data/: handled by the chapter-113 vtable
+     * dispatch above (osfs1_fs_ops / osfs2_fs_ops).  No legacy
+     * branches remain here. */
+
+    /* Ramfs catchall: routed via the chapter-113 vtable above. */
+    return -ENOENT_VFS;
 }
 
 long vfs_read(int fd, void *buf, size_t len)
@@ -608,6 +729,15 @@ long vfs_read(int fd, void *buf, size_t len)
         return srv_read(e->srv_c, e->srv_is_service, buf, len);
     }
 
+    /* Chapter 114 — userspace filesystem-backed file.  All
+     * read state (offset, daemon handle, channel) is on the
+     * fd_entry; userfs_op_read marshals a P9_OP_READ across
+     * the channel and returns the daemon's reply. */
+    if (e->kind == FD_USERFS_FILE) {
+        if (!e->userfs_ch) return -EBADF;
+        return g_userfs_ops.read(e->userfs_ch, e, buf, len);
+    }
+
     /* Writable tmpfs file (read side). */
     if (e->kind == FD_TMPFS_RW) {
         long got = tmpfs_read(e->ramfs_index, e->offset, buf, len);
@@ -620,21 +750,6 @@ long vfs_read(int fd, void *buf, size_t len)
         long got = osfs2_read(e->osfs2_ino, e->offset, buf, len);
         if (got > 0) e->offset += (uint64_t)got;
         return got;
-    }
-
-    /* Chapter 99 — /proc snapshot.  Slice the pre-rendered
-     * buffer at the current offset; EOF when offset reaches
-     * procfs_len. */
-    if (e->kind == FD_PROCFS) {
-        if (!e->procfs_buf) return 0;
-        if (e->offset >= e->procfs_len) return 0;
-        size_t remaining = (size_t)(e->procfs_len - e->offset);
-        size_t to_copy   = len < remaining ? len : remaining;
-        uint8_t *dst = (uint8_t *)buf;
-        const uint8_t *src = (const uint8_t *)e->procfs_buf + e->offset;
-        for (size_t i = 0; i < to_copy; i++) dst[i] = src[i];
-        e->offset += (uint64_t)to_copy;
-        return (long)to_copy;
     }
 
     /* OSFS-1 disk-backed file. */
@@ -744,9 +859,11 @@ int vfs_close(int fd)
         else if (e->kind == FD_PTY_SLAVE  && e->pty) pty_close_slave(e->pty);
         else if (e->kind == FD_SRV_LISTEN && e->srv_l) srv_unref_listen(e->srv_l);
         else if (e->kind == FD_SRV_CONN   && e->srv_c) srv_unref_conn(e->srv_c, e->srv_is_service);
-        else if (e->kind == FD_PROCFS && e->procfs_buf) {
-            /* Free the snapshot allocated at vfs_open time. */
-            kfree(e->procfs_buf);
+        else if (e->kind == FD_USERFS_FILE && e->userfs_ch) {
+            /* Forward the close to the daemon so it can drop its
+             * handle state; g_userfs_ops.close also decrements
+             * the channel's open_fds counter. */
+            (void)g_userfs_ops.close(e->userfs_ch, e);
         }
         e->in_use      = 0;
         e->kind        = FD_CONSOLE;
@@ -758,11 +875,11 @@ int vfs_close(int fd)
         e->socket_cid  = -1;
         e->pty         = NULL;
         e->osfs2_ino   = 0;
-        e->procfs_buf  = NULL;
-        e->procfs_len  = 0;
         e->srv_l       = NULL;
         e->srv_c       = NULL;
         e->srv_is_service = 0;
+        e->userfs_ch       = NULL;
+        e->userfs_handle   = 0;
     }
     return 0;
 }
@@ -852,8 +969,6 @@ int vfs_alloc_srv_listen_fd(struct srv_listen *ls)
             e->socket_cid     = -1;
             e->pty            = NULL;
             e->osfs2_ino      = 0;
-            e->procfs_buf     = NULL;
-            e->procfs_len     = 0;
             e->srv_l          = ls;
             e->srv_c          = NULL;
             e->srv_is_service = 0;
@@ -885,8 +1000,6 @@ int vfs_alloc_srv_conn_fd(struct srv_conn *c, int is_service_end)
             e->socket_cid     = -1;
             e->pty            = NULL;
             e->osfs2_ino      = 0;
-            e->procfs_buf     = NULL;
-            e->procfs_len     = 0;
             e->srv_l          = NULL;
             e->srv_c          = c;
             e->srv_is_service = is_service_end ? 1 : 0;
@@ -914,63 +1027,26 @@ int vfs_load(const char *path, uint8_t **out_buf, size_t *out_size)
     *out_buf  = NULL;
     *out_size = 0;
 
-    /* OSFS dispatch: /mnt/<name> or /bin/<name>. */
-    const char *bare = NULL;
-    if (path_starts_with(path, "/mnt/")) bare = path + 5;
-    else if (path_starts_with(path, "/bin/")) bare = path + 5;
-
-    if (bare) {
-        uint32_t start = 0, sz = 0;
-        if (osfs_lookup(bare, &start, &sz) != 0)
-            return -ENOENT_VFS;
-        uint8_t *buf = (uint8_t *)kmalloc((size_t)sz);
-        if (!buf) return -ENOMEM_VFS;
-        long got = osfs_read(start, sz, 0, buf, (size_t)sz);
-        if (got < 0 || (uint32_t)got != sz) {
-            kfree(buf);
-            return -EIO;
+    /* Chapter 113 — try the mount-table vtable first.  Any
+     * filesystem that has been ported to fs_ops and implements
+     * `load` handles the whole-file read here.  Drivers without
+     * a `load` op (e.g. /srv) fall through to the legacy ramfs
+     * branch below. */
+    {
+        const char *rel = NULL;
+        const struct mount *m = vfs_resolve(path, &rel);
+        if (m && m->ops && m->ops->load) {
+            return m->ops->load(m->cookie, rel, out_buf, out_size);
         }
-        *out_buf  = buf;
-        *out_size = (size_t)sz;
-        return 0;
     }
 
-    /* /data/<name> -> writable OSFS-2 disk mount.  Whole-file
-     * load mirrors the OSFS-1 path: allocate a kheap buffer
-     * sized to the inode's `size`, then call osfs2_read at
-     * offset 0. */
-    if (path_starts_with(path, "/data/")) {
-        if (!osfs2_present()) return -ENOENT_VFS;
-        const char *bare2 = path + 6;
-        uint32_t ino = osfs2_lookup(bare2);
-        if (ino == 0) return -ENOENT_VFS;
-        uint32_t sz = osfs2_size(ino);
-        uint8_t *buf = (uint8_t *)kmalloc((size_t)sz);
-        if (!buf && sz > 0) return -ENOMEM_VFS;
-        if (sz > 0) {
-            long got = osfs2_read(ino, 0, buf, (size_t)sz);
-            if (got < 0 || (uint32_t)got != sz) {
-                kfree(buf);
-                return -EIO;
-            }
-        }
-        *out_buf  = buf;
-        *out_size = (size_t)sz;
-        return 0;
-    }
+    /* /mnt/<name>, /bin/<name>, /data/<name>: handled by the
+     * chapter-113 vtable dispatch above. */
 
-    /* Ramfs path: copy out of the embedded blob into a fresh
-     * buffer so the caller's kfree() story is uniform. */
-    int idx = ramfs_lookup(path);
-    if (idx < 0) return -ENOENT_VFS;
-    size_t sz = ramfs_size(&g_ramfs[idx]);
-    uint8_t *buf = (uint8_t *)kmalloc(sz);
-    if (!buf) return -ENOMEM_VFS;
-    const uint8_t *src = g_ramfs[idx].data;
-    for (size_t i = 0; i < sz; i++) buf[i] = src[i];
-    *out_buf  = buf;
-    *out_size = sz;
-    return 0;
+    /* Ramfs catchall: also routed via the chapter-113 vtable
+     * above (g_ramfs_root_ops::load).  Nothing left to do here —
+     * a miss already returned -ENOENT_VFS from ramfs_op_load. */
+    return -ENOENT_VFS;
 }
 
 /* ------------------------------------------------------------------

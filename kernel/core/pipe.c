@@ -9,6 +9,7 @@
 #include "pipe.h"
 #include "heap.h"
 #include "thread.h"
+#include "timer.h"
 #include "vfs.h"
 #include "serial.h"
 #include <stddef.h>
@@ -49,6 +50,12 @@ void pipe_unref(struct pipe *p, enum pipe_ref which)
 
 long pipe_read(struct pipe *p, void *buf, size_t len)
 {
+    return pipe_read_until(p, buf, len, 0);
+}
+
+long pipe_read_until(struct pipe *p, void *buf, size_t len,
+                     uint64_t deadline_ms)
+{
     if (!p || !buf) return -EINVAL_VFS;
     if (len == 0) return 0;
 
@@ -56,7 +63,23 @@ long pipe_read(struct pipe *p, void *buf, size_t len)
 
     while (p->count == 0) {
         if (p->w_refs == 0) return 0;   /* EOF — no more writers */
-        thread_block_on(p);
+        if (deadline_ms != 0) {
+            uint64_t now = timer_ticks() * (uint64_t)TICK_INTERVAL_MS;
+            if (now >= deadline_ms) return -ETIMEDOUT_VFS;
+        }
+        if (deadline_ms != 0)
+            thread_block_on_until(p, deadline_ms);
+        else
+            thread_block_on(p);
+        /* Prefer delivering data over reporting a signal: if
+         * a writer landed bytes during the block, drain them
+         * even when sig_pending is also set.  The signal stays
+         * pending and svc_dispatch's pre-eret check fires at
+         * the next syscall boundary — without this, a SIGCHLD
+         * arriving mid-userfs reply would abort the protocol
+         * with -EINTR despite the daemon's reply having
+         * already landed in the pipe. */
+        if (p->count > 0) continue;
         /* Chapter 79b — thread_signal_pid wakes blocked threads.
          * If we got woken by a signal (rather than by a writer),
          * bail out with -EINTR so the dispatcher's pre-eret
@@ -64,6 +87,8 @@ long pipe_read(struct pipe *p, void *buf, size_t len)
          * Ctrl-C interrupt a shell sitting in read(). */
         struct thread *me = thread_current();
         if (me && me->sig_pending) return -EINTR_PIPE;
+        /* Fall through to loop head: re-check w_refs, count,
+         * and (if deadline_ms != 0) the deadline. */
     }
 
     /* Drain up to min(len, count) bytes. */
@@ -85,6 +110,12 @@ long pipe_read(struct pipe *p, void *buf, size_t len)
 
 long pipe_write(struct pipe *p, const void *buf, size_t len)
 {
+    return pipe_write_until(p, buf, len, 0);
+}
+
+long pipe_write_until(struct pipe *p, const void *buf, size_t len,
+                      uint64_t deadline_ms)
+{
     if (!p || !buf) return -EINVAL_VFS;
     if (len == 0) return 0;
 
@@ -99,7 +130,14 @@ long pipe_write(struct pipe *p, const void *buf, size_t len)
             return written > 0 ? (long)written : -EPIPE;
         }
         if (p->count == PIPE_BUF_SIZE) {
-            thread_block_on(p);
+            if (deadline_ms != 0) {
+                uint64_t now = timer_ticks() * (uint64_t)TICK_INTERVAL_MS;
+                if (now >= deadline_ms)
+                    return written > 0 ? (long)written : -ETIMEDOUT_VFS;
+                thread_block_on_until(p, deadline_ms);
+            } else {
+                thread_block_on(p);
+            }
             continue;
         }
         size_t can = PIPE_BUF_SIZE - p->count;

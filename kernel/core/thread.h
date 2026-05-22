@@ -313,6 +313,18 @@ void thread_sleep_ms(uint64_t ms);
  * but unlikely with our single-CPU scheduler). */
 void thread_block_on(void *token);
 
+/* Chapter 114f — like thread_block_on but with an absolute
+ * deadline (monotonic ms).  Returns early when:
+ *   - someone calls thread_wake_blocked(token), OR
+ *   - the wall clock reaches deadline_ms, OR
+ *   - a signal becomes pending (woken via thread_signal_pid).
+ * Pass deadline_ms == 0 for "never time out" (equivalent to
+ * thread_block_on).  Caller MUST re-check its resource
+ * condition AND the wall clock vs deadline_ms on return; both
+ * spurious wakes and deadline-driven wakes are reported the
+ * same way (state goes READY, blocked_on cleared). */
+void thread_block_on_until(void *token, uint64_t deadline_ms);
+
 /* Wake all threads currently THREAD_BLOCKED with
  * blocked_on == token.  Marks them READY and pushes to the
  * runqueue; clears blocked_on. */

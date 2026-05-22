@@ -32,7 +32,6 @@
 #include "walltime.h"
 #include "osfs.h"
 #include "osfs2.h"
-#include "procfs.h"
 #include "pipe.h"
 #include "pty.h"
 #include "tmpfs.h"
@@ -43,6 +42,7 @@
 #include "console_in.h"
 #include "strace.h"
 #include "srv.h"
+#include "userfs.h"
 #include "wsd_fb.h"
 #include "win_fb.h"
 #include "random.h"
@@ -192,6 +192,26 @@ static long sys_write(long fd, long buf_ptr, long len)
             long w = srv_write(e->srv_c, e->srv_is_service, kbuf, (size_t)len);
             kfree(kbuf);
             return w;
+        }
+        if (e->in_use && e->kind == FD_USERFS_FILE) {
+            /* Chapter 114: a userfs file write hands the bytes
+             * to the userspace daemon over the channel.  Stream
+             * in 256-byte chunks so a 1 MiB write doesn't need
+             * a 1 MiB kmalloc.  P9_MAX_PAYLOAD inside the
+             * write op caps any single RPC. */
+            char chunk[256];
+            long total = 0;
+            while (total < len) {
+                size_t n = (size_t)(len - total);
+                if (n > sizeof(chunk)) n = sizeof(chunk);
+                if (copy_from_user(chunk, (uint64_t)buf_ptr + (uint64_t)total, n) < 0)
+                    return -EFAULT;
+                long w = g_userfs_ops.write(e->userfs_ch, e, chunk, n);
+                if (w < 0) return total > 0 ? total : w;
+                total += w;
+                if ((size_t)w < n) break;
+            }
+            return total;
         }
         if (e->in_use && (e->kind == FD_PTY_MASTER ||
                           e->kind == FD_PTY_SLAVE)) {
@@ -553,6 +573,16 @@ static int dup_parent_fd_into_child(struct thread *parent, int pfd,
         else if (dst->kind == FD_PIPE_W && dst->pipe) pipe_unref(dst->pipe, PIPE_REF_W);
         else if (dst->kind == FD_PTY_MASTER && dst->pty) pty_close_master(dst->pty);
         else if (dst->kind == FD_PTY_SLAVE  && dst->pty) pty_close_slave(dst->pty);
+        else if (dst->kind == FD_USERFS_FILE && dst->userfs_ch) {
+            /* Chapter 114 — only decrement the counter; we're
+             * dropping the slot's reference but the daemon-
+             * facing handle stays open via the new fd we're
+             * about to install (or via a sibling fd that
+             * inherited from the same source).  Calling the
+             * userfs close RPC would close the daemon's
+             * handle while another fd still holds it. */
+            if (dst->userfs_ch->open_fds > 0) dst->userfs_ch->open_fds--;
+        }
     }
     *dst = *src;
     dst->in_use = 1;
@@ -570,6 +600,13 @@ static int dup_parent_fd_into_child(struct thread *parent, int pfd,
         dst->pty->refs++;
         dst->pty->m2s->r_refs++;
         dst->pty->s2m->w_refs++;
+    }
+    else if (dst->kind == FD_USERFS_FILE && dst->userfs_ch) {
+        /* Chapter 114 — mirror thread_inherit_fds: every
+         * additional fd entry that points at the channel must
+         * bump open_fds so the eventual close decrement is
+         * balanced. */
+        dst->userfs_ch->open_fds++;
     }
     return 0;
 }
@@ -1270,6 +1307,349 @@ static long sys_getrandom(uintptr_t buf_ptr, size_t len, unsigned flags)
 }
 
 /*
+ * sys_mounts(struct mount_info *out, int max) — chapter 113.
+ *
+ * Snapshot of the kernel's mount table.  Returns the number of
+ * entries written (clamped to `max`).  Userspace uses this to
+ * enumerate destinations without hardcoding "/data" — the Save
+ * As dialog calls it when its caller passes a NULL dir_prefix,
+ * and any future "where do I back up to?" tool can ask the same
+ * way.
+ *
+ * The on-wire struct layout MUST match userspace's
+ * `struct mount_info` (userspace/libc/syscall.h): 32-byte
+ * prefix followed by a u32 flags.  Total 36 bytes; we round
+ * down to 36-on-the-wire by emitting field-by-field so the
+ * compiler-chosen padding can't surprise us.
+ */
+struct kern_mount_info {
+    char     prefix[32];
+    uint32_t flags;
+};
+
+static long sys_mounts(long out_uptr, long max_l)
+{
+    int max = (int)max_l;
+    if (max < 0) return -EINVAL_VFS;
+    if (max == 0) return 0;
+    int total = vfs_mount_count();
+    int n = total < max ? total : max;
+    for (int i = 0; i < n; i++) {
+        const struct mount *m = vfs_mount_at(i);
+        struct kern_mount_info mi;
+        for (size_t k = 0; k < sizeof(mi.prefix); k++) mi.prefix[k] = 0;
+        const char *p = m->prefix;
+        size_t k = 0;
+        for (; p[k] && k + 1 < sizeof(mi.prefix); k++) mi.prefix[k] = p[k];
+        mi.flags = m->flags;
+        uint64_t dst = (uint64_t)(out_uptr + (long)(i * (long)sizeof(mi)));
+        if (copy_to_user(dst, &mi, sizeof(mi)) < 0) return -EFAULT;
+    }
+    return (long)n;
+}
+
+/* ------------------------------------------------------------------
+ * Chapter 114e — kernel state snapshots for /bin/procd.
+ *
+ * Layout MUST match userspace/libc/proc_stat.h.  We don't include
+ * the user header from kernel space; instead we redeclare the
+ * structs here and rely on byte-for-byte agreement.  If you grow
+ * either struct, update both sides together.
+ * ------------------------------------------------------------------ */
+
+#define KSTAT_MAX_CPUS  4
+struct kstat_pub_wire {
+    uint64_t uptime_ms;
+    uint64_t pmem_total_pages;
+    uint64_t pmem_free_pages;
+    uint64_t kheap_used_bytes;
+    uint32_t cpu_count;
+    uint32_t live_threads;
+    uint32_t runq_len[KSTAT_MAX_CPUS];
+};
+
+#define TS_NAME_MAX 32
+#define TS_ARGS_MAX 128
+#define TS_CWD_MAX  96
+struct thread_snap_pub_wire {
+    int32_t  id;
+    int32_t  parent_id;
+    int32_t  state;
+    uint32_t home_cpu;
+    int32_t  tty_raw;
+    int32_t  exit_code;
+    uint64_t wake_at_ms;
+    char     name[TS_NAME_MAX];
+    char     args[TS_ARGS_MAX];
+    char     cwd[TS_CWD_MAX];
+};
+
+static long sys_kstat(long out_uptr)
+{
+    if (!out_uptr) return -EFAULT;
+    struct kstat_pub_wire k;
+    for (size_t i = 0; i < sizeof(k); i++) ((uint8_t *)&k)[i] = 0;
+    k.uptime_ms        = timer_ticks() * (uint64_t)TICK_INTERVAL_MS;
+    k.pmem_total_pages = (uint64_t)pmem_total_pages();
+    k.pmem_free_pages  = (uint64_t)pmem_free_pages();
+    k.kheap_used_bytes = (uint64_t)kheap_used();
+    uint32_t n = smp_cpu_count();
+    if (n == 0 || n > SMP_MAX_CPUS) n = 1;
+    k.cpu_count    = n;
+    k.live_threads = (uint32_t)thread_live_count();
+    uint32_t cap = n < KSTAT_MAX_CPUS ? n : KSTAT_MAX_CPUS;
+    for (uint32_t i = 0; i < cap; i++) {
+        int r = thread_runqueue_len(i);
+        k.runq_len[i] = r > 0 ? (uint32_t)r : 0;
+    }
+    if (copy_to_user((uint64_t)out_uptr, &k, sizeof(k)) < 0)
+        return -EFAULT;
+    return 0;
+}
+
+static void copy_snap_pub(struct thread_snap_pub_wire *dst,
+                          const struct thread_snap *src)
+{
+    dst->id         = (int32_t)src->id;
+    dst->parent_id  = (int32_t)src->parent_id;
+    dst->state      = (int32_t)src->state;
+    dst->home_cpu   = src->home_cpu;
+    dst->tty_raw    = (int32_t)src->tty_raw;
+    dst->exit_code  = (int32_t)src->exit_code;
+    dst->wake_at_ms = src->wake_at_ms;
+    for (size_t i = 0; i < TS_NAME_MAX; i++) dst->name[i] = src->name[i];
+    for (size_t i = 0; i < TS_ARGS_MAX; i++) dst->args[i] = src->args[i];
+    for (size_t i = 0; i < TS_CWD_MAX;  i++) dst->cwd[i]  = src->cwd[i];
+}
+
+static long sys_thread_snapshot(long pid_l, long out_uptr, long max_l)
+{
+    int pid = (int)pid_l;
+    int max = (int)max_l;
+    if (!out_uptr) return -EFAULT;
+    if (max < 0)   return -EINVAL_VFS;
+
+    if (pid >= 0) {
+        if (max < 1) return 0;
+        struct thread_snap s;
+        if (!thread_snapshot_pid(pid, &s)) return 0;
+        struct thread_snap_pub_wire w;
+        copy_snap_pub(&w, &s);
+        if (copy_to_user((uint64_t)out_uptr, &w, sizeof(w)) < 0)
+            return -EFAULT;
+        return 1;
+    }
+
+    /* pid == -1: enumerate.  Bound the kernel-side snapshot
+     * buffer so we never spike the syscall stack — 16 is enough
+     * for the workloads we have today (sweep peaks around 30
+     * threads total but only ~10 user-visible).  If the caller
+     * asks for more we iterate in chunks. */
+    if (max == 0) return 0;
+    const int BATCH = 16;
+    struct thread_snap snaps[BATCH];
+    int total_live = thread_snapshot(snaps, BATCH);
+    int to_emit = total_live < max ? total_live : max;
+    for (int i = 0; i < to_emit; i++) {
+        struct thread_snap_pub_wire w;
+        copy_snap_pub(&w, &snaps[i]);
+        uint64_t dst = (uint64_t)(out_uptr + (long)(i * (long)sizeof(w)));
+        if (copy_to_user(dst, &w, sizeof(w)) < 0) return -EFAULT;
+    }
+    return (long)to_emit;
+}
+
+static long sys_strace_render(long pid_l, long buf_uptr, long cap_l)
+{
+    int pid = (int)pid_l;
+    size_t cap = (size_t)cap_l;
+    if (!buf_uptr) return -EFAULT;
+    if (cap == 0)  return 0;
+    if (cap > 16 * 1024) cap = 16 * 1024;
+    char *kbuf = (char *)kmalloc(cap);
+    if (!kbuf) return -ENOMEM_VFS;
+    long n = thread_strace_render_pid(pid, kbuf, cap);
+    if (n < 0) { kfree(kbuf); return -ENOENT_VFS; }
+    if (n > 0 && copy_to_user((uint64_t)buf_uptr, kbuf, (size_t)n) < 0) {
+        kfree(kbuf);
+        return -EFAULT;
+    }
+    kfree(kbuf);
+    return n;
+}
+
+/* ------------------------------------------------------------------
+ * Chapter 114 — userspace filesystem servers.
+ *
+ * sys_mount(prefix, fds_out[2]) installs a fresh userfs mount.
+ * Allocates the channel + two pipes, registers g_userfs_ops in
+ * the mount table, and hands two pipe fds back to the caller
+ * so the daemon can serve the protocol.
+ *
+ * The chapter-114 plan reserves enforcement for a future
+ * capability system; today any process may call sys_mount.  As
+ * the OS gains users / capabilities the dispatcher can gate
+ * on pid == 1 or a CAP_MOUNT bit without changing the ABI.
+ * ------------------------------------------------------------------ */
+
+#define USERFS_PREFIX_MAX 32u
+
+/* Snapshot a user-supplied path into a kernel buffer.  Returns
+ * the string length on success or a negative errno on failure.
+ * The destination is always NUL-terminated even on error so
+ * callers can safely log it.  Slimmed-down copy of patterns
+ * used elsewhere in this file; kept local because we only
+ * need a tiny variant. */
+static long copy_user_prefix(uint64_t uptr, char *dst, size_t cap)
+{
+    if (cap == 0) return -EINVAL_VFS;
+    if (uptr == 0) { dst[0] = 0; return -EFAULT; }
+    long n = copy_string_from_user(dst, uptr, cap);
+    if (n < 0) { dst[0] = 0; return n; }
+    return n;
+}
+
+static long sys_mount(long prefix_uptr, long fds_out_uptr, long flags_l)
+{
+    if (uaccess_check((uint64_t)fds_out_uptr, sizeof(int) * 2) < 0)
+        return -EFAULT;
+    /* Only MOUNT_RO is exported to userspace today; mask off
+     * anything else so a future kernel-only mount flag (e.g.
+     * MOUNT_NOSUID) can't be set from user code. */
+    uint32_t flags = (uint32_t)flags_l & MOUNT_RO;
+
+    /* Snapshot + validate the prefix.  The same rules
+     * vfs_mount_register enforces: must start with '/', no
+     * trailing slash (except the "/" root, which userfs is
+     * not allowed to claim — root is owned by ramfs and
+     * replacing it would shatter every other mount). */
+    char *prefix = (char *)kmalloc(USERFS_PREFIX_MAX);
+    if (!prefix) return -ENOMEM_VFS;
+    long plen = copy_user_prefix((uint64_t)prefix_uptr, prefix,
+                                 USERFS_PREFIX_MAX);
+    if (plen < 0) { kfree(prefix); return plen; }
+    if (plen == 0 || prefix[0] != '/') { kfree(prefix); return -EINVAL_VFS; }
+    if (plen == 1) { kfree(prefix); return -EINVAL_VFS; }
+    if (prefix[plen - 1] == '/') { kfree(prefix); return -EINVAL_VFS; }
+
+    /* Reject if the same prefix is already in the table.  We
+     * can't rely on vfs_mount_register to do this because the
+     * resolver explicitly tolerates dup-prefix registrations
+     * (the chapter-113 "first wins on ties" rule lets OSFS-1
+     * mount at /mnt AND /bin with one fs_ops). */
+    int n = vfs_mount_count();
+    for (int i = 0; i < n; i++) {
+        const struct mount *m = vfs_mount_at(i);
+        const char *mp = m->prefix;
+        size_t k = 0;
+        while (mp[k] && prefix[k] && mp[k] == prefix[k]) k++;
+        if (mp[k] == 0 && prefix[k] == 0) {
+            kfree(prefix);
+            return -EEXIST;
+        }
+    }
+
+    struct thread *t = thread_current();
+    int rfd = -1, wfd = -1;
+    for (int i = 3; i < FD_TABLE_SIZE; i++) {
+        if (!t->fdt->fds[i].in_use) {
+            if (rfd < 0)      rfd = i;
+            else if (wfd < 0) { wfd = i; break; }
+        }
+    }
+    if (rfd < 0 || wfd < 0) { kfree(prefix); return -EMFILE; }
+
+    struct userfs_channel *c = userfs_channel_create(prefix, t->id);
+    if (!c) { kfree(prefix); return -ENOMEM_VFS; }
+
+    long r = vfs_mount_register(prefix, &g_userfs_ops, c, flags);
+    if (r < 0) {
+        userfs_channel_destroy(c);
+        kfree(prefix);
+        return r;
+    }
+
+    /* Install the daemon-side fds.  Daemon reads requests off
+     * req_pipe (FD_PIPE_R) and writes replies into rsp_pipe
+     * (FD_PIPE_W).  pipe_alloc returned each pipe with
+     * r_refs=1 and w_refs=1.  We hand the matching side to
+     * the daemon (no separate refcount bump — the daemon's fd
+     * conceptually takes ownership of the existing ref) and
+     * the channel keeps the opposite side.  Closes from
+     * either end drop the right ref; pipe_unref frees only
+     * when both sides reach zero. */
+    t->fdt->fds[rfd].in_use      = 1;
+    t->fdt->fds[rfd].kind        = FD_PIPE_R;
+    t->fdt->fds[rfd].pipe        = c->req_pipe;
+    t->fdt->fds[rfd].offset      = 0;
+    t->fdt->fds[rfd].ramfs_index = -1;
+    t->fdt->fds[rfd].osfs_start  = 0;
+    t->fdt->fds[rfd].osfs_size   = 0;
+    t->fdt->fds[rfd].socket_cid  = -1;
+    t->fdt->fds[rfd].pty         = NULL;
+    t->fdt->fds[rfd].osfs2_ino   = 0;
+    t->fdt->fds[rfd].srv_l       = NULL;
+    t->fdt->fds[rfd].srv_c       = NULL;
+    t->fdt->fds[rfd].srv_is_service = 0;
+    t->fdt->fds[rfd].userfs_ch     = NULL;
+    t->fdt->fds[rfd].userfs_handle = 0;
+
+    t->fdt->fds[wfd].in_use      = 1;
+    t->fdt->fds[wfd].kind        = FD_PIPE_W;
+    t->fdt->fds[wfd].pipe        = c->rsp_pipe;
+    t->fdt->fds[wfd].offset      = 0;
+    t->fdt->fds[wfd].ramfs_index = -1;
+    t->fdt->fds[wfd].osfs_start  = 0;
+    t->fdt->fds[wfd].osfs_size   = 0;
+    t->fdt->fds[wfd].socket_cid  = -1;
+    t->fdt->fds[wfd].pty         = NULL;
+    t->fdt->fds[wfd].osfs2_ino   = 0;
+    t->fdt->fds[wfd].srv_l       = NULL;
+    t->fdt->fds[wfd].srv_c       = NULL;
+    t->fdt->fds[wfd].srv_is_service = 0;
+    t->fdt->fds[wfd].userfs_ch     = NULL;
+    t->fdt->fds[wfd].userfs_handle = 0;
+
+    int *dst = (int *)(uintptr_t)fds_out_uptr;
+    dst[0] = rfd;
+    dst[1] = wfd;
+
+    /* Return the mount-table slot index as the mount id.  The
+     * registration above appended to the table so the new
+     * slot is at index n. */
+    return (long)n;
+}
+
+static long sys_umount(long mount_id_l)
+{
+    int mid = (int)mount_id_l;
+    if (mid < 0 || mid >= vfs_mount_count()) return -EINVAL_VFS;
+
+    const struct mount *m = vfs_mount_at(mid);
+    if (!m || m->ops != &g_userfs_ops) return -ENOENT_VFS;
+    struct userfs_channel *c = (struct userfs_channel *)m->cookie;
+    if (!c) return -ENOENT_VFS;
+    if (c->open_fds > 0) return -EBUSY_VFS;
+
+    /* Snapshot the prefix pointer before vfs_mount_remove
+     * compacts the table.  Userfs prefixes are kmalloc'd in
+     * sys_mount (statically-registered mounts use string
+     * literals and don't take this path), so we free them
+     * here rather than in vfs_mount_remove. */
+    char *prefix_to_free = (char *)m->prefix;
+
+    /* Mark dead first so any concurrent userfs_call returns
+     * -EIO instead of hanging on the pipe.  Then drop the
+     * slot and free the channel. */
+    c->alive = 0;
+    int r = vfs_mount_remove(mid);
+    if (r < 0) return r;
+    userfs_channel_destroy(c);
+    if (prefix_to_free) kfree(prefix_to_free);
+    return 0;
+}
+
+/*
  * Tiny string helpers used by chdir/getcwd.  Kept local so they
  * don't pollute kstring or accidentally end up linked into a
  * userspace artifact.
@@ -1750,31 +2130,30 @@ static long sys_unlink(long path_uptr)
     long n = copy_string_from_user(path, (uint64_t)path_uptr, sizeof(path));
     if (n < 0) return n;
 
-    static const char tmp_prefix[]  = "/tmp/";
-    static const char data_prefix[] = "/data/";
+    /* Chapter 113 — try the mount-table vtable first.  Any
+     * filesystem ported to fs_ops that implements `unlink`
+     * handles its own removal here. */
+    {
+        const char *rel = NULL;
+        const struct mount *m = vfs_resolve(path, &rel);
+        if (m) {
+            /* RO check fires BEFORE we look for an op pointer:
+             * an RO mount that lacks unlink (e.g. ramfs, procfs,
+             * osfs1) must still report EROFS rather than the
+             * generic EINVAL we'd otherwise emit below.  That
+             * way userspace tools can distinguish "this
+             * filesystem refuses writes" from "the operation
+             * itself is unrecognised." */
+            if (m->flags & MOUNT_RO) return -EROFS_VFS;
+            if (m->ops && m->ops->unlink)
+                return m->ops->unlink(m->cookie, rel);
+        }
+    }
 
-    /* /tmp/ branch: in-memory writable. */
-    {
-        int i;
-        for (i = 0; i < (int)sizeof(tmp_prefix) - 1; i++) {
-            if (path[i] != tmp_prefix[i]) goto try_data;
-        }
-        if (!path[i]) return -EINVAL_VFS;     /* "/tmp/" with no name */
-        return tmpfs_unlink(path + i);
-    }
-try_data:
-    /* /data/ branch: on-disk OSFS-2.  Returns -EIO on a write
-     * failure mid-unlink; callers can retry. */
-    {
-        int i;
-        for (i = 0; i < (int)sizeof(data_prefix) - 1; i++) {
-            if (path[i] != data_prefix[i]) return -EINVAL_VFS;
-        }
-        if (!path[i]) return -EINVAL_VFS;     /* "/data/" with no name */
-        if (!osfs2_present()) return -ENOENT_VFS;
-        if (osfs2_unlink(path + i) != 0) return -ENOENT_VFS;
-        return 0;
-    }
+    /* /tmp/ and /data/ unlink are both handled by the
+     * chapter-113 vtable dispatch above (tmpfs_fs_ops::unlink
+     * and osfs2_fs_ops::unlink).  No legacy ladder remains. */
+    return -EINVAL_VFS;
 }
 
 /*
@@ -1792,15 +2171,23 @@ static long sys_mkdir(long path_uptr)
     long n = copy_string_from_user(path, (uint64_t)path_uptr, sizeof(path));
     if (n < 0) return n;
 
-    static const char data_prefix[] = "/data/";
-    int i;
-    for (i = 0; i < (int)sizeof(data_prefix) - 1; i++) {
-        if (path[i] != data_prefix[i]) return -EINVAL_VFS;
+    /* Chapter 113 — vtable dispatch.  Only mounts that implement
+     * `mkdir` accept directory creation; today that's just
+     * osfs2_fs_ops at /data.  MOUNT_RO mounts return EROFS — and
+     * because the RO check fires BEFORE we look at the op
+     * pointer, even mounts whose driver simply lacks a mkdir
+     * (ramfs, procfs, osfs1) surface as EROFS rather than the
+     * generic EINVAL fall-through below. */
+    {
+        const char *rel = NULL;
+        const struct mount *m = vfs_resolve(path, &rel);
+        if (m) {
+            if (m->flags & MOUNT_RO) return -EROFS_VFS;
+            if (m->ops && m->ops->mkdir)
+                return m->ops->mkdir(m->cookie, rel);
+        }
     }
-    if (!path[i]) return -EINVAL_VFS;
-    if (!osfs2_present()) return -ENOENT_VFS;
-    if (osfs2_mkdir(path + i) == 0) return -ENOENT_VFS;
-    return 0;
+    return -EINVAL_VFS;
 }
 
 /*
@@ -1835,88 +2222,44 @@ static long sys_listdir_at(long path_uptr, long idx, long name_ptr,
     long pn = copy_string_from_user(path, (uint64_t)path_uptr, sizeof(path));
     if (pn < 0) return pn;
 
-    /* Chapter 99 — /proc enumeration.  Dispatch BEFORE the
-     * /data prefix check so "/proc" / "/proc/12" route to the
-     * pseudo-FS.  procfs_listdir handles both the root and
-     * per-pid directories. */
+    /* Chapter 113 — try the mount-table vtable first.  Any
+     * filesystem that has been ported to fs_ops AND implements
+     * `listdir` handles its own enumeration here; everything else
+     * falls through to the legacy ladder below.  As each
+     * chapter-113 step lands one more driver, the corresponding
+     * branch in the ladder is deleted. */
     {
-        static const char proc_prefix[] = "/proc";
-        int j;
-        for (j = 0; j < (int)sizeof(proc_prefix) - 1; j++) {
-            if (path[j] != proc_prefix[j]) goto not_proc;
-        }
-        if (path[j] && path[j] != '/') goto not_proc;
-        const char *sub = path + j;
-        while (*sub == '/') sub++;
-        char name[256];
-        uint32_t type = 0;
-        int got = procfs_listdir(*sub ? sub : NULL, (int)idx,
-                                  name, sizeof(name), &type);
-        if (got < 0) return -ENOENT_VFS;
-        size_t out_n = 0;
-        while (out_n + 1 < (size_t)cap && name[out_n]) out_n++;
-        if (copy_to_user((uint64_t)name_ptr, name, out_n + 1) < 0)
-            return -EFAULT;
-        if (size_out_ptr) {
-            uint32_t zero = 0;
-            if (copy_to_user((uint64_t)size_out_ptr, &zero, sizeof(zero)) < 0)
+        const char *rel = NULL;
+        const struct mount *m = vfs_resolve(path, &rel);
+        if (m && m->ops && m->ops->listdir) {
+            char name[256];
+            uint32_t type = 0;
+            int got = m->ops->listdir(m->cookie, rel, (int)idx,
+                                      name, sizeof(name), &type);
+            if (got < 0) return -ENOENT_VFS;
+            size_t out_n = 0;
+            while (out_n + 1 < (size_t)cap && name[out_n]) out_n++;
+            if (copy_to_user((uint64_t)name_ptr, name, out_n + 1) < 0)
                 return -EFAULT;
+            if (size_out_ptr) {
+                uint32_t zero = 0;
+                if (copy_to_user((uint64_t)size_out_ptr, &zero,
+                                 sizeof(zero)) < 0)
+                    return -EFAULT;
+            }
+            if (type_out_ptr &&
+                copy_to_user((uint64_t)type_out_ptr, &type,
+                             sizeof(type)) < 0)
+                return -EFAULT;
+            return (long)out_n;
         }
-        if (type_out_ptr &&
-            copy_to_user((uint64_t)type_out_ptr, &type, sizeof(type)) < 0)
-            return -EFAULT;
-        return (long)out_n;
-    }
-not_proc:
-
-    /* Only /data/ supports per-path enumeration today. */
-    static const char data_prefix[] = "/data";
-    int i;
-    for (i = 0; i < (int)sizeof(data_prefix) - 1; i++) {
-        if (path[i] != data_prefix[i]) return -EINVAL_VFS;
-    }
-    if (path[i] && path[i] != '/') return -EINVAL_VFS;
-    if (!osfs2_present()) return -ENOENT_VFS;
-
-    /* osfs2_lookup returns 0 for ROOT \u2014 special-case "" /
-     * "/data/" / "/data" \u2192 ROOT inode directly. */
-    const char *sub = path + i;
-    while (*sub == '/') sub++;
-    uint32_t parent_ino;
-    if (!*sub) {
-        parent_ino = 1;          /* OSFS2_INODE_ROOT */
-    } else {
-        parent_ino = osfs2_lookup(sub);
-        if (parent_ino == 0) return -ENOENT_VFS;
     }
 
-    /* Loop dirent-by-dirent skipping holes until we hit `idx`-th
-     * non-empty entry, then return that one.  We rebuild the
-     * mapping each call (cheap \u2014 directories are tiny). */
-    char     name[256];
-    uint32_t walk = 0;
-    uint32_t size = 0;
-    uint32_t type = 0;
-    int      cur = 0;
-    while (1) {
-        int rc = osfs2_listdir_at(parent_ino, &walk, name, sizeof(name),
-                                  &size, &type);
-        if (rc <= 0) return -ENOENT_VFS;
-        if (cur == (int)idx) break;
-        cur++;
-    }
-    /* Truncate to caller's cap. */
-    size_t out_n = 0;
-    while (out_n + 1 < (size_t)cap && name[out_n]) out_n++;
-    if (copy_to_user((uint64_t)name_ptr, name, out_n + 1) < 0)
-        return -EFAULT;
-    if (size_out_ptr &&
-        copy_to_user((uint64_t)size_out_ptr, &size, sizeof(size)) < 0)
-        return -EFAULT;
-    if (type_out_ptr &&
-        copy_to_user((uint64_t)type_out_ptr, &type, sizeof(type)) < 0)
-        return -EFAULT;
-    return (long)out_n;
+    /* /proc enumeration: handled by the chapter-114 userfs
+     * mount installed at boot by /bin/procd.  /data enumeration
+     * is also handled by osfs2_fs_ops::listdir.  No legacy
+     * branch remains here. */
+    return -EINVAL_VFS;
 }
 
 /*
@@ -3227,6 +3570,30 @@ void svc_dispatch(struct exception_frame *frame)
      * must currently be zero. */
     case SYS_GETRANDOM:
         ret = sys_getrandom((uintptr_t)a0, (size_t)a1, (unsigned)a2);
+        break;
+
+    /* Chapter 113 — mount-table snapshot. */
+    case SYS_MOUNTS:
+        ret = sys_mounts((long)a0, (long)a1);
+        break;
+
+    /* Chapter 114 — userspace filesystem servers. */
+    case SYS_MOUNT:
+        ret = sys_mount((long)a0, (long)a1, (long)a2);
+        break;
+    case SYS_UMOUNT:
+        ret = sys_umount((long)a0);
+        break;
+
+    /* Chapter 114e — kernel state for /bin/procd. */
+    case SYS_KSTAT:
+        ret = sys_kstat((long)a0);
+        break;
+    case SYS_THREAD_SNAPSHOT:
+        ret = sys_thread_snapshot((long)a0, (long)a1, (long)a2);
+        break;
+    case SYS_STRACE_RENDER:
+        ret = sys_strace_render((long)a0, (long)a1, (long)a2);
         break;
 
     /* Chapter 100 — enable per-thread syscall tracing on self.

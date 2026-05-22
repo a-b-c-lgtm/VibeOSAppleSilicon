@@ -1,34 +1,37 @@
 #!/usr/bin/env python3
-"""scripts/test_clipboard.py -- chapter 108 / M90b clipboard test.
+"""scripts/test_clipboard.py -- chapter 114 clipboard test.
 
 Boots the kernel headless, waits for the shell prompt, and
-drives the /bin/clip CLI through a full set/get/gen/clear
-round-trip via the chapter-107 IPC bus.  All traffic is
-in-guest; no host listener, no SLIRP hostfwd, no virtio-net
-chatter in the test path.
+drives the clipboard via plain file I/O on /clipboard/text.
+Since chapter 114, the clipboard daemon is a userfs mount
+rather than an IPC service: write to a file to copy, read
+the same file to paste, truncate it to clear.  That means
+this test uses nothing but `echo`, `cat`, and shell
+redirection -- the same tools an end user would use, and
+the very thing the userfs port was designed to unlock.
 
-This exercises:
-  - chapter 108 daemon: /bin/clipboardd binds /srv/clipboard,
-    serves SET/GET/GEN/CLEAR operations one-shot per conn.
-  - chapter 108 client: /bin/clip uses the libc helpers
-    (clip_set / clip_get / clip_generation / clip_clear).
-  - chapter 108 supervisor: init.c's supervise() table started
-    /bin/clipboardd before the shell prompt -- the very fact
-    that `clip set ...` succeeds on the first try proves the
-    bind happened ahead of the user-facing prompt.
-  - chapter 107 underneath: every clip operation is one
-    SYS_SRV_CONNECT + write + read + close on a /srv conn,
-    so this test re-exercises the IPC machinery too.
+What this exercises:
 
-The script writes "Hello chapter 108", reads it back via
-`clip get`, verifies byte-for-byte, then bumps the value to
-"world" and asserts the generation counter advanced.  Eight
-positive assertions, ~10 s wall.
+  - chapter 114 kernel side: SYS_MOUNT installed clipboardd's
+    userfs handle into the kernel namespace at /clipboard,
+    so VFS lookups under /clipboard route to the daemon.
+  - chapter 114 client side: open / write / close on
+    /clipboard/text travels through the kernel userfs glue
+    to clipboardd's on_open / on_write handlers.
+  - chapter 114 round-trip: cat /clipboard/text drains the
+    daemon's static g_data buffer back to stdout, verifying
+    on_read returns the just-written bytes.
+  - chapter 114 init wiring: init still supervises
+    /bin/clipboardd; the very fact that the file exists at
+    the prompt proves the userfs_serve() call succeeded
+    ahead of the shell.
 
-Why no GUI events: the clipboard itself is GUI-agnostic.  GUI
-integration (notepad's Ctrl-C/X/V) is covered by hand-testing
-and the chapter prose; the regression keeps to the CLI so it
-stays fast and hermetic.
+Roughly 6 assertions, ~10 s wall.
+
+Why no GUI events: the clipboard itself is GUI-agnostic.
+Cross-app paste (notepad Ctrl-V, browser Ctrl-V) is covered
+by scripts/test_clipboard_paste.py.  This regression keeps
+to the shell so it stays fast and hermetic.
 """
 import os
 import select
@@ -49,9 +52,7 @@ def cleanup():
 
 
 def boot():
-    """Launch QEMU headless.  Same shape as test_ipc.py -- the
-    clipboard is one more userspace daemon on top of the same
-    IPC machinery, so we use the same boot recipe."""
+    """Launch QEMU headless.  Same shape as test_ipc.py."""
     cleanup()
     return subprocess.Popen([
         "qemu-system-aarch64",
@@ -123,73 +124,77 @@ def main():
         print("PASS: shell prompt reached")
 
         # 2. Supervisor brought up clipboardd before the prompt.
-        #    The daemon prints "[clipboardd] ready on
-        #    /srv/clipboard" the moment srv_bind() succeeds.
-        if b"[clipboardd] ready on /srv/clipboard" not in log:
-            print("FAIL: clipboardd never advertised readiness")
+        #    libfs's userfs_serve() prints "/clipboard mounted
+        #    as id N" once SYS_MOUNT succeeds; that's the
+        #    chapter-114 readiness signal.
+        if b"/clipboard mounted" not in log:
+            print("FAIL: clipboardd never mounted /clipboard")
             print(log[-3000:].decode("ascii", "replace"))
             return 1
-        print("PASS: clipboardd is up and bound to /srv/clipboard")
+        print("PASS: /clipboard is mounted")
 
-        # 3. clip set: write a known phrase.
-        ser.sendall(b"clip set Hello chapter 108\n")
-        log = wait_for(ser, b"[clipboardd] SET gen=1", 10.0)
-        if b"[clipboardd] SET gen=1" not in log:
-            print("FAIL: clipboardd did not log the first SET")
+        # 3. Write a payload via shell `>` redirection.  This
+        #    exercises sh's open(O_TRUNC) path, which fans out
+        #    to clipboardd's on_open + on_write.  Plain `echo`
+        #    appends a trailing newline; we'll account for it
+        #    in step 4.
+        ser.sendall(b"echo Hello chapter 114 > /clipboard/text\n")
+        log = wait_for(ser, b"$ ", 5.0)
+        print("PASS: shell write to /clipboard/text returned")
+
+        # 4. Read it back via `cat`.  We expect to see the
+        #    exact line we just wrote, framed by the next
+        #    prompt.
+        ser.sendall(b"cat /clipboard/text\n")
+        log = wait_for(ser, b"Hello chapter 114", 5.0)
+        if b"Hello chapter 114" not in log:
+            print("FAIL: cat /clipboard/text did not echo back")
             print(log[-2000:].decode("ascii", "replace"))
             return 1
-        print("PASS: clip set landed (gen=1)")
+        print("PASS: cat /clipboard/text returned the payload")
 
-        # 4. clip get: read it back.  Expect exactly the joined
-        #    argv on a single line.
-        ser.sendall(b"clip get\n")
-        log = wait_for(ser, b"Hello chapter 108", 10.0)
-        if b"Hello chapter 108" not in log:
-            print("FAIL: clip get did not return the stored payload")
+        # 5. Replace the payload.  on_open with O_TRUNC must
+        #    reset g_len to 0 so the second cat returns only
+        #    the new bytes, not "world" + leftover "Hello...".
+        ser.sendall(b"echo world > /clipboard/text\n")
+        log = wait_for(ser, b"$ ", 5.0)
+        ser.sendall(b"cat /clipboard/text\n")
+        log = wait_for(ser, b"world", 5.0)
+        if b"world" not in log:
+            print("FAIL: second write did not replace the payload")
             print(log[-2000:].decode("ascii", "replace"))
             return 1
-        print("PASS: clip get returned 'Hello chapter 108' verbatim")
-
-        # 5. clip gen: should print "1" alone on a line.
-        ser.sendall(b"clip gen\n")
-        log = wait_for(ser, b"[clipboardd] GEN -> gen=1", 10.0)
-        if b"[clipboardd] GEN -> gen=1" not in log:
-            print("FAIL: clip gen did not return 1")
-            print(log[-2000:].decode("ascii", "replace"))
+        # The "Hello" of the first write must NOT be visible
+        # in the cat output that follows the second write.
+        # Slice from the last 'cat' invocation forward.
+        tail = log.split(b"cat /clipboard/text")[-1]
+        if b"Hello chapter 114" in tail:
+            print("FAIL: stale bytes from the first write leaked through")
+            print(tail[:500].decode("ascii", "replace"))
             return 1
-        print("PASS: clip gen returned 1 (daemon-side log)")
+        print("PASS: O_TRUNC reset the payload (no stale 'Hello' bytes)")
 
-        # 6. clip set again with a different value -- generation
-        #    must advance.  Tests the "did anything change?"
-        #    semantics that polling clients depend on.
-        ser.sendall(b"clip set world\n")
-        log = wait_for(ser, b"[clipboardd] SET gen=2", 10.0)
-        if b"[clipboardd] SET gen=2" not in log:
-            print("FAIL: clipboardd did not advance the generation")
-            print(log[-2000:].decode("ascii", "replace"))
+        # 6. Clear via `:` (the shell null command, which still
+        #    triggers O_TRUNC on the redirection target).  After
+        #    this, cat must NOT return "world" -- any other
+        #    serial-log noise is fine, but if the payload from
+        #    step 5 is still readable then the clear didn't land.
+        ser.sendall(b": > /clipboard/text\n")
+        log = wait_for(ser, b"$ ", 5.0)
+        ser.sendall(b"cat /clipboard/text\n")
+        log = wait_for(ser, b"$ ", 5.0)
+        tail = log.split(b"cat /clipboard/text")[-1]
+        if b"world" in tail:
+            print("FAIL: clear left the 'world' payload in /clipboard/text:")
+            print(tail[:400].decode("ascii", "replace"))
             return 1
-        print("PASS: second SET bumped generation to 2")
-
-        # 7. clip get: now returns the new payload.  Confirms
-        #    the daemon overwrote the previous slot.
-        ser.sendall(b"clip get\n")
-        log = wait_for(ser, b"[clipboardd] GET -> gen=2 len=5", 10.0)
-        if b"[clipboardd] GET -> gen=2 len=5" not in log:
-            print("FAIL: second clip get did not return 'world' (5 bytes)")
-            print(log[-2000:].decode("ascii", "replace"))
+        if b"Hello chapter 114" in tail:
+            print("FAIL: clear resurrected the 'Hello' payload:")
+            print(tail[:400].decode("ascii", "replace"))
             return 1
-        print("PASS: second clip get returned 'world' (5 bytes)")
+        print("PASS: : > /clipboard/text cleared the payload")
 
-        # 8. clip clear: empties the clipboard AND advances gen.
-        ser.sendall(b"clip clear\n")
-        log = wait_for(ser, b"[clipboardd] CLEAR gen=3", 10.0)
-        if b"[clipboardd] CLEAR gen=3" not in log:
-            print("FAIL: clip clear did not log gen=3")
-            print(log[-2000:].decode("ascii", "replace"))
-            return 1
-        print("PASS: clip clear bumped generation to 3 and emptied payload")
-
-        print("\nMILESTONE 90b (clipboard daemon): ALL TESTS PASSED")
+        print("\nCHAPTER 114 (clipboard as userfs): ALL TESTS PASSED")
         return 0
     finally:
         try:

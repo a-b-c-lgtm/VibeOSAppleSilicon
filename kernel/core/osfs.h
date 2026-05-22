@@ -83,4 +83,14 @@ long osfs_read(uint32_t start_sector, uint32_t size_bytes,
 size_t osfs_file_count(void);
 const struct osfs_dirent *osfs_dirent_at(size_t i);
 
+/* Chapter 113 — vtable adapter for the mount table.  OSFS-1 is
+ * read-only and historically lives at both `/mnt` and `/bin`,
+ * so `osfs1_register_mount()` registers the same fs_ops twice
+ * with MOUNT_RO and a NULL cookie.  Callers must invoke
+ * osfs_init first; otherwise osfs_op_open / _listdir return
+ * -ENOENT_VFS / -1 cleanly via the `osfs_present()` checks. */
+struct fs_ops;
+extern const struct fs_ops osfs1_fs_ops;
+void osfs1_register_mount(void);
+
 #endif /* OSFS_H */

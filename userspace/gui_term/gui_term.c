@@ -435,9 +435,8 @@ int main(int argc, char **argv)
                 if (ev.arg0 == 0x16 /* Ctrl-V */) {
                     static uint8_t cb[CLIP_DATA_MAX];
                     uint32_t cblen = 0;
-                    char mime[CLIP_MIME_MAX];
-                    int gen = clip_get(cb, sizeof(cb), &cblen, mime);
-                    if (gen >= 0 && cblen > 0) {
+                    int n = clip_get(cb, sizeof(cb), &cblen);
+                    if (n >= 0 && cblen > 0) {
                         static uint8_t out_buf[CLIP_DATA_MAX];
                         uint32_t out_len = 0;
                         for (uint32_t i = 0; i < cblen; i++) {

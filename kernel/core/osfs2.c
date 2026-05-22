@@ -920,3 +920,205 @@ int osfs2_fsync(uint32_t ino)
     return osfs2_cache_flush();
 }
 
+/* ------------------------------------------------------------------
+ * Chapter 113 — struct fs_ops adapter.
+ *
+ * OSFS-2 is the writable on-disk filesystem, mounted at `/data`.
+ * Unlike OSFS-1 / tmpfs it has subdirectories, so the adapter
+ * has to walk path components in `is_dir`, `listdir`, and `load`.
+ *
+ * Path conventions inside the rel string passed by vfs_resolve:
+ *   "/data"        -> rel = ""        (mount root)
+ *   "/data/"       -> rel = "/"       (mount root, trailing slash)
+ *   "/data/foo"    -> rel = "/foo"    (file or subdir at root)
+ *   "/data/sub/x"  -> rel = "/sub/x"  (file under subdir)
+ *
+ * osfs2_lookup accepts the bare path WITHOUT a leading slash
+ * and returns 0 for "" (= the root inode), so we strip the
+ * leading '/' once at entry.
+ * ------------------------------------------------------------------ */
+
+#include "vfs.h"
+#include "heap.h"
+
+static const char *osfs2_strip_slash(const char *rel)
+{
+    if (!rel) return "";
+    if (rel[0] == '/') return rel + 1;
+    return rel;
+}
+
+static long osfs2_op_open(void *cookie, const char *rel, int flags,
+                          struct fd_entry *out)
+{
+    (void)cookie;
+    if (!out) return -EINVAL_VFS;
+    const char *bare = osfs2_strip_slash(rel);
+    if (!*bare) return -EINVAL_VFS;
+    if (!osfs2_present()) return -ENOENT_VFS;
+    uint32_t ino = osfs2_lookup(bare);
+    if (ino == 0) {
+        if (!(flags & O_CREAT)) return -ENOENT_VFS;
+        ino = osfs2_create(bare);
+        if (ino == 0) return -ENOMEM_VFS;
+    } else if ((flags & O_TRUNC) && !(flags & O_APPEND)) {
+        if (osfs2_truncate(ino, 0) != 0) return -EIO;
+    }
+    out->kind        = FD_OSFS2_FILE;
+    out->offset      = 0;
+    out->ramfs_index = -1;
+    out->osfs_start  = 0;
+    out->osfs_size   = 0;
+    out->pipe        = NULL;
+    out->socket_cid  = -1;
+    out->pty         = NULL;
+    out->osfs2_ino   = ino;
+    out->srv_l       = NULL;
+    out->srv_c       = NULL;
+    out->srv_is_service = 0;
+    return 0;
+}
+
+static long osfs2_op_read(void *cookie, struct fd_entry *e,
+                          void *buf, size_t n)
+{
+    (void)cookie;
+    if (!e || !buf) return -EINVAL_VFS;
+    long got = osfs2_read(e->osfs2_ino, e->offset, buf, n);
+    if (got > 0) e->offset += (uint64_t)got;
+    return got;
+}
+
+static long osfs2_op_write(void *cookie, struct fd_entry *e,
+                           const void *buf, size_t n)
+{
+    (void)cookie;
+    if (!e || !buf) return -EINVAL_VFS;
+    long wr = osfs2_write(e->osfs2_ino, e->offset, buf, n);
+    if (wr > 0) e->offset += (uint64_t)wr;
+    return wr;
+}
+
+static long osfs2_op_close(void *cookie, struct fd_entry *e)
+{
+    (void)cookie; (void)e;
+    return 0;
+}
+
+static int osfs2_op_listdir(void *cookie, const char *rel, int idx,
+                            char *name, size_t cap, uint32_t *type)
+{
+    (void)cookie;
+    if (!osfs2_present()) return -1;
+    const char *sub = osfs2_strip_slash(rel);
+    uint32_t parent_ino;
+    if (!*sub) {
+        parent_ino = OSFS2_INODE_ROOT;
+    } else {
+        parent_ino = osfs2_lookup(sub);
+        if (parent_ino == 0) return -1;
+    }
+    /* Walk dirent-by-dirent skipping holes until the `idx`-th
+     * non-empty entry.  Cheap: directories are tiny. */
+    uint32_t walk = 0;
+    char     n2[OSFS2_NAME_MAX];
+    uint32_t size = 0;
+    uint32_t t = 0;
+    int      cur = 0;
+    while (1) {
+        int rc = osfs2_listdir_at(parent_ino, &walk, n2, sizeof(n2),
+                                  &size, &t);
+        if (rc <= 0) return -1;
+        if (cur == idx) break;
+        cur++;
+    }
+    size_t i = 0;
+    for (; i + 1 < cap && n2[i]; i++) name[i] = n2[i];
+    name[i] = '\0';
+    if (type) *type = t;
+    return (int)i;
+}
+
+static int osfs2_op_unlink(void *cookie, const char *rel)
+{
+    (void)cookie;
+    const char *bare = osfs2_strip_slash(rel);
+    if (!*bare) return -EINVAL_VFS;
+    if (!osfs2_present()) return -ENOENT_VFS;
+    if (osfs2_unlink(bare) != 0) return -ENOENT_VFS;
+    return 0;
+}
+
+static int osfs2_op_mkdir(void *cookie, const char *rel)
+{
+    (void)cookie;
+    const char *bare = osfs2_strip_slash(rel);
+    if (!*bare) return -EINVAL_VFS;
+    if (!osfs2_present()) return -ENOENT_VFS;
+    /* osfs2_mkdir returns the new inode on success, 0 on failure.
+     * Matches the pre-113 syscall behaviour, which returned
+     * -ENOENT_VFS on rc==0. */
+    if (osfs2_mkdir(bare) == 0) return -ENOENT_VFS;
+    return 0;
+}
+
+static int osfs2_op_is_dir(void *cookie, const char *rel)
+{
+    (void)cookie;
+    const char *bare = osfs2_strip_slash(rel);
+    if (!*bare) return 1;   /* mount root */
+    if (!osfs2_present()) return 0;
+    uint32_t ino = osfs2_lookup(bare);
+    if (ino == 0) return 0;
+    /* osfs2 has no public stat() yet, but we can probe by
+     * attempting a 1-entry listdir: a non-directory returns -1
+     * (osfs2_listdir_at refuses non-DIR inodes), a directory
+     * returns >=0. */
+    uint32_t walk = 0;
+    char     n2[OSFS2_NAME_MAX];
+    uint32_t size = 0, t = 0;
+    int      rc = osfs2_listdir_at(ino, &walk, n2, sizeof(n2), &size, &t);
+    return rc >= 0 ? 1 : 0;
+}
+
+static long osfs2_op_load(void *cookie, const char *rel,
+                          uint8_t **out_buf, size_t *out_size)
+{
+    (void)cookie;
+    if (!out_buf || !out_size) return -EINVAL_VFS;
+    *out_buf = NULL; *out_size = 0;
+    if (!osfs2_present()) return -ENOENT_VFS;
+    const char *bare = osfs2_strip_slash(rel);
+    if (!*bare) return -ENOENT_VFS;
+    uint32_t ino = osfs2_lookup(bare);
+    if (ino == 0) return -ENOENT_VFS;
+    uint32_t sz = osfs2_size(ino);
+    uint8_t *buf = (uint8_t *)kmalloc((size_t)sz);
+    if (!buf && sz > 0) return -ENOMEM_VFS;
+    if (sz > 0) {
+        long got = osfs2_read(ino, 0, buf, (size_t)sz);
+        if (got < 0 || (uint32_t)got != sz) { kfree(buf); return -EIO; }
+    }
+    *out_buf = buf;
+    *out_size = (size_t)sz;
+    return 0;
+}
+
+const struct fs_ops osfs2_fs_ops = {
+    .open    = osfs2_op_open,
+    .read    = osfs2_op_read,
+    .write   = osfs2_op_write,
+    .close   = osfs2_op_close,
+    .lseek   = NULL,
+    .listdir = osfs2_op_listdir,
+    .unlink  = osfs2_op_unlink,
+    .mkdir   = osfs2_op_mkdir,
+    .is_dir  = osfs2_op_is_dir,
+    .load    = osfs2_op_load,
+};
+
+void osfs2_register_mount(void)
+{
+    (void)vfs_mount_register("/data", &osfs2_fs_ops, NULL, 0u);
+}
+

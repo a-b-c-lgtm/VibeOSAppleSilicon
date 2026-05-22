@@ -1,0 +1,493 @@
+/*
+ * kernel/core/userfs.c — userspace filesystem servers (chapter 114).
+ *
+ * Implements the kernel half of the simplified-9P RPC: the
+ * `g_userfs_ops` vtable, request/reply marshalling over a pair
+ * of anonymous pipes, and per-channel serialisation.
+ *
+ * The cookie passed to every `g_userfs_ops` method is a
+ * `struct userfs_channel *` allocated by sys_mount.  Each
+ * channel owns its request and reply pipes; the daemon-side
+ * fds are installed in the daemon's fd_table by sys_mount.
+ *
+ * Per-fd state for an open userfs file is carried in the
+ * existing `fd_entry` via two chapter-114 fields:
+ *   - `userfs_ch`     points at the channel
+ *   - `userfs_handle` is the daemon-allocated handle id
+ * Read/write/close dispatch in vfs.c / syscall.c check for
+ * `kind == FD_USERFS_FILE` and call back into userfs.c.
+ */
+
+#include "userfs.h"
+#include "vfs.h"
+#include "pipe.h"
+#include "heap.h"
+#include "thread.h"
+#include "uaccess.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
+/* ------------------------------------------------------------------
+ * Tiny helpers — kept local so this file is self-contained and
+ * doesn't pull in libc-shaped headers.
+ * ------------------------------------------------------------------ */
+
+static size_t k_strlen(const char *s)
+{
+    size_t n = 0;
+    while (s && s[n]) n++;
+    return n;
+}
+
+/* ------------------------------------------------------------------
+ * Channel lifecycle.
+ * ------------------------------------------------------------------ */
+
+struct userfs_channel *userfs_channel_create(const char *prefix,
+                                             int owner_pid)
+{
+    struct userfs_channel *c =
+        (struct userfs_channel *)kmalloc(sizeof(*c));
+    if (!c) return NULL;
+    /* Field-zero per the chapter-113 init contract; avoids the
+     * GCC freestanding `= {0}` -> memset trap and keeps stale
+     * pointers from leaking into the channel state. */
+    c->req_pipe   = NULL;
+    c->rsp_pipe   = NULL;
+    c->owner_pid  = owner_pid;
+    c->in_flight  = 0;
+    c->next_tag   = 1;
+    c->alive     = 0;
+    c->open_fds  = 0;
+    c->prefix    = prefix;
+
+    c->req_pipe = pipe_alloc();
+    if (!c->req_pipe) { kfree(c); return NULL; }
+    c->rsp_pipe = pipe_alloc();
+    if (!c->rsp_pipe) {
+        /* Drop both refcounts on the half-allocated channel.  We
+         * own both ends (refs = 1+1) so two unrefs free the pipe. */
+        pipe_unref(c->req_pipe, PIPE_REF_R);
+        pipe_unref(c->req_pipe, PIPE_REF_W);
+        kfree(c);
+        return NULL;
+    }
+    c->alive = 1;
+    return c;
+}
+
+void userfs_channel_destroy(struct userfs_channel *c)
+{
+    if (!c) return;
+    /* The channel owns exactly two pipe refs: the writer end
+     * of req_pipe (it writes requests to the daemon) and the
+     * reader end of rsp_pipe (it reads replies from the
+     * daemon).  The matching opposite ends were transferred
+     * to the daemon's fd table in sys_mount.  Drop only the
+     * refs we own — dropping the daemon's side here would
+     * double-unref and corrupt the pipe refcount.
+     *
+     * Order matters: drop the writer end of req_pipe FIRST
+     * so any daemon thread blocked in pipe_read sees EOF
+     * promptly.  Then drop the reader end of rsp_pipe so any
+     * daemon write that's mid-flight sees EPIPE. */
+    if (c->req_pipe) {
+        pipe_unref(c->req_pipe, PIPE_REF_W);
+        c->req_pipe = NULL;
+    }
+    if (c->rsp_pipe) {
+        pipe_unref(c->rsp_pipe, PIPE_REF_R);
+        c->rsp_pipe = NULL;
+    }
+    kfree(c);
+}
+
+/* ------------------------------------------------------------------
+ * Wire-level call.  Holds the channel lock across the entire
+ * request/reply round-trip so v1 is strictly serialised.
+ * ------------------------------------------------------------------ */
+
+int userfs_call(struct userfs_channel *c,
+                uint32_t op, uint32_t handle, uint32_t flags,
+                uint64_t offset,
+                const void *req_payload, uint32_t req_len,
+                struct p9_msg *rsp_out,
+                void *rsp_payload, uint32_t cap)
+{
+    if (!c) return -EINVAL_VFS;
+    if (req_len > P9_MAX_PAYLOAD) return -EINVAL_VFS;
+    if (!c->alive) return -EIO;
+
+    /* Forbid the daemon serving this mount from re-entering its
+     * own filesystem.  Step 6 of the chapter-114 plan expands
+     * this to cover transitively held mounts; for v1 a direct
+     * pid match is enough to stop the obvious deadlock. */
+    struct thread *me = thread_current();
+    if (me && c->owner_pid > 0 && me->id == c->owner_pid)
+        return -EDEADLK;
+
+    /* Serialise concurrent callers.  We hold logical ownership
+     * of the channel from here until the matching release at
+     * the bottom; a contender blocks on the address of
+     * `in_flight` and is woken when we clear it.  This is the
+     * scheduler-friendly equivalent of a spinlock and is the
+     * only thing that works under our cooperative model: a
+     * busy-spin around the blocking pipe_read below would
+     * starve the daemon (the spinning second caller's CPU
+     * never picks up the daemon thread and the reply never
+     * arrives).  See repo memory userfs-no-spinlock-across-
+     * blocking-io for the diagnosis. */
+    {
+        uint64_t f = thread_global_lock();
+        while (c->in_flight) {
+            thread_block_on_held(&c->in_flight, f);
+            f = thread_global_lock();
+        }
+        c->in_flight = 1;
+        thread_global_unlock(f);
+    }
+    if (!c->alive) {
+        c->in_flight = 0;
+        thread_wake_blocked((void *)&c->in_flight);
+        return -EIO;
+    }
+
+    struct p9_msg req;
+    req.op       = op;
+    req.tag      = c->next_tag++;
+    req.handle   = handle;
+    req.flags    = flags;
+    req.offset   = offset;
+    req.length   = req_len;
+    req.status   = 0;
+
+    /* Write header then payload.  pipe_write loops internally
+     * so partial writes only happen if readers vanish.  If
+     * either write fails, mark the channel dead so subsequent
+     * calls short-circuit. */
+    long w = pipe_write(c->req_pipe, &req, sizeof req);
+    if (w != (long)sizeof req) {
+        c->alive = 0;
+        c->in_flight = 0;
+        thread_wake_blocked(&c->in_flight);
+        return -EIO;
+    }
+    if (req_len > 0) {
+        w = pipe_write(c->req_pipe, req_payload, req_len);
+        if (w != (long)req_len) {
+            c->alive = 0;
+            c->in_flight = 0;
+            thread_wake_blocked(&c->in_flight);
+            return -EIO;
+        }
+    }
+
+    /* Read reply header.  pipe_read may return short if the
+     * writer-side closed; we loop to fill the whole header. */
+    struct p9_msg rsp;
+    uint8_t *hdrp = (uint8_t *)&rsp;
+    size_t got = 0;
+    while (got < sizeof rsp) {
+        long r = pipe_read(c->rsp_pipe, hdrp + got, sizeof rsp - got);
+        if (r <= 0) {
+            c->alive = 0;
+            c->in_flight = 0;
+            thread_wake_blocked(&c->in_flight);
+            return -EIO;
+        }
+        got += (size_t)r;
+    }
+
+    /* Sanity-check reply matches the request. */
+    if ((rsp.op & ~P9_REPLY) != op || (rsp.op & P9_REPLY) == 0 ||
+        rsp.tag != req.tag) {
+        c->alive = 0;
+        c->in_flight = 0;
+        thread_wake_blocked(&c->in_flight);
+        return -EIO;
+    }
+    if (rsp.length > P9_MAX_PAYLOAD) {
+        c->alive = 0;
+        c->in_flight = 0;
+        thread_wake_blocked(&c->in_flight);
+        return -EIO;
+    }
+
+    /* Drain payload — even if the caller can't store it, we
+     * must read it off the pipe so the channel stays aligned
+     * for the next request. */
+    uint8_t scratch[64];
+    uint8_t *dst = (uint8_t *)rsp_payload;
+    uint32_t take = rsp.length < cap ? rsp.length : cap;
+    uint32_t drop = rsp.length - take;
+    uint32_t done = 0;
+    while (done < take) {
+        long r = pipe_read(c->rsp_pipe, dst + done, take - done);
+        if (r <= 0) {
+            c->alive = 0;
+            c->in_flight = 0;
+            thread_wake_blocked(&c->in_flight);
+            return -EIO;
+        }
+        done += (uint32_t)r;
+    }
+    while (drop > 0) {
+        uint32_t want = drop < sizeof scratch ? drop : sizeof scratch;
+        long r = pipe_read(c->rsp_pipe, scratch, want);
+        if (r <= 0) {
+            c->alive = 0;
+            c->in_flight = 0;
+            thread_wake_blocked(&c->in_flight);
+            return -EIO;
+        }
+        drop -= (uint32_t)r;
+    }
+
+    if (rsp_out) *rsp_out = rsp;
+    c->in_flight = 0;
+    thread_wake_blocked(&c->in_flight);
+    return 0;
+}
+
+/* ------------------------------------------------------------------
+ * fs_ops vtable wired through userfs_call.
+ *
+ * Each method packages its arguments into a p9_msg request,
+ * forwards through userfs_call, and unwraps the reply.  The
+ * dispatcher in vfs.c / syscall.c hands us `rel` already with
+ * its leading slash trimmed by the adapter convention (or empty
+ * if `path == prefix`); we forward it as the request payload
+ * unchanged so the daemon sees exactly what the dispatcher saw.
+ * ------------------------------------------------------------------ */
+
+static long userfs_op_open(void *cookie, const char *rel, int flags,
+                           struct fd_entry *out)
+{
+    struct userfs_channel *c = (struct userfs_channel *)cookie;
+    uint32_t plen = (uint32_t)k_strlen(rel);
+    if (plen > P9_MAX_PAYLOAD) return -EINVAL_VFS;
+
+    struct p9_msg rsp;
+    int r = userfs_call(c, P9_OP_OPEN, 0, (uint32_t)flags, 0,
+                        rel, plen, &rsp, NULL, 0);
+    if (r < 0) return r;
+    if (rsp.status < 0) return (long)rsp.status;
+
+    /* Field-zero every fd slot per the chapter-113 init contract. */
+    out->kind         = FD_USERFS_FILE;
+    out->offset       = 0;
+    out->ramfs_index  = -1;
+    out->osfs_start   = 0;
+    out->osfs_size    = 0;
+    out->pipe         = NULL;
+    out->socket_cid   = -1;
+    out->pty          = NULL;
+    out->osfs2_ino    = 0;
+    out->srv_l        = NULL;
+    out->srv_c        = NULL;
+    out->srv_is_service = 0;
+    out->userfs_ch     = c;
+    out->userfs_handle = rsp.handle;
+    c->open_fds++;
+    return 0;
+}
+
+static long userfs_op_read(void *cookie, struct fd_entry *e,
+                           void *buf, size_t n)
+{
+    struct userfs_channel *c = (struct userfs_channel *)cookie;
+    serial_puts("[k] userfs_op_read n=");
+    serial_puthex((uint64_t)n);
+    serial_puts(" handle=");
+    serial_puthex((uint64_t)e->userfs_handle);
+    serial_puts("\n");
+    if (n > P9_MAX_PAYLOAD) n = P9_MAX_PAYLOAD;
+    if (n == 0) return 0;
+
+    /* Stage the reply into a heap buffer instead of letting
+     * pipe_read poke the caller's user pointer directly.  Two
+     * reasons:
+     *   1. pipe_read uses raw byte-store loops with no
+     *      fault-recovery, so a COW-shared or lazy-anon page
+     *      in the caller's address space (the common case for
+     *      a fresh fork+exec child's .bss reads) traps the
+     *      kernel.
+     *   2. copy_to_user runs the existing prefault_user_write
+     *      path which breaks COW shares and installs lazy anon
+     *      pages cleanly, exactly the discipline every other
+     *      "kernel writes into a user buf" syscall uses
+     *      (handle_read for tmpfs, pty_master_read for ptys,
+     *      ...).
+     * The kmalloc is small (<= P9_MAX_PAYLOAD = 2048) and
+     * symmetric with the heap-allocated SRV write path in
+     * sys_write. */
+    void *kbuf = kmalloc(n);
+    if (!kbuf) return -ENOMEM_VFS;
+
+    struct p9_msg rsp;
+    /* For READ the request carries no payload; the desired byte
+     * count rides in `flags` so the daemon knows how many
+     * bytes to return.  `length` stays 0 (matches its "payload
+     * bytes following this header" meaning). */
+    int r = userfs_call(c, P9_OP_READ, e->userfs_handle, (uint32_t)n,
+                        e->offset, NULL, 0,
+                        &rsp, kbuf, (uint32_t)n);
+    if (r < 0) { kfree(kbuf); return r; }
+    if (rsp.status < 0) { kfree(kbuf); return (long)rsp.status; }
+    long got = (long)rsp.length;
+    if (got > (long)n) got = (long)n;
+    if (got > 0) {
+        if (copy_to_user((uint64_t)(uintptr_t)buf, kbuf, (size_t)got) < 0) {
+            kfree(kbuf);
+            return -EFAULT;
+        }
+        e->offset += (uint64_t)got;
+    }
+    kfree(kbuf);
+    return got;
+}
+
+static long userfs_op_write(void *cookie, struct fd_entry *e,
+                            const void *buf, size_t n)
+{
+    struct userfs_channel *c = (struct userfs_channel *)cookie;
+    if (n > P9_MAX_PAYLOAD) n = P9_MAX_PAYLOAD;
+
+    struct p9_msg rsp;
+    int r = userfs_call(c, P9_OP_WRITE, e->userfs_handle, 0,
+                        e->offset, buf, (uint32_t)n,
+                        &rsp, NULL, 0);
+    if (r < 0) return r;
+    if (rsp.status < 0) return (long)rsp.status;
+    /* WRITE replies carry the accepted byte count in `flags`;
+     * `length` is always 0 because no payload follows the
+     * header (see userspace/libfs/userfs.c WRITE handler). */
+    long w = (long)rsp.flags;
+    if (w > (long)n) w = (long)n;
+    if (w > 0) e->offset += (uint64_t)w;
+    return w;
+}
+
+static long userfs_op_close(void *cookie, struct fd_entry *e)
+{
+    struct userfs_channel *c = (struct userfs_channel *)cookie;
+    struct p9_msg rsp;
+    /* Tell the daemon to drop its side, but ignore protocol-
+     * level errors: the fd is going away regardless and refusing
+     * to close would leak a slot. */
+    (void)userfs_call(c, P9_OP_CLOSE, e->userfs_handle, 0, 0,
+                      NULL, 0, &rsp, NULL, 0);
+    if (c->open_fds > 0) c->open_fds--;
+    return 0;
+}
+
+static long userfs_op_lseek(void *cookie, struct fd_entry *e,
+                            int64_t off, int whence)
+{
+    (void)cookie;
+    /* lseek is purely fd-local — the daemon doesn't see it.
+     * SEEK_SET = 0, SEEK_CUR = 1, SEEK_END = 2.  v1 supports
+     * SEEK_SET and SEEK_CUR; SEEK_END would need the daemon to
+     * report file size out-of-band. */
+    if (whence == 0) {
+        if (off < 0) return -EINVAL_VFS;
+        e->offset = (uint64_t)off;
+    } else if (whence == 1) {
+        int64_t cur = (int64_t)e->offset + off;
+        if (cur < 0) return -EINVAL_VFS;
+        e->offset = (uint64_t)cur;
+    } else {
+        return -EINVAL_VFS;
+    }
+    return (long)e->offset;
+}
+
+static int userfs_op_listdir(void *cookie, const char *rel, int idx,
+                             char *name, size_t cap, uint32_t *type)
+{
+    struct userfs_channel *c = (struct userfs_channel *)cookie;
+    uint32_t plen = (uint32_t)k_strlen(rel);
+    if (plen > P9_MAX_PAYLOAD) return -EINVAL_VFS;
+
+    struct p9_msg rsp;
+    /* listdir piggybacks: `flags` carries the entry index from
+     * the kernel; reply's `flags` carries the entry type (0/1)
+     * and payload carries the name. */
+    int r = userfs_call(c, P9_OP_LISTDIR, 0, (uint32_t)idx, 0,
+                        rel, plen, &rsp,
+                        name, (uint32_t)cap);
+    if (r < 0) return r;
+    if (rsp.status < 0) return (int)rsp.status;
+    if (type) *type = rsp.flags;
+    /* NUL-terminate within cap. */
+    if (cap > 0) {
+        size_t len = rsp.length < cap ? rsp.length : cap - 1;
+        name[len] = '\0';
+        return (int)len;
+    }
+    return (int)rsp.length;
+}
+
+static int userfs_op_unlink(void *cookie, const char *rel)
+{
+    struct userfs_channel *c = (struct userfs_channel *)cookie;
+    uint32_t plen = (uint32_t)k_strlen(rel);
+    if (plen > P9_MAX_PAYLOAD) return -EINVAL_VFS;
+    struct p9_msg rsp;
+    int r = userfs_call(c, P9_OP_UNLINK, 0, 0, 0,
+                        rel, plen, &rsp, NULL, 0);
+    if (r < 0) return r;
+    return (int)rsp.status;
+}
+
+static int userfs_op_mkdir(void *cookie, const char *rel)
+{
+    struct userfs_channel *c = (struct userfs_channel *)cookie;
+    uint32_t plen = (uint32_t)k_strlen(rel);
+    if (plen > P9_MAX_PAYLOAD) return -EINVAL_VFS;
+    struct p9_msg rsp;
+    int r = userfs_call(c, P9_OP_MKDIR, 0, 0, 0,
+                        rel, plen, &rsp, NULL, 0);
+    if (r < 0) return r;
+    return (int)rsp.status;
+}
+
+static int userfs_op_is_dir(void *cookie, const char *rel)
+{
+    struct userfs_channel *c = (struct userfs_channel *)cookie;
+    uint32_t plen = (uint32_t)k_strlen(rel);
+    if (plen > P9_MAX_PAYLOAD) return -EINVAL_VFS;
+    struct p9_msg rsp;
+    int r = userfs_call(c, P9_OP_IS_DIR, 0, 0, 0,
+                        rel, plen, &rsp, NULL, 0);
+    if (r < 0) return r;
+    if (rsp.status < 0) return (int)rsp.status;
+    return (int)rsp.flags;
+}
+
+static long userfs_op_load(void *cookie, const char *rel,
+                           uint8_t **out_data, size_t *out_len)
+{
+    /* LOAD pulls the entire file in one round-trip.  v1 caps at
+     * P9_MAX_PAYLOAD per request; larger files would need
+     * chunked reads (which is what the exec path already does
+     * via vfs_open + repeated vfs_read).  No production user of
+     * vfs_load needs userfs paths yet, so return -ENOSYS until a
+     * caller wires up the chunked variant. */
+    (void)cookie; (void)rel; (void)out_data; (void)out_len;
+    return -ENOSYS_VFS;
+}
+
+const struct fs_ops g_userfs_ops = {
+    .open    = userfs_op_open,
+    .read    = userfs_op_read,
+    .write   = userfs_op_write,
+    .close   = userfs_op_close,
+    .lseek   = userfs_op_lseek,
+    .listdir = userfs_op_listdir,
+    .unlink  = userfs_op_unlink,
+    .mkdir   = userfs_op_mkdir,
+    .is_dir  = userfs_op_is_dir,
+    .load    = userfs_op_load,
+};

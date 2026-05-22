@@ -219,4 +219,11 @@ int osfs2_listdir_at(uint32_t parent_ino, uint32_t *idx,
  * succeed. */
 int osfs2_fsync(uint32_t ino);
 
+/* Chapter 113 — vtable adapter for the mount table.  OSFS-2 is
+ * writable, supports subdirectories, mkdir, and unlink.  Mounted
+ * at `/data` with flags=0 (writable). */
+struct fs_ops;
+extern const struct fs_ops osfs2_fs_ops;
+void osfs2_register_mount(void);
+
 #endif /* OSFS2_H */

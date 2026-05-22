@@ -43,6 +43,32 @@
 /* Chapter 104: returned by SYS_SOCKET_LISTEN when another
  * conn already owns the requested port.  Matches POSIX. */
 #define EADDRINUSE  98
+/* Chapter 113 — returned by the mount-table dispatcher when a
+ * caller writes to a MOUNT_RO mount.  Same numeric value as
+ * the existing EROFS so userspace callers comparing against
+ * either name keep working. */
+#define EROFS_VFS   30
+/* Chapter 113 — returned by the dispatcher when a driver does
+ * not implement the requested op (e.g. mkdir on procfs).  Matches
+ * POSIX ENOSYS. */
+#define ENOSYS_VFS  38
+
+/* Chapter 114 — additional errnos for userspace filesystem
+ * servers (`SYS_MOUNT` / `SYS_UMOUNT` and the userfs vtable).
+ * Names + values mirror Linux's <errno.h> so userspace callers
+ * comparing against either header keep working. */
+#ifndef EEXIST
+#define EEXIST      17    /* prefix already mounted */
+#endif
+#ifndef EBUSY_VFS
+#define EBUSY_VFS   16    /* umount with open fds against the mount */
+#endif
+#ifndef EDEADLK
+#define EDEADLK     35    /* daemon recursed into its own mount */
+#endif
+#ifndef ETIMEDOUT_VFS
+#define ETIMEDOUT_VFS 110 /* userfs request exceeded its deadline */
+#endif
 
 /* Forward decl — defined in thread.h, but kept opaque here. */
 struct thread;
@@ -53,6 +79,128 @@ struct pipe;
 /* Forward decls — defined in srv.h (chapter 107). */
 struct srv_listen;
 struct srv_conn;
+
+/* Forward decl — defined in userfs.h (chapter 114). */
+struct userfs_channel;
+
+/* Forward decl — defined later in this file.  Filesystem drivers
+ * receive a pointer to the per-fd entry so they can stash their
+ * own state in the per-kind fields (osfs2_ino, etc). */
+struct fd_entry;
+
+/* ------------------------------------------------------------------
+ * Chapter 113 — mount table + struct fs_ops vtable.
+ *
+ * Replaces the per-syscall prefix ladders that had grown across
+ * vfs.c and syscall.c (one branch per filesystem in vfs_open /
+ * vfs_read / vfs_load / sys_listdir_at / sys_unlink / sys_mkdir).
+ *
+ * Each filesystem driver supplies a `struct fs_ops` whose methods
+ * take a driver-private `cookie` plus the path *relative to the
+ * mount point* (e.g. for mount prefix "/data" and path
+ * "/data/foo", rel is "/foo").  The dispatcher in vfs.c does a
+ * longest-prefix match on the mount table and forwards.
+ *
+ * Unimplemented methods are NULL; the dispatcher returns
+ * -ENOSYS_VFS when a caller asks for an unimplemented op (e.g.
+ * mkdir on procfs).
+ *
+ * Step 1 of the chapter-113 sequence introduces the types, the
+ * resolver, and an empty mount table.  Drivers are wired in over
+ * the following steps (procfs, tmpfs, OSFS-1, OSFS-2, ramfs).
+ * Callers continue to use the legacy prefix ladders until each
+ * filesystem is ported.
+ * ------------------------------------------------------------------ */
+
+#define MOUNT_MAX   16
+
+/* Mount flags.  Bit field; OR together. */
+#define MOUNT_RO    0x1u   /* writes return -EROFS_VFS */
+
+struct fs_ops {
+    /* Open `rel` against the mount.  Populates `out` (kind +
+     * driver-private fields) on success.  Returns 0 or a
+     * negative errno. */
+    long (*open)    (void *cookie, const char *rel, int flags,
+                     struct fd_entry *out);
+
+    /* Read / write / close / lseek against an fd previously
+     * populated by this driver's `open`.  These are reached only
+     * after the dispatcher confirms the fd was opened through the
+     * matching mount, so the driver may rely on its own per-fd
+     * fields being valid. */
+    long (*read)    (void *cookie, struct fd_entry *e,
+                     void *buf, size_t n);
+    long (*write)   (void *cookie, struct fd_entry *e,
+                     const void *buf, size_t n);
+    long (*close)   (void *cookie, struct fd_entry *e);
+    long (*lseek)   (void *cookie, struct fd_entry *e,
+                     int64_t off, int whence);
+
+    /* Enumerate entries under `rel`.  `idx` walks 0..N-1; on
+     * success returns the byte length written to `name` and sets
+     * *type to a filesystem-specific tag (0 = file, 1 = dir).
+     * Returns -ENOENT_VFS past the end.  `rel` of "" or "/" means
+     * the mount root. */
+    int  (*listdir) (void *cookie, const char *rel, int idx,
+                     char *name, size_t cap, uint32_t *type);
+
+    /* Mutating ops; may be NULL on read-only filesystems. */
+    int  (*unlink)  (void *cookie, const char *rel);
+    int  (*mkdir)   (void *cookie, const char *rel);
+
+    /* Predicate: 1 if `rel` is a directory, 0 if a file, negative
+     * errno on lookup failure. */
+    int  (*is_dir)  (void *cookie, const char *rel);
+
+    /* Load an entire file into a freshly kheap-allocated buffer.
+     * Caller owns the returned buffer.  Used by the exec path
+     * (sys_spawn / sys_execv) and by tools like /bin/cat that
+     * want the whole file at once. */
+    long (*load)    (void *cookie, const char *rel,
+                     uint8_t **out_data, size_t *out_len);
+};
+
+struct mount {
+    const char          *prefix;   /* e.g. "/data", "/proc", "/" */
+    const struct fs_ops *ops;
+    void                *cookie;   /* driver-private; passed to every method */
+    uint32_t             flags;
+};
+
+/* Register a mount.  Returns 0 on success, -EINVAL_VFS for a
+ * malformed prefix, -ENOSPC if the table is full.  Prefix
+ * conventions:
+ *   - Must start with '/'.
+ *   - Must NOT have a trailing '/' (use "/data", not "/data/").
+ *   - The single character "/" is the root mount; it matches
+ *     anything that no longer prefix covers.
+ * Idempotent registration is the caller's responsibility; the
+ * dispatcher's longest-prefix logic will route to the most
+ * recently registered duplicate. */
+int vfs_mount_register(const char *prefix, const struct fs_ops *ops,
+                       void *cookie, uint32_t flags);
+
+/* Longest-prefix-match against the mount table.  Returns NULL
+ * if no mount covers the path (which becomes impossible once
+ * the root mount "/" has been registered in step 5).  On a
+ * match, *rel_out is the suffix of `path` after the prefix —
+ * still beginning with '/' (or "" if path == prefix exactly).
+ * `rel_out` may be NULL if the caller doesn't need it. */
+const struct mount *vfs_resolve(const char *path, const char **rel_out);
+
+/* Mount-table enumeration, used by SYS_MOUNTS (step 6) and by
+ * kernel-side diagnostics.  Returns the number of registered
+ * mounts; vfs_mount_at(i) returns the mount or NULL if i is
+ * out of range. */
+int                  vfs_mount_count(void);
+const struct mount  *vfs_mount_at(int idx);
+
+/* Remove the mount at slot `idx`, compacting later slots
+ * down by one.  Used by SYS_UMOUNT.  The caller is
+ * responsible for any teardown of the cookie (e.g. freeing
+ * a userfs_channel).  Returns 0 / -EINVAL. */
+int                  vfs_mount_remove(int idx);
 
 /* What kind of object an fd refers to.  Determines which read /
  * write / close path runs.  FD_CONSOLE covers fd 0/1/2 by
@@ -74,10 +222,12 @@ enum fd_kind {
     FD_PTY_MASTER,  /* gui_term side of a pty (chapter 79b) */
     FD_PTY_SLAVE,   /* /bin/sh side of a pty; goes on fd 0/1/2 */
     FD_OSFS2_FILE,  /* writable OSFS-2 file at /data/...; ino in `osfs2_ino` */
-    FD_PROCFS,      /* chapter 99 /proc/... snapshot file; buf in `procfs_buf` */
     FD_SRV_LISTEN,  /* chapter 107: named-IPC listener; srv_listen in `srv_l` */
     FD_SRV_CONN,    /* chapter 107: named-IPC connected fd; srv_conn in `srv_c`,
                      * `srv_is_service` distinguishes the service vs client end */
+    FD_USERFS_FILE, /* chapter 114: file behind a userspace fs server;
+                     * `userfs_ch` + `userfs_handle` carry the per-fd
+                     * state.  Read/write dispatch through g_userfs_ops. */
 };
 
 /* Forward decl — defined in pty.h. */
@@ -113,12 +263,6 @@ struct fd_entry {
      * never refers to a real file.  Reads and writes route
      * through osfs2_read / osfs2_write at offset `offset`. */
     uint32_t   osfs2_ino;
-    /* Chapter 99 /proc/... snapshot.  Allocated by vfs_open at
-     * open time, freed by vfs_close.  procfs_len is the byte
-     * length of the rendered content (excluding NUL).  Reads
-     * memcpy from procfs_buf + offset; close kfree's. */
-    char      *procfs_buf;
-    uint32_t   procfs_len;
     /* Chapter 107 — named-IPC service bus.  When kind is
      * FD_SRV_LISTEN, `srv_l` points at the registered
      * listener and `srv_c` / `srv_is_service` are unused.
@@ -131,6 +275,12 @@ struct fd_entry {
     struct srv_listen *srv_l;
     struct srv_conn   *srv_c;
     int                srv_is_service;
+    /* Chapter 114 — userspace filesystem server fd state.  Only
+     * valid when kind == FD_USERFS_FILE.  The channel pointer
+     * carries one open-fd refcount; vfs_close decrements
+     * userfs_ch->open_fds via g_userfs_ops.close. */
+    struct userfs_channel *userfs_ch;
+    uint32_t               userfs_handle;
 };
 
 /* Chapter 93 — refcounted fd table.

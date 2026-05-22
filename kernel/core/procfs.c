@@ -508,3 +508,113 @@ int procfs_is_dir(const char *path)
     struct thread_snap s;
     return thread_snapshot_pid(pid, &s);
 }
+
+/* ------------------------------------------------------------------
+ * Chapter 113 — struct fs_ops adapter.
+ *
+ * procfs is the canary for the mount-table refactor: smallest
+ * driver, just shipped, stateless (cookie is NULL).  The adapter
+ * methods take the relative path the resolver hands them (which
+ * begins with '/' for any non-root path and is "" for the mount
+ * root itself) and forward to the existing chapter-99 functions,
+ * which expect the slash-stripped form.
+ * ------------------------------------------------------------------ */
+
+#include "vfs.h"
+
+static const char *procfs_strip_slash(const char *rel)
+{
+    if (!rel) return "";
+    if (rel[0] == '/') return rel + 1;
+    return rel;
+}
+
+static long procfs_op_open(void *cookie, const char *rel, int flags,
+                           struct fd_entry *out)
+{
+    (void)cookie; (void)flags;
+    if (!out) return -EINVAL_VFS;
+    const char *sub = procfs_strip_slash(rel);
+    char *buf = (char *)kmalloc(PROCFS_MAX_FILE);
+    if (!buf) return -ENOMEM_VFS;
+    long n = procfs_render(sub, buf, PROCFS_MAX_FILE);
+    if (n < 0) { kfree(buf); return -ENOENT_VFS; }
+
+    out->kind        = FD_PROCFS;
+    out->offset      = 0;
+    out->ramfs_index = -1;
+    out->osfs_start  = 0;
+    out->osfs_size   = 0;
+    out->pipe        = NULL;
+    out->socket_cid  = -1;
+    out->pty         = NULL;
+    out->osfs2_ino   = 0;
+    out->procfs_buf  = buf;
+    out->procfs_len  = (uint32_t)n;
+    out->srv_l       = NULL;
+    out->srv_c       = NULL;
+    out->srv_is_service = 0;
+    return 0;
+}
+
+static long procfs_op_read(void *cookie, struct fd_entry *e,
+                           void *buf, size_t n)
+{
+    (void)cookie;
+    if (!e || !buf) return -EINVAL_VFS;
+    if (!e->procfs_buf) return 0;
+    if (e->offset >= e->procfs_len) return 0;
+    size_t remaining = (size_t)(e->procfs_len - e->offset);
+    size_t to_copy   = n < remaining ? n : remaining;
+    uint8_t *dst       = (uint8_t *)buf;
+    const uint8_t *src = (const uint8_t *)e->procfs_buf + e->offset;
+    for (size_t i = 0; i < to_copy; i++) dst[i] = src[i];
+    e->offset += (uint64_t)to_copy;
+    return (long)to_copy;
+}
+
+static long procfs_op_close(void *cookie, struct fd_entry *e)
+{
+    (void)cookie;
+    if (!e) return 0;
+    if (e->procfs_buf) {
+        kfree(e->procfs_buf);
+        e->procfs_buf = NULL;
+        e->procfs_len = 0;
+    }
+    return 0;
+}
+
+static int procfs_op_listdir(void *cookie, const char *rel, int idx,
+                             char *name, size_t cap, uint32_t *type)
+{
+    (void)cookie;
+    const char *sub = procfs_strip_slash(rel);
+    /* procfs_listdir treats NULL as the root directory; pass
+     * NULL when sub is empty so the legacy semantics survive. */
+    return procfs_listdir(*sub ? sub : NULL, idx, name, cap, type);
+}
+
+static int procfs_op_is_dir(void *cookie, const char *rel)
+{
+    (void)cookie;
+    return procfs_is_dir(procfs_strip_slash(rel));
+}
+
+const struct fs_ops procfs_fs_ops = {
+    .open    = procfs_op_open,
+    .read    = procfs_op_read,
+    .write   = NULL,
+    .close   = procfs_op_close,
+    .lseek   = NULL,
+    .listdir = procfs_op_listdir,
+    .unlink  = NULL,
+    .mkdir   = NULL,
+    .is_dir  = procfs_op_is_dir,
+    .load    = NULL,
+};
+
+void procfs_register_mount(void)
+{
+    (void)vfs_mount_register("/proc", &procfs_fs_ops, NULL, MOUNT_RO);
+}

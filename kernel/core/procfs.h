@@ -97,4 +97,16 @@ int procfs_listdir(const char *subdir, int idx,
  * before dispatching to procfs_listdir. */
 int procfs_is_dir(const char *path);
 
+/* Chapter 113 — vtable adapter for the mount table.  The fs_ops
+ * forwards every method to the chapter-99 functions above; it
+ * exists so the dispatcher in vfs.c / syscall.c can route /proc
+ * through `vfs_resolve` instead of a hand-rolled prefix branch.
+ * `cookie` is always NULL (procfs has no per-mount state). */
+struct fs_ops;   /* forward decl from vfs.h */
+extern const struct fs_ops procfs_fs_ops;
+
+/* Idempotent: registers /proc in the mount table with
+ * `procfs_fs_ops` + MOUNT_RO.  Called from vfs_init. */
+void procfs_register_mount(void);
+
 #endif /* PROCFS_H */

@@ -37,6 +37,7 @@
 #include "pipe.h"
 #include "pty.h"
 #include "strace.h"
+#include "userfs.h"
 #include "../arch/address_space.h"
 #include "../arch/atomic.h"
 #include "../arch/cpu.h"
@@ -1057,12 +1058,6 @@ void thread_inherit_fds(struct thread *child, struct thread *parent)
          * cids, deferred to a later chapter. */
         if (src->kind == FD_SRV_LISTEN) continue;
         if (src->kind == FD_SRV_CONN)   continue;
-        /* Chapter 99 — FD_PROCFS slots hold a kmalloc'd snapshot
-         * buffer that the parent's vfs_close will free.  Copying
-         * the pointer naively would double-free at the child's
-         * close.  Just don't inherit — /proc files are always
-         * cheap to re-open in the child if it really wants them. */
-        if (src->kind == FD_PROCFS) continue;
 
         /* Drop whatever placeholder vfs_init_fdtable / a previous
          * inherit/install put in this slot.  FD_CONSOLE has no
@@ -1096,6 +1091,13 @@ void thread_inherit_fds(struct thread *child, struct thread *parent)
             dst->pty->refs++;
             dst->pty->m2s->r_refs++;
             dst->pty->s2m->w_refs++;
+        }
+        else if (dst->kind == FD_USERFS_FILE && dst->userfs_ch) {
+            /* Chapter 114 — the channel tracks how many fd
+             * entries (across all processes) reference it; the
+             * child's close will decrement, so the parent's
+             * open must be matched by an increment here. */
+            dst->userfs_ch->open_fds++;
         }
     }
 }
@@ -1312,6 +1314,17 @@ void yield(void)
                 t->state = THREAD_READY;
                 runq_push_to(t);
             }
+            /* Chapter 114f — deadline-aware blockers (any thread
+             * parked via thread_block_on_until) get re-readied
+             * here too, looking like a regular wake to the caller.
+             * wake_at_ms == 0 means "no deadline" so we skip
+             * the plain thread_block_on case unchanged. */
+            else if (t->state == THREAD_BLOCKED &&
+                     t->wake_at_ms != 0 && now >= t->wake_at_ms) {
+                t->blocked_on = NULL;
+                t->state      = THREAD_READY;
+                runq_push_to(t);
+            }
         }
         spin_unlock(&g_all_lock);
     }
@@ -1444,6 +1457,28 @@ void thread_block_on(void *token)
      * thread_wake_blocked(token) which set our state back to
      * READY and pushed us; the scheduler then ran us and set
      * state to RUNNING.  blocked_on was cleared by the waker. */
+}
+
+/* Chapter 114f — deadline-aware block.  Stashes the absolute
+ * monotonic deadline in wake_at_ms so the yield-time sleeper
+ * walk can re-ready us when the wall clock crosses it.  The
+ * walk routes a deadline-expired BLOCKED thread through the
+ * same READY/runq_push_to path as thread_wake_blocked, so the
+ * caller sees a regular wake and must re-check both its
+ * resource condition AND the wall clock vs deadline to
+ * distinguish "data arrived" from "time ran out". */
+void thread_block_on_until(void *token, uint64_t deadline_ms)
+{
+    if (!g_current) return;
+    g_current->blocked_on = token;
+    g_current->wake_at_ms = deadline_ms;
+    g_current->state      = THREAD_BLOCKED;
+    yield();
+    /* Defensive: leave wake_at_ms as a stale value would
+     * cause future plain thread_block_on calls (which don't
+     * reset it) to wake spuriously the next time their token
+     * sees activity at exactly that deadline. */
+    g_current->wake_at_ms = 0;
 }
 
 /* Chapter 92 — global-lock helpers used by the futex slow path.
@@ -1587,7 +1622,6 @@ int thread_wait(int *code_out)
 void thread_exit(int code)
 {
     g_current->exit_code = code;
-    g_current->state     = THREAD_EXITED;
 
     /* Drop any GUI windows owned by this pid so the desktop
      * doesn't keep painting orphans after the app dies. */
@@ -1609,6 +1643,15 @@ void thread_exit(int code)
      * Without this, a producer's exit doesn't unblock a
      * consumer waiting on read, and the pipeline hangs. */
     vfs_close_all(g_current);
+
+    /* Chapter 114 — state MUST flip to EXITED only after
+     * vfs_close_all returns.  Userfs-backed close() goes
+     * through pipe_read which calls thread_block_on() —
+     * that overwrites state to BLOCKED and the matching wake
+     * leaves us READY, not EXITED.  Setting state up here
+     * would silently lose the EXITED marker and the parent's
+     * wait() scan would never reap us. */
+    g_current->state = THREAD_EXITED;
 
     /* Reap any of our children that have already exited (would
      * otherwise become unreapable zombies because the only

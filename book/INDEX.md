@@ -269,13 +269,26 @@ vtable — and then uses that abstraction to support user-space
 filesystem servers (a 9P-shaped RPC, so any userspace daemon can
 become a mountable filesystem).
 
-Both chapters are currently **PLAN** documents: they nail down
-the design so the implementation work that follows is mechanical.
-The userspace application updates (`ls`, `notepad` save dialog,
-`init`, `sh`) are folded into each plan rather than split out.
+Chapter 113 (the mount-table refactor) is **Done**, landed across
+seven incremental steps (113a–113g), each one sweep-green before
+the next began. Chapter 114 (userspace filesystem servers) is the
+next milestone and still **PLAN**.
 
-113. [PLAN: A real VFS — mount table and `struct fs_ops`](chapters/16-filesystem-architecture/113-mount-table-and-vtable.md) *(plan only; prerequisite for chapter 114)*
-114. [PLAN: User-space filesystem servers (9P-shaped)](chapters/16-filesystem-architecture/114-userspace-filesystem-servers.md) *(plan only; implement after chapter 113)*
+113. [A real VFS — mount table and `struct fs_ops`](chapters/16-filesystem-architecture/113-mount-table-and-vtable.md) *(plan + design contract)*
+113a. [Step 1 — mount table types + `vfs_resolve`](chapters/16-filesystem-architecture/113a-mount-table-types.md)
+113b. [Step 2 — porting procfs onto `fs_ops`](chapters/16-filesystem-architecture/113b-procfs-port.md)
+113c. [Step 3 — porting tmpfs onto `fs_ops`](chapters/16-filesystem-architecture/113c-tmpfs-port.md)
+113d. [Step 4 — porting OSFS-1 and OSFS-2](chapters/16-filesystem-architecture/113d-osfs-port.md)
+113e. [Step 5 — embedded ramfs as a root mount](chapters/16-filesystem-architecture/113e-ramfs-as-root.md)
+113f. [Step 6 — `SYS_MOUNTS` and `/bin/mount`](chapters/16-filesystem-architecture/113f-sys-mounts.md)
+113g. [Step 7 — `MOUNT_RO` + `EROFS_VFS` hardening](chapters/16-filesystem-architecture/113g-mount-ro-hardening.md)
+114. [PLAN: User-space filesystem servers (9P-shaped)](chapters/16-filesystem-architecture/114-userspace-filesystem-servers.md) *(plan; implementation in 114a–114f)*
+114a. [Step 1 — kernel userfs module + `FD_USERFS_FILE`](chapters/16-filesystem-architecture/114a-kernel-userfs-module.md)
+114b. [Step 2 — `SYS_MOUNT` / `SYS_UMOUNT`](chapters/16-filesystem-architecture/114b-sys-mount-umount.md)
+114c. [Step 3 — `libfs` + `/bin/echofs`](chapters/16-filesystem-architecture/114c-libfs-and-echofs.md)
+114d. [Step 4 — porting `clipboardd` to userfs](chapters/16-filesystem-architecture/114d-clipboardd-port.md)
+114e. [Step 5 — porting `procfs` to `/bin/procd`](chapters/16-filesystem-architecture/114e-procd-port.md)
+114f. [Step 6 — per-request timeouts and deadlock detection](chapters/16-filesystem-architecture/114f-timeouts-and-deadlock.md)
 
 ### Part XVII — A C compiler on the OS
 
@@ -420,7 +433,7 @@ tracks layered on top of "syscalls work."
 | XIV  | 90f — GUI SDK rasterisation moves to userspace | Done | [Chapter 108c](chapters/14-userspace-services/108c-gui-sdk-userspace-drawing.md) |
 | XIV  | 90g — window server moves to userspace | Done | [Chapter 108d](chapters/14-userspace-services/108d-userspace-window-server.md) — kernel compositor retired (`compose_all`, `blit_window`, `blit_cursor`, `paint_wallpaper`, `wm_draw_text_fb`, `wm_blend_pixel`, the cursor sprite — all deleted from `kernel/core/wm.c`); wsd is now the sole owner of the scanout, painting wallpaper + every mapped window + flushing via new `SYS_FB_PRESENT = 88` syscall; legacy render syscalls (`wm_present`, `wm_fill_rect`, `wm_draw_text`, `wm_flush`) stubbed to no-op success so legacy apps don't crash but draw nothing until C.5 ports them to `wmclient` one-by-one |
 | XIV  | 90h — wsd-owned decoration, cursor, input routing, resize | Done | [Chapter 108e](chapters/14-userspace-services/108e-userspace-decoration-input-resize.md) — `wsd` paints title bars, close/minimize buttons, and the cursor sprite from `libgui/draw.h`; new kernel surface `SYS_POINTER_STATE = 89`, `SYS_GUI_MOVE_WINDOW = 90`, `SYS_GUI_DELIVER_EVENT = 91`, `SYS_GUI_SET_INPUT_PASSTHROUGH = 92` plus `SYS_WIN_FB_RESIZE` lets `wsd` own pointer hit-testing via the **input shadow** pattern (each `wsd` window is paired with a hidden, passthrough-flagged kernel WM window that owns the event queue `gui_poll_event` reads from); 60 Hz input poller in `wsd` does drag, raise, close-button delivery, minimize, hover, and live resize (kernel `win_fb` reallocates pages, client remaps via `wm_window_remap_fb`, `GUI_EVENT_RESIZE` delivered to the shadow's queue) |
-| XVI  | 84a — VFS refactor: mount table + `struct fs_ops` vtable | Planned | Design [Chapter 113](chapters/16-filesystem-architecture/113-mount-table-and-vtable.md) |
+| XVI  | 84a — VFS refactor: mount table + `struct fs_ops` vtable | Done | [Chapter 113](chapters/16-filesystem-architecture/113-mount-table-and-vtable.md) — landed across seven steps (113a–113g) per the plan; new types `struct fs_ops` + `struct mount` + `MOUNT_RO` flag + `EROFS_VFS=30` / `ENOSYS_VFS=38` errnos in [`kernel/core/vfs.h`](kernel/core/vfs.h); longest-prefix `vfs_resolve` with a "/" catchall that loses every tie ([Chapter 113a](chapters/16-filesystem-architecture/113a-mount-table-types.md)); five drivers ported onto the vtable with a uniform `_strip_slash` adapter pattern — [procfs](chapters/16-filesystem-architecture/113b-procfs-port.md) ([`kernel/core/procfs.c`](kernel/core/procfs.c)), [tmpfs](chapters/16-filesystem-architecture/113c-tmpfs-port.md) ([`kernel/core/tmpfs.c`](kernel/core/tmpfs.c)), [OSFS-1+OSFS-2](chapters/16-filesystem-architecture/113d-osfs-port.md) ([`kernel/core/osfs.c`](kernel/core/osfs.c) + [`kernel/core/osfs2.c`](kernel/core/osfs2.c)) — OSFS-1 registers TWICE with the same `fs_ops`/`NULL` cookie to serve both `/mnt` and `/bin`; [embedded ramfs as the root mount](chapters/16-filesystem-architecture/113e-ramfs-as-root.md) at `"/"` with `MOUNT_RO` so the dispatcher in `vfs_open`/`vfs_open_into`/`vfs_load` finally has no legacy fallback; new `SYS_MOUNTS = 95` syscall + `/bin/mount` user-visible tool + libc `mounts()` wrapper + `struct mount_info { char prefix[32]; unsigned flags; }` ABI ([Chapter 113f](chapters/16-filesystem-architecture/113f-sys-mounts.md), [`userspace/mount/mount.c`](userspace/mount/mount.c), [`userspace/libc/syscall.h`](userspace/libc/syscall.h)); MOUNT_RO+EROFS_VFS hardening pass ([Chapter 113g](chapters/16-filesystem-architecture/113g-mount-ro-hardening.md)) fixes a real bug where mutations against RO mounts whose driver lacked the op pointer returned EINVAL_VFS instead of EROFS_VFS — sys_unlink and sys_mkdir now check `MOUNT_RO` BEFORE checking `m->ops->{unlink,mkdir}`; per-step regression sweeps green at 113a/build, 113b/test_procfs, 113c/5 tests, 113d/7 tests, 113e/10 tests, 113f/test_mounts (7 PASS), 113g/test_mount_ro (12 PASS); save_dialog mount-table iteration deferred to a future UI-redesign chapter per the 113f writeup; userspace fs servers + `SYS_MOUNT`/`SYS_UMOUNT` reserved at 96/97 for chapter 114 |
 | XVI  | 84b — User-space filesystem servers (9P-shaped) | Planned | Design [Chapter 114](chapters/16-filesystem-architecture/114-userspace-filesystem-servers.md) |
 | XV   | 82 — HTML forms + cookies + SOP + pocket-JS | In progress | Done: [109](chapters/15-browser-maturation/109-html-forms.md), [110](chapters/15-browser-maturation/110-cookies-and-sop.md), [110a](chapters/15-browser-maturation/110a-cross-origin-form-blocking.md), [111](chapters/15-browser-maturation/111-pocket-javascript.md) — pocket JS in [`userspace/libc/pocketjs.h`](userspace/libc/pocketjs.h) (~750 lines) + DOM bridge in [`userspace/browser/jsdom.h`](userspace/browser/jsdom.h); `onclick` fires via MOUSE_DOWN hook in [`userspace/browser/browser.c`](userspace/browser/browser.c); [`browser --check-js`](scripts/test_browser_js.py) regression at 20/20 |
 | XV   | 83 — TLS prerequisite: entropy (virtio-rng + CSPRNG + getrandom) | Done | [Chapter 112](chapters/15-browser-maturation/112-entropy-and-csprng.md) — virtio-rng driver ([`kernel/device/virtio_rng.c`](kernel/device/virtio_rng.c)), ChaCha20 CSPRNG with virtio-rng reseed every 256 KiB ([`kernel/core/random.c`](kernel/core/random.c)), `SYS_GETRANDOM = 94`, `/bin/getrand` userspace tool, regression [`test_getrand.py`](scripts/test_getrand.py); BearSSL port (chapters 112a–112e) builds on this |

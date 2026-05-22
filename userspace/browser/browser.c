@@ -4211,25 +4211,21 @@ static int run_gui(const char *initial_url, int initial_viewport)
                 if (k == GUI_KEY_HOME)  { s.url_cursor = 0;          s.dirty = 1; break; }
                 if (k == GUI_KEY_END)   { s.url_cursor = s.url_len;  s.dirty = 1; break; }
                 char ch = (char)(k & 0xFF);
-                /* Chapter 108 -- cross-app clipboard.  Ctrl-C/X/V
-                 * on the URL bar talks to /bin/clipboardd via the
-                 * chapter-107 IPC bus.  Filtered to printable ASCII
-                 * on insertion -- URLs can't contain newlines or
-                 * control bytes, so we stop at the first \n / \r
+                /* Chapter 114 -- cross-app clipboard.  Ctrl-C/X/V
+                 * on the URL bar open(2) /clipboard/text via the
+                 * chapter-114 userfs mount.  Filtered to printable
+                 * ASCII on insertion -- URLs can't contain newlines
+                 * or control bytes, so we stop at the first \n / \r
                  * and silently drop the rest of the payload.  This
                  * matches the address-bar semantics every desktop
                  * browser uses (paste a multi-line block, get the
                  * first line in the bar). */
                 if (ch == 0x03 /* Ctrl-C: copy */) {
-                    (void)clip_set(CLIP_MIME_TEXT,
-                                   s.url_buf, (uint32_t)s.url_len,
-                                   NULL);
+                    (void)clip_set(s.url_buf, (uint32_t)s.url_len);
                     break;
                 }
                 if (ch == 0x18 /* Ctrl-X: cut */) {
-                    (void)clip_set(CLIP_MIME_TEXT,
-                                   s.url_buf, (uint32_t)s.url_len,
-                                   NULL);
+                    (void)clip_set(s.url_buf, (uint32_t)s.url_len);
                     s.url_buf[0] = '\0';
                     s.url_len = 0;
                     s.url_cursor = 0;
@@ -4239,9 +4235,8 @@ static int run_gui(const char *initial_url, int initial_viewport)
                 if (ch == 0x16 /* Ctrl-V: paste */) {
                     static uint8_t cb[CLIP_DATA_MAX];
                     uint32_t cblen = 0;
-                    char mime[CLIP_MIME_MAX];
-                    int gen = clip_get(cb, sizeof(cb), &cblen, mime);
-                    if (gen >= 0 && cblen > 0) {
+                    int n = clip_get(cb, sizeof(cb), &cblen);
+                    if (n >= 0 && cblen > 0) {
                         for (uint32_t i = 0; i < cblen; i++) {
                             char pc = (char)cb[i];
                             if (pc == '\n' || pc == '\r') break;

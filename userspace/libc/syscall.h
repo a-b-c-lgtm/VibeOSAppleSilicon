@@ -217,6 +217,34 @@ enum {
      * /proc/random/strong reads 0 (a future chapter exposes that
      * flag; today the only signal is the kernel boot log warning). */
     SYS_GETRANDOM     = 94,
+
+    /* Chapter 113 — read-only snapshot of the kernel's mount
+     * table.  Returns the number of entries written into the
+     * caller's `struct mount_info[]`, clamped to the caller's
+     * `max`.  See `struct mount_info` and `mounts()` below for
+     * the userspace interface. */
+    SYS_MOUNTS        = 95,
+
+    /* Chapter 114 — userspace filesystem servers.
+     *   mount_kernel(prefix, fds_out[2], flags) -> mount_id / -errno
+     *   umount_kernel(mount_id)                 -> 0 / -errno
+     * On success mount_kernel installs two pipe fds in the
+     * caller: fds_out[0] reads requests, fds_out[1] writes
+     * replies.  Subsequent opens of any path under `prefix`
+     * route through the channel and reach the daemon as p9
+     * messages (struct p9_msg, defined in userfs.h).  flags
+     * masks against MOUNT_RO (chapter 114e); pass 0 for a
+     * read-write mount.                                     */
+    SYS_MOUNT         = 96,
+    SYS_UMOUNT        = 97,
+
+    /* Chapter 114e — kernel state snapshots for /bin/procd.
+     * Public ABI structs in userspace/libc/proc_stat.h.
+     * Only procd is expected to use these; ordinary apps go
+     * through /proc files served by procd. */
+    SYS_KSTAT           = 98,
+    SYS_THREAD_SNAPSHOT = 99,
+    SYS_STRACE_RENDER   = 100,
 };
 
 /* Chapter 95 — POSIX-shaped wall-clock value.  Layout matches
@@ -754,6 +782,86 @@ static inline long getrandom(void *buf, unsigned long len, unsigned int flags)
                  (long)(uintptr_t)buf,
                  (long)len,
                  (long)flags);
+}
+
+/* Chapter 113 — kernel mount-table introspection.
+ *
+ * `mounts(out, max)` writes up to `max` entries into `out`.  Each
+ * entry's `prefix` is NUL-terminated (e.g. "/data", "/proc"); the
+ * `flags` field carries bit 0 = MOUNT_RO so callers can filter for
+ * writable destinations without re-parsing the prefix.
+ *
+ * Returns the number of entries written (0..max) on success, or
+ * -EFAULT / -EINVAL on bad args.  Today MOUNT_MAX = 16, so a
+ * 16-entry buffer is enough to capture the whole table.
+ *
+ * MUST stay byte-compatible with `struct kern_mount_info` in
+ * kernel/core/syscall.c — 32 bytes of prefix followed by a u32
+ * flags, no extra padding requested. */
+#define MOUNT_RO 0x1u
+
+struct mount_info {
+    char     prefix[32];
+    unsigned flags;
+};
+
+static inline long mounts(struct mount_info *out, int max)
+{
+    return _svc2(SYS_MOUNTS, (long)(uintptr_t)out, (long)max);
+}
+
+/* Chapter 114 — userspace filesystem servers.  See SYS_MOUNT
+ * for the full ABI.  `prefix` must start with '/', not end
+ * with '/', and not already be registered.  On success,
+ * fds_out[0] is a pipe-read fd (incoming requests) and
+ * fds_out[1] is a pipe-write fd (outgoing replies).  Each
+ * request/reply is a 32-byte struct p9_msg header optionally
+ * followed by a payload (up to P9_MAX_PAYLOAD = 2048 bytes).
+ * `flags` is masked to MOUNT_RO (1) today; pass 0 for a
+ * read-write mount.  Returns the mount-table slot id on
+ * success or -errno. */
+static inline long mount_kernel(const char *prefix, int fds_out[2],
+                                unsigned long flags)
+{
+    return _svc3(SYS_MOUNT,
+                 (long)(uintptr_t)prefix,
+                 (long)(uintptr_t)fds_out,
+                 (long)flags);
+}
+
+/* Tear down a userfs mount.  Fails with -EBUSY if any
+ * FD_USERFS_FILE fd still references the mount; the daemon
+ * must close all file fds before umount succeeds. */
+static inline long umount_kernel(int mount_id)
+{
+    return _svc1(SYS_UMOUNT, (long)mount_id);
+}
+
+/* Chapter 114e \u2014 kernel state snapshots for procd.  See
+ * userspace/libc/proc_stat.h for struct definitions.  These are
+ * the only consumers of the three syscalls; ordinary apps go
+ * through /proc files instead of calling them directly. */
+struct kstat_pub;          /* fwd \u2014 caller includes proc_stat.h */
+struct thread_snap_pub;
+static inline long sys_kstat(struct kstat_pub *out)
+{
+    return _svc1(SYS_KSTAT, (long)(uintptr_t)out);
+}
+static inline long sys_thread_snapshot(int pid,
+                                       struct thread_snap_pub *out,
+                                       int max)
+{
+    return _svc3(SYS_THREAD_SNAPSHOT,
+                 (long)pid,
+                 (long)(uintptr_t)out,
+                 (long)max);
+}
+static inline long sys_strace_render(int pid, char *buf, unsigned long cap)
+{
+    return _svc3(SYS_STRACE_RENDER,
+                 (long)pid,
+                 (long)(uintptr_t)buf,
+                 (long)cap);
 }
 
 /* Allocate an anonymous pipe.  On success, fds[0] is the read

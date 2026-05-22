@@ -2818,24 +2818,19 @@ int main(int argc, char **argv)
                (unsigned)fb.h,
                (unsigned)fb.stride,
                (unsigned)fb.size);
-
-        /* Paint the wallpaper and flush to GPU
-         * so the screen isn't whatever garbage the BIOS or
-         * the previous kernel-WM-driven compose left in
-         * scanout RAM.  Until chapter 108d the kernel WM did
-         * this implicitly on its first event; now wsd owns
-         * it.  No windows yet so compose_all is just
-         * wallpaper + fb_present. */
-        wsd_compose_all();
     }
 
-    /* Bind /srv/wm.  If this fails we exit non-zero and let
-     * init's supervisor respawn us — there's no recovery
-     * the daemon itself can do (the most likely cause is a
-     * stale bind from a crashed previous wsd, and that
-     * should already have been torn down by the kernel when
-     * the previous pid exited; if it wasn't, we have a
-     * kernel bug worth a fresh boot anyway). */
+    /* Bind /srv/wm *before* the wallpaper paint.  init spawns
+     * /bin/desktop /bin/taskbar /bin/launcher back-to-back
+     * right after /bin/wsd; their first wmclient call hits
+     * srv_connect(/srv/wm) within a handful of ticks.  The
+     * 1920x1080x4 wallpaper compose below is ~8 MiB of byte-
+     * by-byte copy and takes long enough on -display cocoa
+     * that any GUI app racing it gets -ENOENT and exits.
+     * Binding first means connects queue against the listener
+     * and the post-compose srv_accept loop drains them in
+     * order.  If this fails we exit non-zero and let init's
+     * supervisor respawn us. */
     int lfd = srv_bind(WM_SOCK_PATH);
     if (lfd < 0) {
         printf("[wsd] srv_bind(%s) failed: %d\n", WM_SOCK_PATH, lfd);
@@ -2845,6 +2840,17 @@ int main(int argc, char **argv)
      * waits for this before running wmtest so it doesn't
      * race the bind. */
     printf("[wsd] ready on %s (lfd=%d)\n", WM_SOCK_PATH, lfd);
+
+    if (fb.va != 0) {
+        /* Paint the wallpaper and flush to GPU
+         * so the screen isn't whatever garbage the BIOS or
+         * the previous kernel-WM-driven compose left in
+         * scanout RAM.  Until chapter 108d the kernel WM did
+         * this implicitly on its first event; now wsd owns
+         * it.  No windows yet so compose_all is just
+         * wallpaper + fb_present. */
+        wsd_compose_all();
+    }
 
     /* chapter 108e -- spawn the input poller now (after FB is
      * mapped, before accept).  The poller needs the scanout

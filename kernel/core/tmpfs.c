@@ -204,3 +204,137 @@ int tmpfs_unlink(const char *name)
     g_files[idx].name[0] = '\0';
     return 0;
 }
+
+/* ------------------------------------------------------------------
+ * Chapter 113 — struct fs_ops adapter.
+ *
+ * tmpfs is the second port (after procfs).  The adapter is thin:
+ * the existing helpers above already match the vtable shape one-
+ * for-one.  The trickiest piece is the open-flag dance from the
+ * legacy /tmp/ branch in vfs_open: O_CREAT + (O_TRUNC | !O_APPEND)
+ * means "create or truncate"; O_CREAT + O_APPEND means "create if
+ * missing, otherwise keep contents"; no O_CREAT means "must exist".
+ * ------------------------------------------------------------------ */
+
+#include "vfs.h"
+
+static const char *tmpfs_strip_slash(const char *rel)
+{
+    if (!rel) return "";
+    if (rel[0] == '/') return rel + 1;
+    return rel;
+}
+
+static long tmpfs_op_open(void *cookie, const char *rel, int flags,
+                          struct fd_entry *out)
+{
+    (void)cookie;
+    if (!out) return -EINVAL_VFS;
+    const char *bare = tmpfs_strip_slash(rel);
+    if (!*bare) return -EINVAL_VFS;
+    int tidx;
+    if (flags & O_CREAT) {
+        int found = tmpfs_lookup(bare);
+        if (found >= 0) {
+            tidx = found;
+            if (!(flags & O_APPEND)) (void)tmpfs_create_or_truncate(bare);
+        } else {
+            tidx = tmpfs_create_or_truncate(bare);
+            if (tidx < 0) return -ENOMEM_VFS;
+        }
+    } else {
+        tidx = tmpfs_lookup(bare);
+        if (tidx < 0) return -ENOENT_VFS;
+    }
+    out->kind        = FD_TMPFS_RW;
+    out->offset      = 0;
+    out->ramfs_index = tidx;
+    out->osfs_start  = 0;
+    out->osfs_size   = 0;
+    out->pipe        = NULL;
+    out->socket_cid  = -1;
+    out->pty         = NULL;
+    out->osfs2_ino   = 0;
+    out->srv_l       = NULL;
+    out->srv_c       = NULL;
+    out->srv_is_service = 0;
+    return 0;
+}
+
+static long tmpfs_op_read(void *cookie, struct fd_entry *e,
+                          void *buf, size_t n)
+{
+    (void)cookie;
+    if (!e || !buf) return -EINVAL_VFS;
+    long got = tmpfs_read(e->ramfs_index, e->offset, buf, n);
+    if (got > 0) e->offset += (uint64_t)got;
+    return got;
+}
+
+static long tmpfs_op_write(void *cookie, struct fd_entry *e,
+                           const void *buf, size_t n)
+{
+    (void)cookie;
+    if (!e || !buf) return -EINVAL_VFS;
+    /* tmpfs_write always appends today, so the per-fd offset is
+     * advisory.  Keep it in sync with the file size so future
+     * read()s from the same fd see the bytes we just wrote. */
+    long wr = tmpfs_write(e->ramfs_index, buf, n);
+    if (wr > 0) e->offset += (uint64_t)wr;
+    return wr;
+}
+
+static long tmpfs_op_close(void *cookie, struct fd_entry *e)
+{
+    (void)cookie; (void)e;
+    /* No per-fd state to release; the slot's in_use bit is
+     * cleared by the generic vfs_close. */
+    return 0;
+}
+
+static int tmpfs_op_listdir(void *cookie, const char *rel, int idx,
+                            char *name, size_t cap, uint32_t *type)
+{
+    (void)cookie;
+    const char *sub = tmpfs_strip_slash(rel);
+    /* tmpfs is a flat namespace; only the mount root enumerates. */
+    if (*sub) return -1;
+    int got = tmpfs_listdir(idx, name, cap, NULL);
+    if (got < 0) return -1;
+    if (type) *type = 0;   /* always a regular file */
+    return got;
+}
+
+static int tmpfs_op_unlink(void *cookie, const char *rel)
+{
+    (void)cookie;
+    const char *bare = tmpfs_strip_slash(rel);
+    if (!*bare) return -EINVAL_VFS;
+    return tmpfs_unlink(bare);
+}
+
+static int tmpfs_op_is_dir(void *cookie, const char *rel)
+{
+    (void)cookie;
+    const char *bare = tmpfs_strip_slash(rel);
+    if (!*bare) return 1;   /* mount root is a directory */
+    return 0;                /* flat namespace: no subdirs */
+}
+
+const struct fs_ops tmpfs_fs_ops = {
+    .open    = tmpfs_op_open,
+    .read    = tmpfs_op_read,
+    .write   = tmpfs_op_write,
+    .close   = tmpfs_op_close,
+    .lseek   = NULL,
+    .listdir = tmpfs_op_listdir,
+    .unlink  = tmpfs_op_unlink,
+    .mkdir   = NULL,
+    .is_dir  = tmpfs_op_is_dir,
+    .load    = NULL,
+};
+
+void tmpfs_register_mount(void)
+{
+    (void)vfs_mount_register("/tmp", &tmpfs_fs_ops, NULL, 0u);
+}

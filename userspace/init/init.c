@@ -304,25 +304,38 @@ int main(void)
         write(1, "\n", 1);
     }
 
-    /* Chapter 108 — clipboard service.
+    /* Chapter 114 — clipboard service.
      *
      * The clipboard isn't a kernel feature; it lives in a
-     * userspace daemon bound to /srv/clipboard via the
-     * chapter-107 named-IPC bus.  Spawned through supervise()
-     * so the main reap loop respawns it if it dies -- the
-     * "keep my daemons alive" responsibility that on Linux
-     * lives in systemd / sysvinit and on macOS lives in
-     * launchd.  Ours fits in ~50 lines of init.c.
+     * userspace daemon that, since chapter 114, mounts
+     * /clipboard via the userfs interface (SYS_MOUNT +
+     * libfs).  Spawned through supervise() so the main reap
+     * loop respawns it if it dies -- the "keep my daemons
+     * alive" responsibility that on Linux lives in systemd /
+     * sysvinit and on macOS lives in launchd.  Ours fits in
+     * ~50 lines of init.c.
      *
      * The supervisor must come AFTER the GUI services so the
-     * keystroke wiring in notepad/browser etc. finds the
-     * /srv/clipboard endpoint already bound by the time the
-     * user can type anything.  The race is benign in any case:
-     * a clip_set() that lands before clipboardd has bound
-     * returns -ENOENT_VFS, which notepad treats as "no
-     * clipboard available right now" and silently drops. */
+     * keystroke wiring in notepad/browser etc. finds
+     * /clipboard/text already opened on first paste.  The
+     * race is benign: a clip_set() that lands before
+     * clipboardd has mounted returns -ENOENT, which notepad
+     * treats as "no clipboard available right now" and
+     * silently drops. */
     puts("[init] launching /bin/clipboardd (supervised)");
     supervise("/bin/clipboardd", "");
+
+    /* Chapter 114e — /proc service.
+     *
+     * The chapter-99 in-kernel /proc lived under kernel/core/
+     * procfs.c.  Chapter 114e evicts it: /bin/procd mounts /proc
+     * via the same userfs channel clipboardd uses, and serves
+     * the same files (uptime, meminfo, cpuinfo, sched, plus
+     * per-pid status/cmdline/trace).  Supervised so a crash
+     * restarts the mount; /proc readers (ps, top, strace, cat)
+     * are unchanged. */
+    puts("[init] launching /bin/procd (supervised)");
+    supervise("/bin/procd", "");
 
     /* Chapter 96 — boot chime.  Two short beeps signal "kernel
      * is up, GUI is up, you can start typing".  -ENODEV is

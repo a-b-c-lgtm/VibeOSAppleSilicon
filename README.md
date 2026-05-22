@@ -303,8 +303,15 @@ to open windowed apps:
   redirection (`<`, `>`, `>>`), background jobs, and the usual
   small tools (`ls`, `cat`, `grep`, `wc`, `head`, `tail`, `echo`,
   `env`, `sleep`, `uptime`, `time`).
-- **Filesystems** — a read-only on-disk OSFS plus a writable
-  in-memory `tmpfs`, fronted by a block cache over virtio-blk.
+- **Filesystems** — a classical Unix VFS with a longest-prefix
+  mount table dispatching through a `struct fs_ops` vtable (Part
+  XVI, chapter 113); six mounts in the live table (`/`, `/proc`,
+  `/tmp`, `/mnt`, `/bin`, `/data`), each enforcing its `MOUNT_RO`
+  flag uniformly via `EROFS_VFS`; a read-only on-disk OSFS plus a
+  writable in-memory `tmpfs` and a writable on-disk OSFS-2 for
+  `/data`, all fronted by a block cache over virtio-blk; `/bin/mount`
+  prints the live table from userspace via the new `SYS_MOUNTS`
+  syscall.
 - **Networking** — virtio-net, full Ethernet/ARP/IPv4 stack,
   ICMP echo, UDP, a DHCP client, a TCP state machine with both
   client (`connect`) and server (`listen`/`accept`) paths, BSD-
@@ -346,11 +353,15 @@ to open windowed apps:
 
 ## Project status
 
-The codebase tracks the book chapter by chapter. As of chapter 112h
-(URL-bar polish on top of the native-TLS browser arc), every part
-through XV — Browser Maturation — has been shipped end to end and
-gated by a regression test in `scripts/`. The headline gaps still
-open on the roadmap are:
+The codebase tracks the book chapter by chapter. As of chapter 113g
+(`MOUNT_RO` + `EROFS_VFS` hardening, completing Part XVI's first
+half — the mount-table refactor), every part through XV — Browser
+Maturation — has been shipped end to end, the prefix-special-cased
+VFS ladders have been replaced with a `struct fs_ops` vtable
+dispatched through a longest-prefix-match mount table, `/bin/mount`
+prints the live table via the new `SYS_MOUNTS` syscall, and every
+mutation against a read-only mount returns `EROFS_VFS` uniformly.
+The headline gaps still open on the roadmap are:
 
 - **Part IX — Process Model.** A POSIX-shaped `fork`/`exec`/COW
   pair with signals and job control. `init` and the shell currently
@@ -359,9 +370,10 @@ open on the roadmap are:
 - **Part X — Persistence.** A writable on-disk filesystem with a
   small journal so `notepad` saves, shell history, and browser
   cookies survive reboot. Today writes go to in-memory `tmpfs`.
-- **Part XVI — Filesystem Architecture.** A mount table and
-  `struct fs_ops` vtable, then a 9P-shaped userspace filesystem
-  server protocol.
+- **Part XVI — Filesystem Architecture, second half.** The
+  mount-table refactor (chapter 113) is done; user-space
+  filesystem servers via a 9P-shaped RPC and `SYS_MOUNT`/
+  `SYS_UMOUNT` (chapter 114) is the next milestone.
 - **Part XVII — Self-hosting GCC.** A POSIX-ish libc growth pass,
   `/bin/as` + `/bin/ld` + `/bin/ar` + a crt0/libgcc shim, a TinyCC
   native port, and eventually GCC building itself on the OS.

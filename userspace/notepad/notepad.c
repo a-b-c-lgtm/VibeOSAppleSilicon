@@ -270,8 +270,8 @@ static void clip_copy_line(void)
 {
     const char *line = g_lines[g_cur_row];
     uint32_t    len  = (uint32_t)g_line_len[g_cur_row];
-    int gen = clip_set(CLIP_MIME_TEXT, line, len, NULL);
-    if (gen < 0) { set_status("clip: copy failed", 2); return; }
+    int n = clip_set(line, len);
+    if (n < 0) { set_status("clip: copy failed", 2); return; }
     set_status("copied line", 2);
 }
 
@@ -308,9 +308,8 @@ static void clip_paste(void)
 {
     static uint8_t buf[CLIP_DATA_MAX];
     uint32_t len = 0;
-    char mime[CLIP_MIME_MAX];
-    int gen = clip_get(buf, sizeof(buf), &len, mime);
-    if (gen < 0) { set_status("clip: paste failed", 2); return; }
+    int n = clip_get(buf, sizeof(buf), &len);
+    if (n < 0) { set_status("clip: paste failed", 2); return; }
     if (len == 0) { set_status("clipboard empty", 2); return; }
     for (uint32_t i = 0; i < len; i++) {
         char c = (char)buf[i];

@@ -371,6 +371,102 @@ enum {
      * in `buf`; on failure nothing was copied. */
     SYS_GETRANDOM       = 94,
 
+    /* Chapter 113 — mount-table introspection.
+     *
+     *   sys_mounts(struct mount_info *out, int max)
+     *       -> count_written  on success (0..max, never > MOUNT_MAX)
+     *       -> -EFAULT        if `out` isn't writable for `max * sizeof(struct mount_info)` bytes
+     *       -> -EINVAL        if `max` is negative
+     *
+     * Each `mount_info` is a fixed-layout snapshot of one entry
+     * in the kernel's mount table:
+     *
+     *     struct mount_info {
+     *         char     prefix[32];   // NUL-terminated, e.g. "/data"
+     *         uint32_t flags;        // bit 0 = read-only (MOUNT_RO)
+     *     };
+     *
+     * Userspace uses this to discover where the writable
+     * filesystems live without hard-coding "/data".  The "Save
+     * As" dialog calls it to enumerate destinations; future
+     * apps that want to back up state can pick the
+     * largest-flags-zero mount that exists.  The table is small
+     * (MOUNT_MAX = 16 today) so the syscall is cheap.  No
+     * pagination or cursor needed. */
+    SYS_MOUNTS          = 95,
+
+    /* Chapter 114 — userspace filesystem servers.
+     *
+     *   sys_mount(const char *prefix, int fds_out[2])
+     *       -> mount_id (>= 0) on success
+     *       -> -EEXIST     if `prefix` is already in the mount table
+     *       -> -EINVAL     if `prefix` is malformed (chapter-113 rules)
+     *       -> -ENOSPC     if the mount table is full (MOUNT_MAX)
+     *       -> -ENOMEM     if pipe / channel allocation fails
+     *       -> -EFAULT     if `fds_out` is not writable
+     *
+     * The kernel allocates a pair of anonymous pipes and a
+     * fresh userfs_channel.  Two fds are installed in the
+     * CALLING thread's fd table:
+     *   fds_out[0] : FD_PIPE_R   — daemon reads requests here
+     *   fds_out[1] : FD_PIPE_W   — daemon writes replies here
+     * The kernel-internal ends are kept on the channel.
+     * Registration uses `g_userfs_ops` with the channel as
+     * cookie; `vfs_resolve` will route every path under
+     * `prefix` through the channel from this point on.
+     *
+     *   sys_umount(int mount_id)
+     *       -> 0           on success
+     *       -> -EINVAL     if `mount_id` is out of range
+     *       -> -ENOENT     if the slot is not a userfs mount
+     *       -> -EBUSY      if any FD_USERFS_FILE fd still references
+     *                      this mount (caller must close those first)
+     *
+     * v1 deletes the mount-table entry, marks the channel dead
+     * (so any in-flight request returns -EIO), then frees the
+     * channel.  Any future SYS_MOUNT for the same prefix will
+     * succeed because the slot is now free.
+     */
+    SYS_MOUNT           = 96,
+    SYS_UMOUNT          = 97,
+
+    /* Chapter 114e — kernel state snapshots for /bin/procd.
+     *
+     * procd is the userspace daemon that serves /proc.  It used
+     * to live in kernel/core/procfs.c; chapter 114e replaces
+     * that file with a userfs daemon and these three syscalls
+     * are the kernel's way of exposing the bits of state procd
+     * needs to render each /proc file.
+     *
+     *   SYS_KSTAT(struct kstat_pub *user_out) -> 0 / -errno
+     *     Fills the caller's `struct kstat_pub` with uptime,
+     *     pmem totals, kernel-heap usage, CPU count, live
+     *     thread count, and per-CPU runqueue lengths.  This is
+     *     the data underlying /proc/uptime, /proc/meminfo,
+     *     /proc/cpuinfo and /proc/sched.  Layout in
+     *     userspace/libc/proc_stat.h.
+     *
+     *   SYS_THREAD_SNAPSHOT(int pid, struct thread_snap_pub *out, int max)
+     *       -> n_written / -errno
+     *     If pid == -1, fills up to `max` entries (capped by
+     *     the kernel's live thread count) and returns n.  If
+     *     pid >= 0, fills exactly one entry; returns 1 on hit,
+     *     0 if no such pid.  `max` is the number of struct
+     *     slots in `out`, not bytes.  -EFAULT if `out` isn't
+     *     writable for `max * sizeof(struct thread_snap_pub)`.
+     *
+     *   SYS_STRACE_RENDER(int pid, char *user_buf, size_t cap)
+     *       -> bytes_written / -errno
+     *     Drains the target thread's strace ring into
+     *     `user_buf` (which procd then serves as
+     *     /proc/<pid>/trace).  -ENOENT_VFS if no such pid;
+     *     returns 0 (with a one-line "(not traced)\n" banner)
+     *     for live threads without an attached tracer.
+     */
+    SYS_KSTAT           = 98,
+    SYS_THREAD_SNAPSHOT = 99,
+    SYS_STRACE_RENDER   = 100,
+
     /* Chapter 108d — userspace-driven GPU flush.  Wsd
      * holds a writable mapping of the scanout (via
      * SYS_FB_MAP_SCANOUT) and now also owns composition end to

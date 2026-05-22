@@ -108,6 +108,144 @@ const struct osfs_dirent *osfs_dirent_at(size_t i)
     return &g_dir[i];
 }
 
+/* ------------------------------------------------------------------
+ * Chapter 113 — struct fs_ops adapter.
+ *
+ * OSFS-1 is read-only, flat-namespace, and historically mounted
+ * at BOTH `/mnt` and `/bin` (binaries live on disk since
+ * milestone 13).  The vtable adapter is one set of methods plus
+ * two mount registrations; the cookie is unused (NULL).
+ *
+ * Read-only is enforced two ways:
+ *   1. MOUNT_RO flag on the mount entry (vfs_open returns
+ *      -EROFS_VFS for any write flag);
+ *   2. write / unlink / mkdir / lseek slots in `fs_ops` left
+ *      NULL.  The dispatcher then either skips OSFS-1 (listdir-
+ *      ladder fallthrough) or returns -EROFS_VFS at the syscall
+ *      layer.
+ * ------------------------------------------------------------------ */
+
+#include "vfs.h"
+#include "heap.h"
+
+static const char *osfs_strip_slash(const char *rel)
+{
+    if (!rel) return "";
+    if (rel[0] == '/') return rel + 1;
+    return rel;
+}
+
+static long osfs_op_open(void *cookie, const char *rel, int flags,
+                         struct fd_entry *out)
+{
+    (void)cookie; (void)flags;
+    if (!out) return -EINVAL_VFS;
+    const char *bare = osfs_strip_slash(rel);
+    if (!*bare) return -EINVAL_VFS;
+    uint32_t start = 0, size = 0;
+    if (osfs_lookup(bare, &start, &size) != 0) return -ENOENT_VFS;
+    out->kind        = FD_FILE;
+    out->offset      = 0;
+    out->ramfs_index = -1;
+    out->osfs_start  = start;
+    out->osfs_size   = size;
+    out->pipe        = NULL;
+    out->socket_cid  = -1;
+    out->pty         = NULL;
+    out->osfs2_ino   = 0;
+    out->srv_l       = NULL;
+    out->srv_c       = NULL;
+    out->srv_is_service = 0;
+    return 0;
+}
+
+static long osfs_op_read(void *cookie, struct fd_entry *e,
+                         void *buf, size_t n)
+{
+    (void)cookie;
+    if (!e || !buf) return -EINVAL_VFS;
+    long got = osfs_read(e->osfs_start, e->osfs_size, e->offset, buf, n);
+    if (got > 0) e->offset += (uint64_t)got;
+    return got;
+}
+
+static long osfs_op_close(void *cookie, struct fd_entry *e)
+{
+    (void)cookie; (void)e;
+    return 0;
+}
+
+static int osfs_op_listdir(void *cookie, const char *rel, int idx,
+                           char *name, size_t cap, uint32_t *type)
+{
+    (void)cookie;
+    const char *sub = osfs_strip_slash(rel);
+    if (*sub) return -1;   /* flat namespace: only the mount root */
+    if (!osfs_present()) return -1;
+    if (idx < 0 || (size_t)idx >= osfs_file_count()) return -1;
+    const struct osfs_dirent *e = osfs_dirent_at((size_t)idx);
+    if (!e) return -1;
+    size_t i = 0;
+    for (; i + 1 < cap && i < OSFS_NAME_MAX && e->name[i]; i++)
+        name[i] = e->name[i];
+    name[i] = '\0';
+    if (type) *type = 0;   /* OSFS-1 has no subdirs */
+    return (int)i;
+}
+
+static int osfs_op_is_dir(void *cookie, const char *rel)
+{
+    (void)cookie;
+    const char *bare = osfs_strip_slash(rel);
+    if (!*bare) return 1;   /* mount root */
+    return 0;                /* flat namespace */
+}
+
+static long osfs_op_load(void *cookie, const char *rel,
+                         uint8_t **out_buf, size_t *out_size)
+{
+    (void)cookie;
+    if (!out_buf || !out_size) return -EINVAL_VFS;
+    *out_buf = NULL; *out_size = 0;
+    const char *bare = osfs_strip_slash(rel);
+    if (!*bare) return -ENOENT_VFS;
+    uint32_t start = 0, sz = 0;
+    if (osfs_lookup(bare, &start, &sz) != 0) return -ENOENT_VFS;
+    uint8_t *buf = (uint8_t *)kmalloc((size_t)sz);
+    if (!buf && sz > 0) return -ENOMEM_VFS;
+    if (sz > 0) {
+        long got = osfs_read(start, sz, 0, buf, (size_t)sz);
+        if (got < 0 || (uint32_t)got != sz) { kfree(buf); return -EIO; }
+    }
+    *out_buf = buf;
+    *out_size = (size_t)sz;
+    return 0;
+}
+
+const struct fs_ops osfs1_fs_ops = {
+    .open    = osfs_op_open,
+    .read    = osfs_op_read,
+    .write   = NULL,
+    .close   = osfs_op_close,
+    .lseek   = NULL,
+    .listdir = osfs_op_listdir,
+    .unlink  = NULL,
+    .mkdir   = NULL,
+    .is_dir  = osfs_op_is_dir,
+    .load    = osfs_op_load,
+};
+
+void osfs1_register_mount(void)
+{
+    /* OSFS-1 is the disk-backed mount that holds both user data
+     * (chapter 12 — /mnt) and binaries (milestone 13 — /bin).
+     * Same on-disk file table, two different mount points; the
+     * read-only flag is set on both so EROFS_VFS comes back
+     * cleanly from any write attempt. */
+    (void)vfs_mount_register("/mnt", &osfs1_fs_ops, NULL, MOUNT_RO);
+    (void)vfs_mount_register("/bin", &osfs1_fs_ops, NULL, MOUNT_RO);
+}
+
 int osfs_lookup(const char *name, uint32_t *out_start, uint32_t *out_size)
 {
     if (!g_osfs_present) return -1;

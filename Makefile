@@ -69,9 +69,9 @@ C_SRCS   := kernel/core/main.c \
             kernel/core/osfs2.c \
             kernel/core/osfs2_cache.c \
             kernel/core/osfs2_journal.c \
-            kernel/core/procfs.c \
             kernel/core/strace.c \
             kernel/core/srv.c \
+            kernel/core/userfs.c \
             kernel/core/console_in.c \
             kernel/core/wm.c \
             kernel/core/wm_font.c \
@@ -285,6 +285,12 @@ GETRAND_OBJS := $(BUILD)/userspace/crt/crt0.o \
 GETRAND_ELF  := $(BUILD)/userspace/getrand/getrand.elf
 GETRAND_STRIPPED := $(BUILD)/userspace/getrand/getrand.stripped.elf
 
+# chapter-113 mount: print the kernel's mount table via SYS_MOUNTS.
+MOUNT_OBJS := $(BUILD)/userspace/crt/crt0.o \
+              $(BUILD)/userspace/mount/mount.o
+MOUNT_ELF  := $(BUILD)/userspace/mount/mount.elf
+MOUNT_STRIPPED := $(BUILD)/userspace/mount/mount.stripped.elf
+
 # ----------------------------------------------------------------------
 # chapter-112a BearSSL static library (libbearssl.a).
 #
@@ -486,6 +492,33 @@ ECHOD_OBJS := $(BUILD)/userspace/crt/crt0.o \
 ECHOD_ELF  := $(BUILD)/userspace/echod/echod.elf
 ECHOD_STRIPPED := $(BUILD)/userspace/echod/echod.stripped.elf
 
+# chapter-114 libfs: shared user-space helper that turns a daemon
+# into a 9P-shaped filesystem server.  Linked into every user-fs
+# daemon (echofs, eventually clipboardd/procd).  Header at
+# userspace/libfs/userfs.h.
+LIBFS_OBJ := $(BUILD)/userspace/libfs/userfs.o
+
+# chapter-114 echofs: smoke-test daemon that mounts /echo/ and
+# serves three files (hello, buf, echo).  Smallest possible user
+# of libfs; exercised by scripts/test_userfs_echo.py.
+ECHOFS_OBJS := $(BUILD)/userspace/crt/crt0.o \
+               $(LIBFS_OBJ) \
+               $(BUILD)/userspace/echofs/echofs.o
+ECHOFS_ELF  := $(BUILD)/userspace/echofs/echofs.elf
+ECHOFS_STRIPPED := $(BUILD)/userspace/echofs/echofs.stripped.elf
+
+# chapter-114f hangfs: deliberately-broken daemon that mounts
+# /hang/ and then sleeps forever without ever servicing its
+# request pipe.  Used by scripts/test_userfs_timeout.py to
+# prove the kernel's 5 s per-request deadline fires and the
+# client sees -ETIMEDOUT_VFS (-110) instead of blocking
+# forever.  Does NOT link libfs: the whole point is to skip
+# the serve loop.
+HANGFS_OBJS := $(BUILD)/userspace/crt/crt0.o \
+               $(BUILD)/userspace/hangfs/hangfs.o
+HANGFS_ELF  := $(BUILD)/userspace/hangfs/hangfs.elf
+HANGFS_STRIPPED := $(BUILD)/userspace/hangfs/hangfs.stripped.elf
+
 # chapter-105 httpd: static-file HTTP/1.0 server, builds on the
 # ch104 accept syscall.  Serves arbitrary VFS paths (GET /mnt/foo
 # opens kernel path /mnt/foo) with Content-Type sniffing and
@@ -514,14 +547,29 @@ SRVTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
 SRVTEST_ELF  := $(BUILD)/userspace/srvtest/srvtest.elf
 SRVTEST_STRIPPED := $(BUILD)/userspace/srvtest/srvtest.stripped.elf
 
-# chapter-108 clipboardd: the system clipboard, as a long-running
-# userspace daemon bound to /srv/clipboard via the chapter-107
-# IPC bus.  init's supervisor restarts it if it dies.  Three GUI
-# apps reach for it via Ctrl-C/X/V.
+# chapter-114 clipboardd: the system clipboard, ported from the
+# chapter-107 IPC bus to a chapter-114 userfs mount.  Now serves
+# /clipboard with a single file /clipboard/text -- write to
+# replace the payload, read to fetch it.  `cat`, `echo > ...`,
+# and the GUI Ctrl-C/V keystrokes all hit the same code path.
+# init's supervisor restarts it if it dies.
 CLIPBOARDD_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                   $(LIBFS_OBJ) \
                    $(BUILD)/userspace/clipboardd/clipboardd.o
 CLIPBOARDD_ELF  := $(BUILD)/userspace/clipboardd/clipboardd.elf
 CLIPBOARDD_STRIPPED := $(BUILD)/userspace/clipboardd/clipboardd.stripped.elf
+
+# chapter-114e procd: the /proc filesystem, evicted from the
+# kernel (chapter-99 kernel/core/procfs.c is gone) and ported
+# to a userfs daemon.  Same files (uptime / meminfo / cpuinfo /
+# sched / <pid>/{status,cmdline,trace}) served from user space
+# via SYS_KSTAT / SYS_THREAD_SNAPSHOT / SYS_STRACE_RENDER.
+# init's supervisor restarts it if it dies.
+PROCD_OBJS := $(BUILD)/userspace/crt/crt0.o \
+              $(LIBFS_OBJ) \
+              $(BUILD)/userspace/procd/procd.o
+PROCD_ELF  := $(BUILD)/userspace/procd/procd.elf
+PROCD_STRIPPED := $(BUILD)/userspace/procd/procd.stripped.elf
 
 # chapter-108b fontd: the TrueType rasteriser, evicted from the
 # kernel and turned into a long-running userspace daemon bound
@@ -587,14 +635,12 @@ HELLOWSD_OBJS := $(BUILD)/userspace/crt/crt0.o \
 HELLOWSD_ELF  := $(BUILD)/userspace/hellowsd/hellowsd.elf
 HELLOWSD_STRIPPED := $(BUILD)/userspace/hellowsd/hellowsd.stripped.elf
 
-# chapter-108 clip: command-line client for the clipboard.
-# `clip set foo`, `clip get`, `clip gen`, `clip clear`.  The
-# hermetic regression in scripts/test_clipboard.py drives the
-# whole feature through this binary -- no GUI event injection.
-CLIP_OBJS := $(BUILD)/userspace/crt/crt0.o \
-             $(BUILD)/userspace/clip/clip.o
-CLIP_ELF  := $(BUILD)/userspace/clip/clip.elf
-CLIP_STRIPPED := $(BUILD)/userspace/clip/clip.stripped.elf
+# chapter-108 clip CLI: REMOVED in chapter 114.  The clipboard
+# is now a userfs mount, so `echo X > /clipboard/text` and
+# `cat /clipboard/text` from the shell do the same job that
+# /bin/clip used to do.  See userspace/clip.deleted/ in git
+# history if the old protocol-poking implementation is ever
+# wanted as reference material.
 
 # chapter-106b proxytest: orchestrates the in-guest proxy chain.
 # Spawns /bin/httpd 8080 --once, sleeps briefly, then spawns
@@ -969,6 +1015,10 @@ $(GETRAND_ELF): $(GETRAND_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(GETRAND_OBJS)
 
+$(MOUNT_ELF): $(MOUNT_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(MOUNT_OBJS)
+
 # chapter-112a tlstest: link order matters — the archive must come
 # AFTER the .o files that reference it (TLSTEST_OBJS contains
 # tlstest.o which calls br_sha256_*) so the linker can resolve
@@ -1057,6 +1107,14 @@ $(ECHOD_ELF): $(ECHOD_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(ECHOD_OBJS)
 
+$(ECHOFS_ELF): $(ECHOFS_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(ECHOFS_OBJS)
+
+$(HANGFS_ELF): $(HANGFS_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(HANGFS_OBJS)
+
 $(HTTPD_ELF): $(HTTPD_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(HTTPD_OBJS)
@@ -1073,6 +1131,10 @@ $(CLIPBOARDD_ELF): $(CLIPBOARDD_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(CLIPBOARDD_OBJS)
 
+$(PROCD_ELF): $(PROCD_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(PROCD_OBJS)
+
 $(FONTD_ELF): $(FONTD_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(FONTD_OBJS)
@@ -1088,10 +1150,6 @@ $(WMTEST_ELF): $(WMTEST_OBJS) userspace/linker_user.ld
 $(HELLOWSD_ELF): $(HELLOWSD_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(HELLOWSD_OBJS)
-
-$(CLIP_ELF): $(CLIP_OBJS) userspace/linker_user.ld
-	@mkdir -p $(dir $@)
-	$(LD) $(USER_LDFLAGS) -o $@ $(CLIP_OBJS)
 
 $(PROXYTEST_ELF): $(PROXYTEST_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
@@ -1223,6 +1281,9 @@ $(BEEP_STRIPPED): $(BEEP_ELF)
 $(GETRAND_STRIPPED): $(GETRAND_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
+$(MOUNT_STRIPPED): $(MOUNT_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
 $(TLSTEST_STRIPPED): $(TLSTEST_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
@@ -1280,6 +1341,12 @@ $(COOKIES_STRIPPED): $(COOKIES_ELF)
 $(ECHOD_STRIPPED): $(ECHOD_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
+$(ECHOFS_STRIPPED): $(ECHOFS_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(HANGFS_STRIPPED): $(HANGFS_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
 $(HTTPD_STRIPPED): $(HTTPD_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
@@ -1292,6 +1359,9 @@ $(SRVTEST_STRIPPED): $(SRVTEST_ELF)
 $(CLIPBOARDD_STRIPPED): $(CLIPBOARDD_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
+$(PROCD_STRIPPED): $(PROCD_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
 $(FONTD_STRIPPED): $(FONTD_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
@@ -1302,9 +1372,6 @@ $(WMTEST_STRIPPED): $(WMTEST_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(HELLOWSD_STRIPPED): $(HELLOWSD_ELF)
-	$(OBJCOPY) --strip-all $< $@
-
-$(CLIP_STRIPPED): $(CLIP_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(PROXYTEST_STRIPPED): $(PROXYTEST_ELF)
@@ -1560,7 +1627,7 @@ QEMU_SMP ?= 2
 # at /mnt at boot, and looks up /bin/<name> from it as well.
 # (DISK is defined earlier so all: can depend on it.)
 OSFS_FILES := assets/osfs/hello.txt assets/osfs/poem.txt assets/osfs/test.html assets/osfs/test.css assets/osfs/test_layout.html assets/osfs/hn.html assets/osfs/forms.html assets/osfs/onclick.html assets/osfs/icon.png assets/osfs/icon_palette.png assets/osfs/icon_gray.png assets/osfs/icon_large.png assets/osfs/img_test.html assets/osfs/intrinsic.html assets/osfs/ca.bundle $(WALLPAPER_BIN)
-OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(GETRAND_STRIPPED) $(TLSTEST_STRIPPED) $(HTTPSD_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(COOKIES_STRIPPED) $(ECHOD_STRIPPED) $(HTTPD_STRIPPED) $(LOOPTEST_STRIPPED) $(SRVTEST_STRIPPED) $(CLIPBOARDD_STRIPPED) $(FONTD_STRIPPED) $(CLIP_STRIPPED) $(PROXYTEST_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PIXAPP_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(MIXTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED) $(WSD_STRIPPED) $(WMTEST_STRIPPED) $(HELLOWSD_STRIPPED)
+OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(GETRAND_STRIPPED) $(MOUNT_STRIPPED) $(TLSTEST_STRIPPED) $(HTTPSD_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(COOKIES_STRIPPED) $(ECHOD_STRIPPED) $(ECHOFS_STRIPPED) $(HTTPD_STRIPPED) $(LOOPTEST_STRIPPED) $(SRVTEST_STRIPPED) $(CLIPBOARDD_STRIPPED) $(PROCD_STRIPPED) $(FONTD_STRIPPED) $(PROXYTEST_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PIXAPP_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(MIXTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED) $(WSD_STRIPPED) $(WMTEST_STRIPPED) $(HELLOWSD_STRIPPED) $(HANGFS_STRIPPED)
 
 # Bake the chapter-97 test PNG (16x16 RGBA with a known pixel
 # pattern) at build time.  See scripts/make_test_png.py for the
@@ -1655,6 +1722,7 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    date=$(DATE_STRIPPED) \
 	    beep=$(BEEP_STRIPPED) \
 	    getrand=$(GETRAND_STRIPPED) \
+	    mount=$(MOUNT_STRIPPED) \
 	    tlstest=$(TLSTEST_STRIPPED) \
 	    httpsd=$(HTTPSD_STRIPPED) \
 	    pngdec=$(PNGDEC_STRIPPED) \
@@ -1669,15 +1737,17 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    httpget=$(HTTPGET_STRIPPED) \
 	    cookies=$(COOKIES_STRIPPED) \
 	    echod=$(ECHOD_STRIPPED) \
+	    echofs=$(ECHOFS_STRIPPED) \
+	    hangfs=$(HANGFS_STRIPPED) \
 	    httpd=$(HTTPD_STRIPPED) \
 	    looptest=$(LOOPTEST_STRIPPED) \
 	    srvtest=$(SRVTEST_STRIPPED) \
 	    clipboardd=$(CLIPBOARDD_STRIPPED) \
+	    procd=$(PROCD_STRIPPED) \
 	    fontd=$(FONTD_STRIPPED) \
 	    wsd=$(WSD_STRIPPED) \
 	    wmtest=$(WMTEST_STRIPPED) \
 	    hellowsd=$(HELLOWSD_STRIPPED) \
-	    clip=$(CLIP_STRIPPED) \
 	    proxytest=$(PROXYTEST_STRIPPED) \
 	    htmltok=$(HTMLTOK_STRIPPED) \
 	    htmldom=$(HTMLDOM_STRIPPED) \

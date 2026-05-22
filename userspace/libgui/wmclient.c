@@ -85,7 +85,21 @@ int wm_connect(void)
 {
     if (g_conn >= 0) return 0;
 
-    int fd = srv_connect(WM_SOCK_PATH);
+    /* Retry on -ENOENT for up to ~5 s.  init spawns wsd and
+     * the GUI apps back-to-back; wsd does an 8 MB wallpaper
+     * paint before binding /srv/wm, which on -display cocoa
+     * can take long enough that a single-shot srv_connect
+     * loses the race and the app exits.  Other errno values
+     * (-EACCES, -EINVAL, ...) are permanent — return them
+     * straight through so genuine misconfiguration still
+     * fails loudly. */
+    int fd = -1;
+    for (int attempt = 0; attempt < 50; attempt++) {
+        fd = srv_connect(WM_SOCK_PATH);
+        if (fd >= 0) break;
+        if (fd != -2 /* -ENOENT */) break;
+        sleep_ms(100);
+    }
     if (fd < 0) {
         printf("[wmclient] srv_connect(%s) failed err=%d\n",
                WM_SOCK_PATH, fd);

@@ -64,4 +64,18 @@ long pipe_read(struct pipe *p, void *buf, size_t len);
  * should loop. */
 long pipe_write(struct pipe *p, const void *buf, size_t len);
 
+/* Chapter 114f — deadline-aware variants used by the userfs
+ * RPC path so a hung daemon can't park a kernel thread forever.
+ * `deadline_ms` is an absolute monotonic timestamp (the value
+ * returned by `timer_ticks() * TICK_INTERVAL_MS` plus the
+ * desired budget); pass 0 for "no deadline" (equivalent to
+ * the plain pipe_read / pipe_write).  Returns -ETIMEDOUT_VFS
+ * when the wall clock crosses the deadline before progress
+ * could be made.  Partial transfers report the bytes already
+ * moved rather than -ETIMEDOUT_VFS. */
+long pipe_read_until(struct pipe *p, void *buf, size_t len,
+                     uint64_t deadline_ms);
+long pipe_write_until(struct pipe *p, const void *buf, size_t len,
+                      uint64_t deadline_ms);
+
 #endif /* PIPE_H */

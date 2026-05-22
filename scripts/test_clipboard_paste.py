@@ -161,20 +161,22 @@ def main():
             return 1
         print("PASS: shell prompt reached")
 
-        # 2. clipboardd is up (chapter-108 supervisor).
-        if b"[clipboardd] ready on /srv/clipboard" not in log:
-            print("FAIL: clipboardd never advertised readiness")
+        # 2. clipboardd is up (chapter-114 supervisor).
+        if b"/clipboard mounted" not in log:
+            print("FAIL: clipboardd never mounted /clipboard")
             return 1
-        print("PASS: clipboardd is up")
+        print("PASS: clipboardd is up (/clipboard mounted)")
 
-        # 3. Seed the clipboard.
-        ser.sendall(f"clip set {PHRASE}\n".encode())
-        log = wait_for(ser, b"[clipboardd] SET gen=1", 10.0)
-        if b"[clipboardd] SET gen=1" not in log:
-            print(f"FAIL: clipboardd did not log SET (phrase: {PHRASE!r})")
-            print(log[-2000:].decode("ascii", "replace"))
-            return 1
-        print(f"PASS: clipboard seeded with {PHRASE!r} (gen=1)")
+        # 3. Seed the clipboard via shell redirection.  echo
+        #    appends a trailing \n, so the stored payload is
+        #    len(PHRASE)+1 bytes.  gui_term's filter converts
+        #    \n to \r (still allowed through), so the paste's
+        #    audit count is len(PHRASE)+1 as well.  (Our echo
+        #    doesn't support -n, so this is the cleanest way
+        #    to write a known-length payload.)
+        ser.sendall(f"echo {PHRASE} > /clipboard/text\n".encode())
+        log = wait_for(ser, b"$ ", 5.0)
+        print(f"PASS: clipboard seeded with {PHRASE!r}")
 
         # 4. Spawn gui_term as a serial-shell background process.
         #    The outer shell's stdout is the host serial, so any
@@ -200,25 +202,26 @@ def main():
         #    gui_term's chapter-108 paste handler runs.
         send_ctrl(qmp, "v")
 
-        # 7. Audit line on serial.
-        expected = f"[gui_term] pasted {len(PHRASE)} bytes"
+        # 7. Audit line on serial.  echo appends a trailing
+        #    newline, so the payload is len(PHRASE)+1 bytes,
+        #    and gui_term's filter converts the newline to a
+        #    carriage return (still allowed through), so the
+        #    audit byte count matches.
+        expected = f"[gui_term] pasted {len(PHRASE) + 1} bytes"
         log = wait_for(ser, expected.encode(), 10.0)
         if expected.encode() not in log:
             print(f"FAIL: gui_term did not log {expected!r}")
             print(log[-3000:].decode("ascii", "replace"))
             return 1
-        print(f"PASS: gui_term pasted {len(PHRASE)} bytes from /srv/clipboard")
+        print(f"PASS: gui_term pasted {len(PHRASE) + 1} bytes from /clipboard/text")
 
-        # 8. clipboardd should have logged a GET as well -- proves
-        #    the paste path went through the real IPC, not some
-        #    cached in-process copy.
-        if b"[clipboardd] GET -> gen=1 len=" not in log:
-            print("FAIL: clipboardd did not log the cross-app GET")
-            print(log[-2000:].decode("ascii", "replace"))
-            return 1
-        print("PASS: clipboardd served the cross-app GET via /srv/clipboard")
+        # 8. The cross-app paste flowed through the kernel's
+        #    userfs glue: gui_term opened /clipboard/text and
+        #    read the bytes that clipboardd stored.  No
+        #    intermediate IPC log to assert against now -- the
+        #    audit line in step 7 is the proof.
 
-        print("\nCROSS-APP PASTE (chapter 108): ALL TESTS PASSED")
+        print("\nCROSS-APP PASTE (chapter 114): ALL TESTS PASSED")
         return 0
     finally:
         try:

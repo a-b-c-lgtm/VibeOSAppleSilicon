@@ -114,6 +114,14 @@ int main(int argc, char **argv)
                  p[3] == 'o' && p[4] == 'c' &&
                  (p[5] == '/' || p[5] == '\0'))
             use_at = 1;
+        /* Chapter 114 — userfs mounts (`/echo` from echofs, and
+         * future daemons like `/clipboard`) don't appear in the
+         * flat namespace either; the daemon owns enumeration via
+         * its on_listdir callback.  Same shape as /proc. */
+        else if (p[0] == '/' && p[1] == 'e' && p[2] == 'c' &&
+                 p[3] == 'h' && p[4] == 'o' &&
+                 (p[5] == '/' || p[5] == '\0'))
+            use_at = 1;
     }
 
     char         name[NAME_CAP];

@@ -1,234 +1,152 @@
 /*
- * userspace/clipboardd/clipboardd.c — chapter 108 service.
+ * userspace/clipboardd/clipboardd.c — chapter 114 port.
  *
- * The system clipboard, as a userspace daemon.  Binds
- * /srv/clipboard via the chapter-107 named-IPC bus, then
- * answers one connection at a time:
+ * The system clipboard, now a chapter-114 userfs daemon
+ * instead of a chapter-107 IPC service.  Mounts /clipboard
+ * and exposes a single file:
  *
- *     for (;;) {
- *         int cfd = srv_accept(lfd);
- *         handle_one_message(cfd);
- *         close(cfd);
- *     }
+ *   /clipboard/text   — read returns the current payload,
+ *                       write replaces it.
  *
- * One message per connection -- the four operations
- * (SET / GET / GEN / CLEAR) are all stateless from the
- * client's point of view, so there's no reason to keep
- * the conn open across calls.  The serve loop is
- * synchronous on purpose: SETs are quick (one heap copy),
- * GETs are quick (one heap copy back), the clipboard is
- * not a high-throughput service.  If two clients race for
- * "the current value", the generation counter serialises
- * them and the loser has to re-read.
+ * The chapter-108 protocol (op codes, generation counter,
+ * MIME tag, srv_bind/srv_accept loop) is gone.  Callers
+ * just open the file and read or write.  cp, cat, echo,
+ * grep, head — every existing shell tool now works on the
+ * clipboard out of the box, which is the whole point of
+ * the "everything is a file" rule.
  *
- * State is one heap-allocated payload plus a monotonic
- * generation counter and a MIME tag:
+ * State
+ * -----
  *
- *     g_gen      -- bumps on every SET and CLEAR
- *     g_mime     -- last SET's MIME tag (or "" if empty)
- *     g_data     -- last SET's payload bytes (or NULL)
- *     g_len      -- length of g_data (0 if empty)
+ *   g_data[CLIP_DATA_MAX]  payload bytes
+ *   g_len                  live length (0 ≤ g_len ≤ CLIP_DATA_MAX)
  *
- * The whole thing fits in ~250 lines.  No selection model,
- * no MIME negotiation, no SO_PEERCRED-shaped permission
- * check -- those are deferred (see book chapter 108).
+ * No generation counter — readers that want change notification
+ * stat the file (mtime + size).  No MIME tag — the file IS
+ * the type, and we only have one (text).  If we ever need a
+ * second MIME, add /clipboard/png alongside /clipboard/text.
  *
- * The supervisor (init) respawns us if we crash; the
- * generation resets to 1 on respawn, payload is lost --
- * which matches every other clipboard daemon ever
- * written (X11 selection lifetime, macOS pasteboardd
- * pre-Mojave, etc.).
+ * Handle model
+ * ------------
+ *
+ * Two distinct handles so on_read after on_write returns the
+ * just-written bytes (a typical paste-after-copy sequence):
+ *
+ *   H_TEXT      reader/writer for /clipboard/text
+ *
+ * One file, one handle — every open() returns H_TEXT and the
+ * read/write callbacks operate on the shared g_data array.
+ *
+ * Truncate semantics
+ * ------------------
+ *
+ * O_TRUNC (passed by the kernel via the on_open `flags`
+ * argument) resets g_len to 0 before the first write lands.
+ * `echo foo > /clipboard/text` uses that path; a bare
+ * `open(... O_WRONLY)` preserves the old payload, matching
+ * conventional POSIX semantics.
  */
 
+#include "../libfs/userfs.h"
 #include "../libc/syscall.h"
 #include "../libc/printf.h"
 #include "../libc/clipboard.h"
 
-/* ---------------- state ---------------- */
+enum { H_TEXT = 1 };
 
-static uint32_t g_gen  = 0;            /* bumps on every SET/CLEAR; 1 after first set */
-static char     g_mime[CLIP_MIME_MAX]; /* current MIME tag                            */
-static uint8_t  g_data[CLIP_DATA_MAX]; /* current payload, statically reserved        */
-static uint32_t g_len  = 0;            /* live length of g_data                       */
+static uint8_t  g_data[CLIP_DATA_MAX];
+static uint32_t g_len = 0;
 
-/* ---------------- tiny helpers ---------------- */
-
-static void zero_bytes(void *p, size_t n)
+static int eq(const char *a, const char *b)
 {
-    uint8_t *b = (uint8_t *)p; while (n--) *b++ = 0;
-}
-static void copy_bytes(void *d, const void *s, size_t n)
-{
-    uint8_t *b = (uint8_t *)d; const uint8_t *q = (const uint8_t *)s;
-    while (n--) *b++ = *q++;
+    while (*a && *a == *b) { a++; b++; }
+    return *a == *b;
 }
 
-/* Pre-fill a reply header with the daemon's current state.
- * The caller may overwrite op/flags before sending. */
-static void init_reply(struct clip_msg *r, uint32_t op)
+static int on_open(void *ud, const char *path, int flags, uint32_t *h)
 {
-    zero_bytes(r, sizeof(*r));
-    r->op    = op;
-    r->gen   = g_gen;
-    r->len   = 0;
-    r->flags = 0;
-}
-
-/* Send a fixed-header reply (no payload). */
-static void send_reply_hdr(int fd, struct clip_msg *r)
-{
-    long w = write(fd, r, sizeof(*r));
-    if (w != (long)sizeof(*r)) {
-        /* Peer disconnected mid-reply.  Not fatal -- we'll just
-         * close the fd in the caller.  Common when a test fires
-         * a request and exits without reading. */
+    (void)ud;
+    if (!eq(path, "text")) return -2;  /* -ENOENT */
+    /* O_TRUNC = 0x200 in syscall.h.  Reset before the first
+     * write lands so `>` redirection replaces the payload
+     * rather than appending to it. */
+    if (flags & 0x200) {
+        g_len = 0;
     }
+    *h = H_TEXT;
+    return 0;
 }
 
-/* Send the current clipboard (header + g_data[0..g_len]) on a
- * GET reply.  One write() = one IPC datagram. */
-static void send_reply_get(int fd)
+static int on_read(void *ud, uint32_t h, uint64_t off,
+                   void *buf, uint32_t cap)
 {
-    /* Combined buffer.  The static-locals discipline keeps the
-     * stack tiny -- daemon stacks are 4 pages by default. */
-    static uint8_t buf[sizeof(struct clip_msg) + CLIP_DATA_MAX];
-    struct clip_msg *r = (struct clip_msg *)buf;
-    init_reply(r, CLIP_OP_GET);
-    r->len = g_len;
-    copy_bytes(r->mime, g_mime, CLIP_MIME_MAX);
-    if (g_len > 0)
-        copy_bytes(buf + sizeof(*r), g_data, g_len);
-    long w = write(fd, buf, sizeof(*r) + g_len);
-    (void)w;  /* same disconnect-tolerance as send_reply_hdr */
+    (void)ud;
+    if (h != H_TEXT) return -9;       /* -EBADF */
+    if (off >= g_len) return 0;        /* EOF */
+    uint32_t avail = g_len - (uint32_t)off;
+    uint32_t take  = avail < cap ? avail : cap;
+    uint8_t *dst = (uint8_t *)buf;
+    for (uint32_t i = 0; i < take; i++) dst[i] = g_data[off + i];
+    return (int)take;
 }
 
-/* ---------------- per-op handlers ---------------- */
-
-static void handle_set(int fd, const struct clip_msg *req,
-                       const uint8_t *payload, uint32_t payload_len)
+static int on_write(void *ud, uint32_t h, uint64_t off,
+                    const void *buf, uint32_t n)
 {
-    /* Cap on the receive side too -- a misbehaving client that
-     * lied about its `len` field can't poison g_data past the
-     * static array.  In practice clip.h already caps senders. */
-    uint32_t store = (req->len < payload_len) ? req->len : payload_len;
-    if (store > CLIP_DATA_MAX) store = CLIP_DATA_MAX;
-    int truncated = (req->len > CLIP_DATA_MAX) ? 1 : 0;
-
-    /* Copy MIME tag (bounded; always null-terminate the last slot). */
-    copy_bytes(g_mime, req->mime, CLIP_MIME_MAX);
-    g_mime[CLIP_MIME_MAX - 1] = '\0';
-
-    if (store > 0) copy_bytes(g_data, payload, store);
-    g_len = store;
-    g_gen++;
-
-    printf("[clipboardd] SET gen=%u mime=%s len=%u%s\n",
-           (unsigned)g_gen, g_mime[0] ? g_mime : "(none)",
-           (unsigned)g_len, truncated ? " (truncated)" : "");
-
-    struct clip_msg r;
-    init_reply(&r, CLIP_OP_SET);
-    if (truncated) r.flags |= CLIP_FLAG_TRUNC;
-    send_reply_hdr(fd, &r);
+    (void)ud;
+    if (h != H_TEXT) return -9;
+    if (off > CLIP_DATA_MAX) return -22;   /* -EINVAL */
+    uint32_t room = CLIP_DATA_MAX - (uint32_t)off;
+    uint32_t take = n < room ? n : room;
+    const uint8_t *src = (const uint8_t *)buf;
+    for (uint32_t i = 0; i < take; i++) g_data[off + i] = src[i];
+    uint32_t endpos = (uint32_t)off + take;
+    if (endpos > g_len) g_len = endpos;
+    return (int)take;
 }
 
-static void handle_get(int fd)
+static int on_close(void *ud, uint32_t h)
 {
-    printf("[clipboardd] GET -> gen=%u len=%u\n",
-           (unsigned)g_gen, (unsigned)g_len);
-    send_reply_get(fd);
+    (void)ud; (void)h;
+    return 0;
 }
 
-static void handle_gen(int fd)
+static int on_listdir(void *ud, const char *path, int idx,
+                      char *name, uint32_t cap, uint32_t *type)
 {
-    struct clip_msg r;
-    init_reply(&r, CLIP_OP_GEN);
-    printf("[clipboardd] GEN -> gen=%u\n", (unsigned)g_gen);
-    send_reply_hdr(fd, &r);
+    (void)ud; (void)cap;
+    if (path[0] != '\0') return -2;
+    if (idx != 0) return -2;
+    name[0] = 't'; name[1] = 'e'; name[2] = 'x'; name[3] = 't';
+    *type = 1;
+    return 4;
 }
 
-static void handle_clear(int fd)
+static int on_is_dir(void *ud, const char *path)
 {
-    g_len = 0;
-    g_mime[0] = '\0';
-    g_gen++;
-    printf("[clipboardd] CLEAR gen=%u\n", (unsigned)g_gen);
-    struct clip_msg r;
-    init_reply(&r, CLIP_OP_CLEAR);
-    send_reply_hdr(fd, &r);
+    (void)ud;
+    if (path[0] == '\0') return 1;
+    if (eq(path, "text")) return 0;
+    return -2;
 }
 
-static void handle_err(int fd, uint32_t code)
+int main(int argc, char **argv)
 {
-    struct clip_msg r;
-    init_reply(&r, CLIP_OP_ERR);
-    r.flags = code;
-    printf("[clipboardd] ERR code=%u\n", (unsigned)code);
-    send_reply_hdr(fd, &r);
-}
+    (void)argc; (void)argv;
 
-/* ---------------- per-connection driver ---------------- */
+    struct userfs_handler h;
+    h.on_open    = on_open;
+    h.on_read    = on_read;
+    h.on_write   = on_write;
+    h.on_close   = on_close;
+    h.on_listdir = on_listdir;
+    h.on_unlink  = (int (*)(void *, const char *))0;
+    h.on_mkdir   = (int (*)(void *, const char *))0;
+    h.on_is_dir  = on_is_dir;
+    h.userdata   = (void *)0;
 
-/* One read = one datagram per chapter 107.  The daemon serves
- * exactly one request per accepted connection and then closes
- * the fd.  This keeps the protocol stateless and removes any
- * need for the daemon to track per-connection cursors. */
-static void serve_one(int cfd)
-{
-    static uint8_t buf[sizeof(struct clip_msg) + CLIP_DATA_MAX];
-    long n = read(cfd, buf, sizeof(buf));
-    if (n < (long)sizeof(struct clip_msg)) {
-        handle_err(cfd, CLIP_ERR_PROTO);
-        return;
-    }
-    struct clip_msg *req = (struct clip_msg *)buf;
-    const uint8_t *payload = buf + sizeof(struct clip_msg);
-    uint32_t payload_len = (uint32_t)(n - (long)sizeof(struct clip_msg));
-
-    switch (req->op) {
-    case CLIP_OP_SET:   handle_set(cfd, req, payload, payload_len); break;
-    case CLIP_OP_GET:   handle_get(cfd);                            break;
-    case CLIP_OP_GEN:   handle_gen(cfd);                            break;
-    case CLIP_OP_CLEAR: handle_clear(cfd);                          break;
-    default:            handle_err(cfd, CLIP_ERR_PROTO);            break;
-    }
-}
-
-/* ---------------- main loop ---------------- */
-
-int main(void)
-{
-    /* Zero state explicitly -- BSS is already zero but being
-     * explicit makes the respawn behaviour readable (after a
-     * crash, init respawns us; we start with gen=0 and an
-     * empty payload, same as boot.  This matches the X11 /
-     * pasteboardd convention that clipboard contents do NOT
-     * survive the daemon dying). */
-    g_gen = 0;
-    g_len = 0;
-    zero_bytes(g_mime, sizeof(g_mime));
-
-    int lfd = srv_bind(CLIP_SOCK_PATH);
-    if (lfd < 0) {
-        printf("[clipboardd] srv_bind(%s) failed: %d\n",
-               CLIP_SOCK_PATH, lfd);
-        return 1;
-    }
-    printf("[clipboardd] ready on %s (lfd=%d)\n",
-           CLIP_SOCK_PATH, lfd);
-
-    for (;;) {
-        int cfd = srv_accept(lfd);
-        if (cfd < 0) {
-            /* EINTR is fine -- a signal could break us out of
-             * accept; just resume.  Anything else is a kernel
-             * bug (no other failure modes are spec'd). */
-            if (cfd == -4 /*EINTR*/) continue;
-            printf("[clipboardd] accept failed: %d\n", cfd);
-            close(lfd);
-            return 1;
-        }
-        serve_one(cfd);
-        close(cfd);
-    }
+    printf("[clipboardd] starting (chapter 114)\n");
+    int r = userfs_serve("/clipboard", &h);
+    printf("[clipboardd] serve returned %d\n", r);
+    return r < 0 ? 1 : 0;
 }

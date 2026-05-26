@@ -77,7 +77,7 @@ struct elf64_phdr {
                               * arch/address_space.h.  Bumped from
                               * 4 (16 KiB) at M64 to handle deeply
                               * nested DOMs (HN comment threads). */
-#define MAX_USER_ARGV    16  /* hard cap on argc; matches sys_spawn */
+#define MAX_USER_ARGV    64  /* hard cap on argc; matches sys_exec */
 
 /*
  * Build the initial user-mode stack frame in the TOP user-stack

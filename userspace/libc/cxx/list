@@ -1,0 +1,215 @@
+// userspace/libc/cxx/list — chapter 132f
+//
+// Freestanding std::list.  Doubly-linked list.  Minimal API.
+//
+// Implementation note: the sentinel ("end" node) is a _node_base
+// without a _T payload.  Real nodes _node inherit and add the
+// value.  This avoids requiring _T() default-construction.
+#ifndef _OSDEV_CXX_LIST
+#define _OSDEV_CXX_LIST 1
+
+#include "../malloc.h"
+#include "utility"
+#include "new"
+
+namespace std {
+
+template <class _T>
+class list {
+    struct _node_base {
+        _node_base *prev;
+        _node_base *next;
+    };
+    struct _node : _node_base {
+        _T value;
+        template <class... _A>
+        _node(_A&&... a) : _node_base{0, 0}, value(std::forward<_A>(a)...) {}
+    };
+
+    _node_base    _head;        // sentinel; head.next = first, head.prev = last
+    unsigned long _n;
+
+    static _T &_val(_node_base *p) { return static_cast<_node *>(p)->value; }
+
+public:
+    typedef unsigned long size_type;
+    typedef _T            value_type;
+    typedef _T &          reference;
+    typedef const _T &    const_reference;
+
+    class iterator {
+    public:
+        _node_base *p;
+        iterator(_node_base *x = 0) : p(x) {}
+        _T &operator*()  const { return static_cast<_node *>(p)->value; }
+        _T *operator->() const { return &static_cast<_node *>(p)->value; }
+        iterator &operator++()    { p = p->next; return *this; }
+        iterator  operator++(int) { iterator t = *this; p = p->next; return t; }
+        iterator &operator--()    { p = p->prev; return *this; }
+        iterator  operator--(int) { iterator t = *this; p = p->prev; return t; }
+        bool operator==(const iterator &o) const { return p == o.p; }
+        bool operator!=(const iterator &o) const { return p != o.p; }
+        _node_base *_get() const { return p; }
+    };
+    typedef iterator const_iterator;  // good enough
+
+    list() : _n(0) {
+        _head.prev = &_head;
+        _head.next = &_head;
+    }
+    list(const list &o) : _n(0) {
+        _head.prev = &_head;
+        _head.next = &_head;
+        for (auto it = o.begin(); it != o.end(); ++it) push_back(*it);
+    }
+    list(list &&o) noexcept : _n(0) {
+        _head.prev = &_head;
+        _head.next = &_head;
+        swap(o);
+    }
+    ~list() { clear(); }
+
+    list &operator=(const list &o) {
+        if (this == &o) return *this;
+        clear();
+        for (auto it = o.begin(); it != o.end(); ++it) push_back(*it);
+        return *this;
+    }
+    list &operator=(list &&o) noexcept {
+        if (this == &o) return *this;
+        clear();
+        swap(o);
+        return *this;
+    }
+
+    iterator       begin()       noexcept { return iterator(_head.next); }
+    iterator       end()         noexcept { return iterator(&_head); }
+    const_iterator begin() const noexcept { return iterator((_node_base *)_head.next); }
+    const_iterator end()   const noexcept { return iterator((_node_base *)&_head); }
+
+    bool         empty() const noexcept { return _n == 0; }
+    size_type    size()  const noexcept { return _n; }
+
+    _T       &front()       { return _val(_head.next); }
+    const _T &front() const { return _val(_head.next); }
+    _T       &back()        { return _val(_head.prev); }
+    const _T &back()  const { return _val(_head.prev); }
+
+private:
+    void _link_before(_node_base *pos, _node *n) {
+        n->prev = pos->prev;
+        n->next = pos;
+        pos->prev->next = n;
+        pos->prev = n;
+        ++_n;
+    }
+
+public:
+    iterator insert(iterator pos, const _T &v) {
+        _node *n = (_node *)::malloc(sizeof(_node));
+        new (n) _node(v);
+        _link_before(pos._get(), n);
+        return iterator(n);
+    }
+
+    template <class... _A>
+    iterator emplace(iterator pos, _A&&... a) {
+        _node *n = (_node *)::malloc(sizeof(_node));
+        new (n) _node(std::forward<_A>(a)...);
+        _link_before(pos._get(), n);
+        return iterator(n);
+    }
+
+    template <class... _A>
+    void emplace_back(_A&&... a) { emplace(end(), std::forward<_A>(a)...); }
+    template <class... _A>
+    void emplace_front(_A&&... a) { emplace(begin(), std::forward<_A>(a)...); }
+
+    void push_back(const _T &v)  { insert(end(),   v); }
+    void push_front(const _T &v) { insert(begin(), v); }
+    void pop_back()  { erase(iterator(_head.prev)); }
+    void pop_front() { erase(iterator(_head.next)); }
+
+    iterator erase(iterator it) {
+        _node_base *nb = it._get();
+        _node_base *nx = nb->next;
+        nb->prev->next = nb->next;
+        nb->next->prev = nb->prev;
+        _node *n = static_cast<_node *>(nb);
+        n->~_node();
+        ::free(n);
+        --_n;
+        return iterator(nx);
+    }
+
+    void clear() noexcept {
+        while (!empty()) pop_front();
+    }
+
+    void remove(const _T &v) {
+        for (auto it = begin(); it != end(); ) {
+            if (*it == v) it = erase(it);
+            else          ++it;
+        }
+    }
+    template <class _Pred>
+    void remove_if(_Pred pred) {
+        for (auto it = begin(); it != end(); ) {
+            if (pred(*it)) it = erase(it);
+            else           ++it;
+        }
+    }
+
+    // splice all of `o` before `pos`.  Steals o's nodes; o becomes empty.
+    void splice(iterator pos, list &o) {
+        if (o.empty() || this == &o) return;
+        _node_base *p = pos._get();
+        _node_base *a = o._head.next;
+        _node_base *b = o._head.prev;
+        a->prev = p->prev;
+        b->next = p;
+        p->prev->next = a;
+        p->prev = b;
+        _n += o._n;
+        o._head.next = &o._head;
+        o._head.prev = &o._head;
+        o._n = 0;
+    }
+
+    // splice a single element `it` from `o` to before `pos`.
+    void splice(iterator pos, list &o, iterator it) {
+        _node_base *n = it._get();
+        if (n == pos._get()) return;
+        n->prev->next = n->next;
+        n->next->prev = n->prev;
+        --o._n;
+        _node_base *p = pos._get();
+        n->prev = p->prev;
+        n->next = p;
+        p->prev->next = n;
+        p->prev = n;
+        ++_n;
+    }
+
+    void swap(list &o) noexcept {
+        bool ae = empty();
+        bool be = o.empty();
+        _node_base *a_first = ae ? &_head   : _head.next;
+        _node_base *a_last  = ae ? &_head   : _head.prev;
+        _node_base *b_first = be ? &o._head : o._head.next;
+        _node_base *b_last  = be ? &o._head : o._head.prev;
+        unsigned long tn = _n; _n = o._n; o._n = tn;
+        if (ae) { _head.next = _head.prev = &_head; }
+        else    { _head.next = b_first; _head.prev = b_last;
+                  b_first->prev = &_head; b_last->next = &_head; }
+        if (be) { o._head.next = o._head.prev = &o._head; }
+        else    { o._head.next = a_first; o._head.prev = a_last;
+                  a_first->prev = &o._head; a_last->next = &o._head; }
+        if (!be) { _head.next->prev = &_head; _head.prev->next = &_head; }
+        if (!ae) { o._head.next->prev = &o._head; o._head.prev->next = &o._head; }
+    }
+};
+
+}  // namespace std
+
+#endif

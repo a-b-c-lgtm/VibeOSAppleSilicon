@@ -3,15 +3,21 @@
  *   tail PATH         # last 10 lines
  *   tail -N PATH      # last N lines
  *
- * Strategy: the file system is read-only and small.  We seek to
- * the end (well — we don't have lseek; we just stream-read and
- * keep a circular buffer of the last N line-start offsets, then
- * re-read from the earliest one).  Simple, O(file size) work,
+ * Strategy: stream-read the whole file once, keeping a circular
+ * buffer of the last N line-start offsets, then fseek back to
+ * the earliest one and stream from there.  O(file size) work,
  * O(N) memory.  No -f option (would require a growing file).
+ *
+ * Chapter 116d: drives the FILE * layer and uses fseek (chapter
+ * 116b's new SYS_LSEEK) to jump back instead of the old
+ * read-and-discard loop.
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/printf.h"
+#include "../libc/malloc.h"
+#include "../libc/stdio.h"
 
 #define MAX_N 64
 
@@ -54,9 +60,9 @@ int main(int argc, char **argv)
      * (count+1)-th newline from the end.  We track a ring of
      * line-end byte positions; once we know totals we know where
      * the desired tail starts. */
-    int fd = open(path, 0);
-    if (fd < 0) {
-        printf("tail: cannot open %s: errno=%d\n", path, -fd);
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        printf("tail: cannot open %s: %s\n", path, strerror(errno));
         return 1;
     }
 
@@ -69,11 +75,11 @@ int main(int argc, char **argv)
     long file_size = 0;
 
     char buf[256];
-    long n;
-    while ((n = read(fd, buf, sizeof(buf))) > 0) {
-        for (long i = 0; i < n; i++) {
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
+        for (size_t i = 0; i < n; i++) {
             if (buf[i] == '\n') {
-                long after = pos + i + 1;
+                long after = pos + (long)i + 1;
                 ring[rhead] = after;
                 rhead = (rhead + 1) % (MAX_N + 1);
                 if (rcount < MAX_N + 1) rcount++;
@@ -83,30 +89,24 @@ int main(int argc, char **argv)
                 ends_with_nl = 0;
             }
         }
-        pos += n;
+        pos += (long)n;
         file_size = pos;
     }
-    close(fd);
-    if (n < 0) {
-        printf("tail: read failed: errno=%d\n", (int)-n);
+    if (ferror(f)) {
+        printf("tail: read failed: %s\n", strerror(errno));
+        fclose(f);
         return 2;
     }
 
     long effective_lines = total_lines + (ends_with_nl ? 0 : 1);
-    if (effective_lines == 0) return 0;
+    if (effective_lines == 0) { fclose(f); return 0; }
 
     long start_off;
     if (effective_lines <= count) {
         start_off = 0;
     } else {
         long need = count;       /* how many \n-anchored offsets back from rhead */
-        int  slot = (rhead - need + (MAX_N + 1) * 2) % (MAX_N + 1);
-        /* The "start of the kept tail" is the offset AFTER the
-         * (count)-th-from-last newline — i.e. at slot (rhead - count - 1)
-         * + 1.  But ring[i] already stores the offset AFTER newline i,
-         * so the line that follows newline (rhead-count-1) starts at
-         * ring[(rhead-count-1)] which equals ring[(rhead-count-1+N+1)%(N+1)]. */
-        slot = (rhead - need - 1 + (MAX_N + 1) * 2) % (MAX_N + 1);
+        int  slot = (rhead - need - 1 + (MAX_N + 1) * 2) % (MAX_N + 1);
         if (need < total_lines && (count + 1) <= rcount) {
             start_off = ring[slot];
         } else {
@@ -114,25 +114,17 @@ int main(int argc, char **argv)
         }
     }
 
-    /* Pass 2: re-read the file, skip until start_off, then echo. */
-    fd = open(path, 0);
-    if (fd < 0) {
-        printf("tail: cannot reopen %s: errno=%d\n", path, -fd);
-        return 1;
+    /* Pass 2: fseek to start_off, stream the rest. */
+    if (fseek(f, start_off, SEEK_SET) != 0) {
+        printf("tail: fseek %ld failed: %s\n", start_off, strerror(errno));
+        fclose(f);
+        return 2;
     }
-    long skipped = 0;
-    while (skipped < start_off) {
-        long want = start_off - skipped;
-        if ((unsigned long)want > sizeof(buf)) want = (long)sizeof(buf);
-        long got = read(fd, buf, (size_t)want);
-        if (got <= 0) break;
-        skipped += got;
-    }
-    while ((n = read(fd, buf, sizeof(buf))) > 0)
-        write(1, buf, (size_t)n);
-    close(fd);
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+        fwrite(buf, 1, n, stdout);
+    fclose(f);
 
     if (file_size > 0 && !ends_with_nl)
-        write(1, "\n", 1);
+        fputc('\n', stdout);
     return 0;
 }

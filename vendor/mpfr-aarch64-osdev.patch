@@ -1,0 +1,44 @@
+# Patch: register `osdev` as a valid OS suffix in
+# mpfr-4.1.0's bundled `config.sub`, so cross-building
+# mpfr with `--host=aarch64-osdev` is accepted.
+#
+# Without this hunk mpfr's `configure --host=aarch64-osdev`
+# aborts with:
+#
+#   Invalid configuration `aarch64-osdev': OS `osdev' not
+#   recognized
+#
+# before any compiler flag is consulted.
+#
+# Note the indentation/prefix style: mpfr-4.1.0 ships an
+# older `config.sub` than the gmp/mpc ones, with the leading
+# `-` still required in the OS recognition arm (the newer
+# style strips it earlier).  The added line therefore reads
+# `| -osdev* \`, not `| osdev* \` as in the gmp and mpc
+# patches.  Same canonical output: `aarch64-unknown-osdev`.
+#
+# Companion patches in the same chapter:
+#   vendor/gmp-aarch64-osdev.patch  — bare `osdev*` form
+#   vendor/mpc-aarch64-osdev.patch  — bare `osdev*` form
+#
+# Apply with:
+#   patch -p1 -d vendor/mpfr-4.1.0/ < \
+#       vendor/mpfr-aarch64-osdev.patch
+#
+# Re-application is gated by the marker file
+# `vendor/mpfr-4.1.0/.patched-osdev` written by
+# scripts/fetch_gcc_prereqs.sh after a successful apply.
+#
+# Chapter 132e (cross-building gmp/mpfr/mpc for the
+# aarch64-osdev guest sysroot).
+#
+--- a/config.sub
++++ b/config.sub
+@@ -1379,6 +1379,7 @@
+ 	      | -udi* | -eabi* | -lites* | -ieee* | -go32* | -aux* \
+ 	      | -chorusos* | -chorusrdb* | -cegcc* | -glidix* \
+ 	      | -cygwin* | -msys* | -pe* | -psos* | -moss* | -proelf* | -rtems* \
++	      | -osdev* \
+ 	      | -midipix* | -mingw32* | -mingw64* | -linux-gnu* | -linux-android* \
+ 	      | -linux-newlib* | -linux-musl* | -linux-uclibc* \
+ 	      | -uxpv* | -beos* | -mpeix* | -udk* | -moxiebox* \

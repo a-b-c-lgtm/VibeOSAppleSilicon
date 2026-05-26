@@ -1,0 +1,101 @@
+// userspace/libc/cxx/functional — chapter 132f
+//
+// Freestanding <functional>.  Just std::less / std::greater /
+// std::equal_to / std::hash and a minimal std::function.
+//
+// std::function is implemented with type-erasure via a small
+// vtable — heap-allocates the captured callable.  Real
+// libstdc++ has SSO and exception-throwing empty-call; we
+// just abort on empty call.
+#ifndef _OSDEV_CXX_FUNCTIONAL
+#define _OSDEV_CXX_FUNCTIONAL 1
+
+#include "../malloc.h"
+#include "utility"
+#include "new"
+
+namespace std {
+
+template <class _T = void>
+struct less {
+    constexpr bool operator()(const _T &a, const _T &b) const { return a < b; }
+};
+template <>
+struct less<void> {
+    template <class _A, class _B>
+    constexpr bool operator()(const _A &a, const _B &b) const { return a < b; }
+};
+
+template <class _T = void>
+struct greater {
+    constexpr bool operator()(const _T &a, const _T &b) const { return b < a; }
+};
+
+template <class _T = void>
+struct equal_to {
+    constexpr bool operator()(const _T &a, const _T &b) const { return a == b; }
+};
+template <>
+struct equal_to<void> {
+    template <class _A, class _B>
+    constexpr bool operator()(const _A &a, const _B &b) const { return a == b; }
+};
+
+template <class _T> struct hash;
+template <> struct hash<int>           { unsigned long operator()(int v) const           { return (unsigned long)v; } };
+template <> struct hash<unsigned>      { unsigned long operator()(unsigned v) const      { return (unsigned long)v; } };
+template <> struct hash<long>          { unsigned long operator()(long v) const          { return (unsigned long)v; } };
+template <> struct hash<unsigned long> { unsigned long operator()(unsigned long v) const { return v; } };
+template <class _T> struct hash<_T *>  { unsigned long operator()(_T *v) const           { return (unsigned long)v; } };
+
+template <class> class function;
+
+template <class _R, class... _Args>
+class function<_R(_Args...)> {
+    struct _base {
+        virtual _R    invoke(_Args... a) = 0;
+        virtual _base *clone() const     = 0;
+        virtual       ~_base()           {}
+    };
+    template <class _F>
+    struct _impl : _base {
+        _F  f;
+        _impl(const _F &x) : f(x) {}
+        _impl(_F &&x)      : f(std::move(x)) {}
+        _R    invoke(_Args... a) override { return f(std::forward<_Args>(a)...); }
+        _base *clone()    const override { return new _impl(f); }
+    };
+    _base *_p;
+public:
+    function() noexcept : _p(0) {}
+    function(decltype(nullptr)) noexcept : _p(0) {}
+    template <class _F>
+    function(_F f) : _p(new _impl<_F>(std::move(f))) {}
+    function(const function &o) : _p(o._p ? o._p->clone() : 0) {}
+    function(function &&o) noexcept : _p(o._p) { o._p = 0; }
+    ~function() { delete _p; }
+    function &operator=(const function &o) {
+        if (this == &o) return *this;
+        delete _p;
+        _p = o._p ? o._p->clone() : 0;
+        return *this;
+    }
+    function &operator=(function &&o) noexcept {
+        if (this == &o) return *this;
+        delete _p;
+        _p = o._p;
+        o._p = 0;
+        return *this;
+    }
+    explicit operator bool() const noexcept { return _p != 0; }
+    _R operator()(_Args... a) const { return _p->invoke(std::forward<_Args>(a)...); }
+};
+
+template <class _F, class... _Args>
+inline auto invoke(_F &&f, _Args&&... a) -> decltype(f(std::forward<_Args>(a)...)) {
+    return f(std::forward<_Args>(a)...);
+}
+
+}  // namespace std
+
+#endif

@@ -1,32 +1,26 @@
 /* userspace/env/env.c — print the environment, one var per line.
  *
- * Same idea as POSIX `env(1)` with no arguments.  Walks the env
- * blob (packed sequence of "KEY=VALUE\0" entries) and prints
- * each entry on its own line.
+ * Same idea as POSIX `env(1)` with no arguments.  Walks the
+ * environ[] array (chapter 116c) and prints each entry on its
+ * own line.
  */
 
 #include "../libc/syscall.h"
 #include "../libc/printf.h"
-
-#define ENV_BUF 512
+#include "../libc/errno.h"
+#include "../libc/malloc.h"
+#include "../libc/env.h"
 
 int main(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
-
-    char buf[ENV_BUF];
-    long n = getenv_all(buf, sizeof(buf));
-    if (n <= 0) return 0;       /* empty env */
-
-    /* Walk the blob: each entry is NUL-terminated; an empty
-     * entry marks end-of-list. */
-    const char *p = buf;
-    while (*p) {
-        printf("%s\n", p);
-        /* Advance past this entry + its NUL. */
-        while (*p) p++;
-        p++;
+    /* Touch any env-getter to force the lazy init that populates
+     * environ[] from the kernel's blob; getenv("") returns NULL
+     * cheaply and triggers _env_init() as a side effect. */
+    (void)getenv("PATH");
+    for (char **p = environ; *p; p++) {
+        printf("%s\n", *p);
     }
     return 0;
 }

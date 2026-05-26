@@ -63,4 +63,16 @@ void virtio_input_poll(void);
  * and writes the byte into *out, 0 if the ring is empty. */
 int  virtio_input_try_getc(char *out);
 
+/* Pop one key-release event from the internal release ring.  The
+ * out value is the same GUI key code (ASCII byte 0..255, or one of
+ * the GUI_KEY_* extended codes 0x101..0x108) that the matching
+ * press would have delivered through the byte-stream path, so the
+ * focused WM ring sees press / release as a symmetric pair.  Modifier
+ * keys (shift, ctrl, alt, capslock) are NOT enqueued — their press
+ * never produces a byte either; the existing g_shift_down /
+ * g_ctrl_down trackers handle modifier release internally.
+ *
+ * Returns 1 on success (writes one uint32_t to *out), 0 if empty. */
+int  virtio_input_try_get_release(uint32_t *out);
+
 #endif /* KERNEL_DEVICE_VIRTIO_INPUT_H */

@@ -16,6 +16,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Stable syscall numbers — must match kernel/core/syscall.h. */
 enum {
     SYS_WRITE  = 1,
@@ -245,6 +249,17 @@ enum {
     SYS_KSTAT           = 98,
     SYS_THREAD_SNAPSHOT = 99,
     SYS_STRACE_RENDER   = 100,
+
+    /* Chapter 116b — POSIX lseek for the new stdio FILE * layer.
+     * Returns the resulting absolute offset or -errno (-ESPIPE
+     * on un-seekable kinds, -EINVAL for a bad whence, -ENOSYS
+     * for SEEK_END on filesystems that can't size yet). */
+    SYS_LSEEK           = 101,
+
+    /* Chapter 117 — POSIX stat / fstat.  See userspace/libc/sys/stat.h
+     * for the user-facing wrappers and struct stat alias. */
+    SYS_STAT            = 102,
+    SYS_FSTAT           = 103,
 };
 
 /* Chapter 95 — POSIX-shaped wall-clock value.  Layout matches
@@ -290,25 +305,67 @@ struct clone_args {
 #define MAP_FAILED     ((void *)-1L)
 
 /* Signal numbers (POSIX subset) — match kernel/core/thread.h.
- * Only SIGINT is currently delivered (by Ctrl-C in cooked mode);
- * the others are reserved for symmetry with POSIX userspace. */
+ * The kernel's sys_kill accepts any sig in 1..31; chapter 128b's
+ * libc raise() builds on that to make every signal in this table
+ * deliverable to the calling process.  SIGINT is also delivered
+ * by Ctrl-C in cooked mode; SIGCHLD is posted to the parent on
+ * child exit (chapter 78); everything else gets delivered only
+ * when something calls kill() / raise() explicitly. */
 #define SIGHUP   1
 #define SIGINT   2
 #define SIGQUIT  3
+#define SIGILL   4
+#define SIGABRT  6
+#define SIGBUS   7
+#define SIGFPE   8
 #define SIGKILL  9
+#define SIGUSR1 10
+#define SIGSEGV 11
+#define SIGUSR2 12
 #define SIGPIPE 13
+#define SIGALRM 14
 #define SIGTERM 15
 #define SIGCHLD 17    /* posted to the parent on child exit (chapter 78) */
 
 /* waitpid options (matches POSIX where it overlaps). */
 #define WNOHANG  1
 
+/* ── Chapter 116d — POSIX errno convention ────────────────────
+ *
+ * Every kernel SVC returns either a non-negative success value
+ * or a negative errno in x0.  `__svc_check` mirrors the
+ * negative case into the process-global `errno` slot AND
+ * collapses the return value to -1 (POSIX "return -1, set
+ * errno" shape).  Callers must read `errno` to recover the
+ * failure code; the old `-rc` trick no longer works.
+ *
+ * Pointer-returning syscalls (mmap, sbrk) put kernel-virtual
+ * pointers in x0 on success; user VA on aarch64 is well below
+ * 2^48 so the high bit is clear and `r < 0` is unambiguously
+ * "this is a kernel errno".  Collapsing to -1 yields the
+ * POSIX-mandated `MAP_FAILED` ((void *)-1) value — callers
+ * that special-case MAP_FAILED keep working.
+ *
+ * Before this chapter, the wrapper returned the raw -errno so
+ * the ~99 existing apps could print `-rc`.  The migration was
+ * the bulk of chapter 116d's diff — see the chapter writeup.  */
+extern int __errno_value;
+
+static inline long __svc_check(long r)
+{
+    if (r < 0) {
+        __errno_value = (int)(-r);
+        return -1;
+    }
+    return r;
+}
+
 static inline long _svc0(long n)
 {
     register long x8 __asm__("x8") = n;
     register long x0 __asm__("x0");
     __asm__ volatile("svc #0" : "=r"(x0) : "r"(x8) : "memory");
-    return x0;
+    return __svc_check(x0);
 }
 
 static inline long _svc1(long n, long a)
@@ -316,7 +373,7 @@ static inline long _svc1(long n, long a)
     register long x8 __asm__("x8") = n;
     register long x0 __asm__("x0") = a;
     __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8) : "memory");
-    return x0;
+    return __svc_check(x0);
 }
 
 static inline long _svc2(long n, long a, long b)
@@ -325,7 +382,7 @@ static inline long _svc2(long n, long a, long b)
     register long x0 __asm__("x0") = a;
     register long x1 __asm__("x1") = b;
     __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1) : "memory");
-    return x0;
+    return __svc_check(x0);
 }
 
 static inline long _svc3(long n, long a, long b, long c)
@@ -335,7 +392,7 @@ static inline long _svc3(long n, long a, long b, long c)
     register long x1 __asm__("x1") = b;
     register long x2 __asm__("x2") = c;
     __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2) : "memory");
-    return x0;
+    return __svc_check(x0);
 }
 
 static inline long _svc4(long n, long a, long b, long c, long d)
@@ -349,7 +406,7 @@ static inline long _svc4(long n, long a, long b, long c, long d)
                      : "+r"(x0)
                      : "r"(x8), "r"(x1), "r"(x2), "r"(x3)
                      : "memory");
-    return x0;
+    return __svc_check(x0);
 }
 
 static inline long _svc5(long n, long a, long b, long c, long d,
@@ -365,7 +422,7 @@ static inline long _svc5(long n, long a, long b, long c, long d,
                      : "+r"(x0)
                      : "r"(x8), "r"(x1), "r"(x2), "r"(x3), "r"(x4)
                      : "memory");
-    return x0;
+    return __svc_check(x0);
 }
 
 static inline long _svc6(long n, long a, long b, long c, long d,
@@ -383,7 +440,7 @@ static inline long _svc6(long n, long a, long b, long c, long d,
                      : "r"(x8), "r"(x1), "r"(x2), "r"(x3),
                        "r"(x4), "r"(x5)
                      : "memory");
-    return x0;
+    return __svc_check(x0);
 }
 
 static inline long write(int fd, const void *buf, size_t len)
@@ -391,7 +448,12 @@ static inline long write(int fd, const void *buf, size_t len)
     return _svc3(SYS_WRITE, fd, (long)(uintptr_t)buf, (long)len);
 }
 
-static inline int open(const char *name, int flags)
+/* POSIX `open()` is variadic — the `mode` arg is only meaningful
+ * when `flags & O_CREAT`.  Our kernel ignores the mode bits today
+ * (no permission enforcement yet), but autoconf-generated probes
+ * and ported source from libiberty / GNU make / coreutils all call
+ * the 3-arg form, so the prototype has to accept it.  Chapter 131d. */
+static inline int open(const char *name, int flags, ...)
 {
     return (int)_svc2(SYS_OPEN, (long)(uintptr_t)name, (long)flags);
 }
@@ -404,6 +466,59 @@ static inline long read(int fd, void *buf, size_t len)
 static inline int close(int fd)
 {
     return (int)_svc1(SYS_CLOSE, fd);
+}
+
+/* ── Chapter 116b — POSIX lseek ────────────────────────────
+ *
+ * Re-position the fd's read/write cursor.  Returns the new
+ * absolute offset, or -errno (-ESPIPE on un-seekable kinds,
+ * -EINVAL for a bad whence or negative result, -ENOSYS for
+ * SEEK_END on filesystems that can't report size yet).
+ *
+ * Used by stdio.h's fseek / ftell / rewind / fseeko. */
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
+typedef int64_t off_t;
+
+static inline off_t lseek(int fd, off_t off, int whence)
+{
+    return (off_t)_svc3(SYS_LSEEK, fd, (long)off, whence);
+}
+
+/* ── Chapter 117 — stat / fstat (raw syscall wrappers) ────────
+ *
+ * The user-facing `stat` / `fstat` functions live in
+ * `userspace/libc/sys/stat.h` so they can use struct stat,
+ * S_IFREG, etc.  Apps that need just the raw kernel struct may
+ * use these wrappers directly; everyone else should include
+ * sys/stat.h. */
+struct __kstat_raw {
+    uint32_t st_mode;
+    uint32_t _pad;
+    uint64_t st_size;
+    uint64_t st_mtime;
+    /* Chapter 131d — POSIX-shape `st_dev` / `st_ino`.  Append-only;
+     * see comment on struct stat in sys/stat.h for the meaning of
+     * the values our kernel writes today. */
+    uint64_t st_dev;
+    uint64_t st_ino;
+    /* Chapter 131e — POSIX `st_uid` / `st_gid` (always 0, no user
+     * system) so bfd/archive.c assignments compile. */
+    uint32_t st_uid;
+    uint32_t st_gid;
+};
+
+static inline long __sys_stat(const char *path, struct __kstat_raw *out)
+{
+    return _svc2(SYS_STAT, (long)(uintptr_t)path,
+                 (long)(uintptr_t)out);
+}
+
+static inline long __sys_fstat(int fd, struct __kstat_raw *out)
+{
+    return _svc2(SYS_FSTAT, fd, (long)(uintptr_t)out);
 }
 
 __attribute__((noreturn))
@@ -711,25 +826,40 @@ static inline unsigned long uptime_ms(void)
  * Unlike uptime_ms(), the returned value depends on the RTC the
  * kernel saw at boot: on a system where the RTC was never found
  * tv->tv_sec will count from 0 (Unix epoch), which userspace can
- * detect by checking whether tv_sec is wildly in the past. */
-static inline int gettimeofday(struct timeval *tv)
+ * detect by checking whether tv_sec is wildly in the past.
+ *
+ * Signature follows POSIX (chapter 131d): the second argument
+ * is a long-obsolete `struct timezone *` that POSIX defines as
+ * "set tz to NULL".  We accept any pointer and ignore it; this
+ * lets libiberty/mkstemps.c (and other host-libc-style callers)
+ * compile against our libc.  Internal callers may pass NULL. */
+static inline int gettimeofday(struct timeval *tv, void *tz)
 {
+    (void)tz;
     return (int)_svc1(SYS_GETTIMEOFDAY, (long)(uintptr_t)tv);
 }
 
 /* Convenience wrapper: return wall-clock seconds, optionally
  * also storing them at *out.  Returns -1 on syscall failure
  * (rare — only -EFAULT, which userspace shouldn't hit when
- * passing a stack-local). */
+ * passing a stack-local).
+ *
+ * Guarded by OSDEV_TIME_PROVIDED so a TU that also pulls in
+ * the extern definition (cstring.c provides one for BearSSL's
+ * x509_minimal stub) can `#define OSDEV_TIME_PROVIDED` before
+ * including syscall.h to silence the duplicate. */
+#ifndef OSDEV_TIME_PROVIDED
+#define OSDEV_TIME_PROVIDED
 static inline time_t time(time_t *out)
 {
     struct timeval tv;
-    if (gettimeofday(&tv) != 0)
+    if (gettimeofday(&tv, (void *)0) != 0)
         return (time_t)-1;
     if (out)
         *out = tv.tv_sec;
     return tv.tv_sec;
 }
+#endif
 
 /* Sleep for at least `ms` milliseconds.  Granularity is one
  * scheduler tick (currently 100 ms); the call may return up to
@@ -738,6 +868,67 @@ static inline int sleep_ms(unsigned long ms)
 {
     return (int)_svc1(SYS_SLEEP_MS, (long)ms);
 }
+
+/* Chapter 130a — POSIX `usleep`.  Doom's i_timer.c and several
+ * other upstream-friendly programs sleep for sub-tick amounts
+ * (typically 1_000 us = 1 ms inside polling loops).  Our
+ * scheduler tick is 100 ms, so anything under that rounds up
+ * to one tick — that's correct (POSIX guarantees "at least
+ * `usec` microseconds") but expensive in CPU yield count.
+ * If profiling shows tight loops burning ticks here, add a
+ * SYS_NANOSLEEP path in a future chapter.
+ *
+ * Argument is unsigned int per POSIX.1-2001 (older glibc had
+ * unsigned long). */
+static inline int usleep(unsigned int usec)
+{
+    unsigned long ms = (usec + 999u) / 1000u;
+    if (ms == 0) ms = 1;
+    return sleep_ms(ms);
+}
+
+/* Chapter 130a — POSIX `isatty`.  We don't have terminals yet
+ * (chapter 30 input multiplexing is per-window, not per-fd),
+ * so every fd reports "not a TTY".  Programs that gate
+ * interactive prompts on isatty (most of them) take their
+ * batch-mode path, which is what we want. */
+static inline int isatty(int fd)
+{
+    (void)fd;
+    return 0;
+}
+
+/* Chapter 131d — POSIX `sleep(unsigned int seconds)`.  Returns
+ * the number of seconds left unslept if interrupted; we never
+ * deliver signals during sleep_ms so it always returns 0.
+ * Implemented on top of `sleep_ms` to share the same scheduler
+ * path.  An overflow-safe multiply avoids surprises if a caller
+ * passes UINT_MAX as a "sleep forever" sentinel. */
+static inline unsigned int sleep(unsigned int seconds)
+{
+    if (seconds == 0) return 0;
+    unsigned long ms = (unsigned long)seconds * 1000ul;
+    if (ms / 1000ul != (unsigned long)seconds) ms = ~0ul; /* cap */
+    (void)sleep_ms(ms);
+    return 0;
+}
+
+/* Chapter 131d — POSIX `_exit(int)`.  Unlike `exit()` this does
+ * NOT run atexit handlers / .fini_array / stdio flushes — it
+ * goes straight to SYS_EXIT.  Required by libiberty's pex-unix
+ * after a failed exec in the child, where re-entering atexit
+ * (which would run the parent's handlers in the child's
+ * surviving address space, post-fork) is exactly the wrong
+ * thing.  Marked noreturn to match POSIX <unistd.h>. */
+__attribute__((noreturn))
+static inline void _exit(int code)
+{
+    _svc1(SYS_EXIT, code);
+    __builtin_unreachable();
+}
+
+/* `link(old, new)` lives in unistd.h — it needs errno.h, and
+ * syscall.h is deliberately includes-light. */
 
 /* Chapter 96 — synthesise a square wave on the virtio-snd PCM
  * stream.  Blocks for approximately `duration_ms` while the
@@ -906,12 +1097,19 @@ static inline int unlink(const char *path)
 
 /* Chapter 85 \u2014 directory namespace.
  *
- * mkdir(path) creates a single directory.  All parent components
- * must already exist (no "mkdir -p" semantics here \u2014 do that in
- * userspace if needed).  Currently `path` must start with /data/.
- * Returns 0 on success, -errno on failure. */
-static inline int mkdir(const char *path)
+ * mkdir(path, mode) creates a single directory.  All parent
+ * components must already exist (no "mkdir -p" semantics here
+ * \u2014 do that in userspace if needed).  Currently `path` must
+ * start with /data/.  Returns 0 on success, -errno on failure.
+ *
+ * The POSIX `mode` argument is accepted for source-compat with
+ * portable ports (chapter 130a DoomGeneric is the first such
+ * caller).  This OS has no per-file permission bits yet, so
+ * the mode is ignored \u2014 every directory is created world-
+ * accessible. */
+static inline int mkdir(const char *path, unsigned int mode)
 {
+    (void)mode;
     return (int)_svc1(SYS_MKDIR, (long)(uintptr_t)path);
 }
 
@@ -1010,16 +1208,56 @@ static inline int chdir(const char *path)
 
 /* Copy the calling thread's cwd (NUL-terminated) into `buf`.
  * Returns the number of bytes written including NUL, or -22
- * (-EINVAL) if `cap` is too small. */
-static inline long getcwd(char *buf, size_t cap)
+ * (-EINVAL) if `cap` is too small.
+ *
+ * This is the kernel-shaped helper; the POSIX-shaped
+ * `char *getcwd(char *, size_t)` is defined below.
+ */
+static inline long __sys_getcwd(char *buf, size_t cap)
 {
     return _svc2(SYS_GETCWD, (long)(uintptr_t)buf, (long)cap);
 }
 
+/* POSIX getcwd.  Returns `buf` on success, or NULL on error.
+ * If `buf` is NULL, malloc enough storage to hold the cwd; the
+ * `cap` argument is the requested allocation size (POSIX) or 0
+ * to let getcwd pick a reasonable default.  Caller frees with
+ * free() in that case.  Required by gcc's gcov-io.cc and other
+ * POSIX-flavoured TUs.
+ *
+ * malloc/free are declared with __asm__ rename so we don't pull
+ * malloc.h into this header (which would create an include
+ * cycle: env.h \u2192 syscall.h \u2192 malloc.h \u2192 syscall.h).  */
+extern void *__getcwd_malloc(unsigned long) __asm__("malloc");
+extern void  __getcwd_free  (void *)         __asm__("free");
+static inline char *getcwd(char *buf, size_t cap)
+{
+    if (buf == 0) {
+        size_t alloc = cap ? cap : 4096;
+        char *p = (char *)__getcwd_malloc(alloc);
+        if (!p) return 0;
+        long n = __sys_getcwd(p, alloc);
+        if (n < 0) { __getcwd_free(p); return 0; }
+        return p;
+    }
+    long n = __sys_getcwd(buf, cap);
+    if (n < 0) return 0;
+    return buf;
+}
+
+/* ── Chapter-33 raw env syscalls ────────────────────────────────
+ *
+ * These are the kernel-shaped helpers; the POSIX surface
+ * (`char *getenv(const char *)`, `setenv(name, value, overwrite)`,
+ * `unsetenv`, `putenv`, `environ[]`) lives in `env.h` and uses
+ * these as its backing store.  Most apps should include `env.h`
+ * and stay POSIX-compatible; only the `env` print-tool and the
+ * shell itself need to reach for the raw `__sys_*` shape. */
+
 /* Look up `key` in the calling thread's env, copy the value
  * (NUL-terminated) into `buf`.  Returns bytes written including
  * NUL, -2 (-ENOENT) if not present. */
-static inline long getenv(const char *key, char *buf, size_t cap)
+static inline long __sys_getenv(const char *key, char *buf, size_t cap)
 {
     return _svc3(SYS_GETENV,
                  (long)(uintptr_t)key,
@@ -1029,7 +1267,7 @@ static inline long getenv(const char *key, char *buf, size_t cap)
 
 /* Set or replace KEY=VAL in the env.  Returns 0, -22 (EINVAL)
  * for empty key, -12 (ENOMEM) if the env block is full. */
-static inline int setenv(const char *key, const char *val)
+static inline int __sys_setenv(const char *key, const char *val)
 {
     return (int)_svc2(SYS_SETENV,
                       (long)(uintptr_t)key,
@@ -1037,14 +1275,14 @@ static inline int setenv(const char *key, const char *val)
 }
 
 /* Remove KEY from env.  Returns 0 or -2 (ENOENT). */
-static inline int unsetenv(const char *key)
+static inline int __sys_unsetenv(const char *key)
 {
     return (int)_svc1(SYS_UNSETENV, (long)(uintptr_t)key);
 }
 
 /* Copy the entire env blob (packed K=V\0K=V\0...\0) into buf.
  * Returns bytes written including the trailing extra NUL. */
-static inline long getenv_all(char *buf, size_t cap)
+static inline long __sys_getenv_all(char *buf, size_t cap)
 {
     return _svc2(SYS_GETENV_ALL, (long)(uintptr_t)buf, (long)cap);
 }
@@ -1072,6 +1310,17 @@ static inline long getenv_all(char *buf, size_t cap)
                                    * after the WM has already swapped
                                    * the pixel buffer.  Apps re-derive
                                    * their layout from arg0/arg1. */
+#define GUI_EVENT_KEY_UP      7   /* arg0 = same GUI key code that the
+                                   * matching GUI_EVENT_KEY press delivered
+                                   * (ASCII byte 0..255, or one of the
+                                   * GUI_KEY_* extended codes).  Apps that
+                                   * only care about "key was pressed" can
+                                   * ignore this; per-tick game loops that
+                                   * maintain a held-state bitmap consume
+                                   * it to flip the bit back to 0.
+                                   * Modifier keys never appear here —
+                                   * their effect is folded into the byte
+                                   * delivered with GUI_EVENT_KEY. */
 
 #define GUI_BTN_LEFT          0x1u
 #define GUI_BTN_RIGHT         0x2u
@@ -1665,5 +1914,9 @@ static inline int srv_connect(const char *path)
 {
     return (int)_svc1(SYS_SRV_CONNECT, (long)path);
 }
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif

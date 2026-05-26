@@ -81,6 +81,18 @@
                                     * that ignore it just see their old
                                     * content top-left-anchored in the new
                                     * buffer with gray padding around it.  */
+#define GUI_EVENT_KEY_UP       7   /* arg0 = same GUI key code that the
+                                    * matching GUI_EVENT_KEY press delivered.
+                                    * Apps that only care about
+                                    * "key was pressed" can ignore this
+                                    * type entirely; apps that maintain
+                                    * a per-key held-state (game engines,
+                                    * piano-roll editors) consume it to
+                                    * flip the bit back to 0.  Modifier
+                                    * keys (shift, ctrl, alt) never produce
+                                    * an event of either type — their
+                                    * effect is folded into the byte
+                                    * delivered with GUI_EVENT_KEY. */
 
 /* Mouse-button bitmap shared with virtio_tablet.c. */
 #define GUI_BTN_LEFT           0x1u
@@ -197,6 +209,15 @@ int wm_has_windows(void);
  * three separate events the first of which looks like a bare ESC
  * keypress.  See wm_flush_pending_keys for the boundary rule. */
 int wm_keyboard_byte(char c);
+
+/* Deliver a single key-release to the focused window's event ring
+ * as GUI_EVENT_KEY_UP.  `key` is the same GUI key code that the
+ * matching press delivered through wm_keyboard_byte (raw ASCII byte
+ * in 0..255, or one of the GUI_KEY_* extended codes for cursor /
+ * navigation keys).  Spurious releases (no matching press in the
+ * focused window) are silently dropped.  Source: virtio_input.c
+ * pulls them out of its release ring during pump_input_into_wm. */
+int wm_keyboard_release(uint32_t key);
 
 /* Drain any partial CSI sequence held by the WM's keyboard parser
  * as a bare ESC keypress.  Call this at the end of every batch of

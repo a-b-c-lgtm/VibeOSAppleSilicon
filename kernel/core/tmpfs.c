@@ -129,18 +129,28 @@ static int tmpfs_grow_to(struct tmpfs_file *f, uint32_t need)
     return 0;
 }
 
-long tmpfs_write(int idx, const void *buf, size_t len)
+long tmpfs_write(int idx, uint32_t offset, const void *buf, size_t len)
 {
     if (idx < 0 || idx >= TMPFS_MAX_FILES) return -9;
     struct tmpfs_file *f = &g_files[idx];
     if (!f->in_use) return -9;
     if (len == 0) return 0;
-    uint64_t need64 = (uint64_t)f->size + (uint64_t)len;
+    uint64_t need64 = (uint64_t)offset + (uint64_t)len;
     if (need64 > TMPFS_MAX_FILE_SIZE) return -28 /* ENOSPC */;
     if (tmpfs_grow_to(f, (uint32_t)need64) != 0) return -12 /* ENOMEM */;
+    /* Sparse: if writing past EOF, zero-fill the gap so reads
+     * between the old size and the new offset return predictable
+     * bytes (POSIX semantics).  GNU as writes the ELF header,
+     * seeks past it to write section data, then seeks back to
+     * overwrite the header with its final form — that only works
+     * if tmpfs honors the fd offset.  Chapter 131f bug 4 fix. */
+    if (offset > f->size) {
+        for (uint32_t i = f->size; i < offset; i++) f->data[i] = 0;
+    }
     const uint8_t *src = (const uint8_t *)buf;
-    for (size_t i = 0; i < len; i++) f->data[f->size + i] = src[i];
-    f->size += (uint32_t)len;
+    for (size_t i = 0; i < len; i++) f->data[offset + i] = src[i];
+    uint32_t end = (uint32_t)(offset + len);
+    if (end > f->size) f->size = end;
     return (long)len;
 }
 
@@ -184,9 +194,9 @@ uint32_t tmpfs_size_of(int idx)
 
 void tmpfs_seek_end(int idx)
 {
-    /* No-op: tmpfs_write currently always appends.  When we
-     * grow tmpfs to support seek + overwrite we'll move the
-     * write cursor here. */
+    /* No-op kept for ABI compatibility.  tmpfs_write is now
+     * positional (chapter 131f bug 4) and the fd offset is set
+     * to f->size in tmpfs_op_open when O_APPEND is requested. */
     (void)idx;
 }
 
@@ -247,7 +257,12 @@ static long tmpfs_op_open(void *cookie, const char *rel, int flags,
         if (tidx < 0) return -ENOENT_VFS;
     }
     out->kind        = FD_TMPFS_RW;
-    out->offset      = 0;
+    /* O_APPEND: start fd at EOF so shell `>>` redirection
+     * (single-write-per-open) appends rather than overwriting.
+     * Chapter 131f bug 4 fix: tmpfs_write now honors the fd
+     * offset so without this, an O_APPEND open would write at
+     * offset 0 and overwrite the existing contents. */
+    out->offset      = (flags & O_APPEND) ? (uint64_t)g_files[tidx].size : 0;
     out->ramfs_index = tidx;
     out->osfs_start  = 0;
     out->osfs_size   = 0;
@@ -276,10 +291,7 @@ static long tmpfs_op_write(void *cookie, struct fd_entry *e,
 {
     (void)cookie;
     if (!e || !buf) return -EINVAL_VFS;
-    /* tmpfs_write always appends today, so the per-fd offset is
-     * advisory.  Keep it in sync with the file size so future
-     * read()s from the same fd see the bytes we just wrote. */
-    long wr = tmpfs_write(e->ramfs_index, buf, n);
+    long wr = tmpfs_write(e->ramfs_index, (uint32_t)e->offset, buf, n);
     if (wr > 0) e->offset += (uint64_t)wr;
     return wr;
 }
@@ -321,6 +333,31 @@ static int tmpfs_op_is_dir(void *cookie, const char *rel)
     return 0;                /* flat namespace: no subdirs */
 }
 
+/* chapter 119: support exec'ing a file written to /tmp.
+ * vfs_load() asks each mount's `load` op for a freshly
+ * kmalloc'd copy of the file bytes; we just allocate and
+ * pump it through tmpfs_read. */
+static long tmpfs_op_load(void *cookie, const char *rel,
+                           uint8_t **out_buf, size_t *out_size)
+{
+    (void)cookie;
+    const char *bare = tmpfs_strip_slash(rel);
+    if (!*bare) return -ENOENT_VFS;
+    int idx = tmpfs_lookup(bare);
+    if (idx < 0) return -ENOENT_VFS;
+    uint32_t sz = tmpfs_size_of(idx);
+    uint8_t *buf = (uint8_t *)kmalloc(sz ? sz : 1);
+    if (!buf) return -ENOMEM_VFS;
+    long got = tmpfs_read(idx, 0, buf, sz);
+    if (got < 0 || (uint32_t)got != sz) {
+        kfree(buf);
+        return -EINVAL_VFS;
+    }
+    *out_buf  = buf;
+    *out_size = (size_t)sz;
+    return 0;
+}
+
 const struct fs_ops tmpfs_fs_ops = {
     .open    = tmpfs_op_open,
     .read    = tmpfs_op_read,
@@ -331,7 +368,7 @@ const struct fs_ops tmpfs_fs_ops = {
     .unlink  = tmpfs_op_unlink,
     .mkdir   = NULL,
     .is_dir  = tmpfs_op_is_dir,
-    .load    = NULL,
+    .load    = tmpfs_op_load,
 };
 
 void tmpfs_register_mount(void)

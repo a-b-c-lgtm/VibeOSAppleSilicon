@@ -28,6 +28,7 @@
 #include "mmio.h"
 #include "../core/serial.h"
 #include "../core/pmem.h"
+#include "../core/wm.h"          /* GUI_KEY_* extended-key codes */
 
 #include <stdint.h>
 #include <stddef.h>
@@ -200,6 +201,77 @@ static int ring_pop(char *out)
     *out = g_kbd_ring[g_kbd_tail];
     g_kbd_tail = (g_kbd_tail + 1) & (KBD_RING_SIZE - 1);
     return 1;
+}
+
+/* ---- Key-release ring ----------------------------------------
+ *
+ * The byte ring above is the byte-stream view of presses (the
+ * shell's read(0) sees the same bytes a real terminal would).
+ * Releases don't have a natural byte representation — there is no
+ * ASCII for "the W key just came up" — so they ride a parallel
+ * ring of uint32_t GUI key codes (ASCII 0..255 or one of the
+ * GUI_KEY_* extended codes 0x101..0x108).  The consumer in
+ * syscall.c's pump_input_into_wm drains this ring and calls
+ * wm_keyboard_release for each entry, which delivers a
+ * GUI_EVENT_KEY_UP to the focused window.  Apps that don't care
+ * (the shell, notepad, the launcher) ignore the event type.
+ *
+ * QEMU's virtio-keyboard never emits more than one release per
+ * EV_SYN batch and the consumer drains on every yield, so 32
+ * slots is a wide margin. */
+#define REL_RING_SIZE 32
+static uint32_t g_rel_ring[REL_RING_SIZE];
+static uint32_t g_rel_head = 0;
+static uint32_t g_rel_tail = 0;
+
+static int rel_ring_empty(void) { return g_rel_head == g_rel_tail; }
+static void rel_ring_push(uint32_t key)
+{
+    uint32_t next = (g_rel_head + 1) & (REL_RING_SIZE - 1);
+    if (next == g_rel_tail) return;   /* full → drop newest */
+    g_rel_ring[g_rel_head] = key;
+    g_rel_head = next;
+}
+static int rel_ring_pop(uint32_t *out)
+{
+    if (rel_ring_empty()) return 0;
+    *out = g_rel_ring[g_rel_tail];
+    g_rel_tail = (g_rel_tail + 1) & (REL_RING_SIZE - 1);
+    return 1;
+}
+
+/* Map an evdev keycode to the GUI key code that the matching
+ * press path would have produced.  Used only on release, so the
+ * focused window sees press('W') / release('W') as a symmetric
+ * pair (case differences from a shift held during press vs
+ * release don't matter for the game-input use case — the codes
+ * here are the unshifted identity of the physical key).
+ *
+ * Returns 0 for codes that have no GUI side (modifiers, function
+ * keys we don't translate, unknowns); the caller drops those. */
+static uint32_t code_to_gui_release(uint16_t code)
+{
+    switch (code) {
+    case KC_UP:        return GUI_KEY_UP;
+    case KC_DOWN:      return GUI_KEY_DOWN;
+    case KC_LEFT:      return GUI_KEY_LEFT;
+    case KC_RIGHT:     return GUI_KEY_RIGHT;
+    case KC_HOME:      return GUI_KEY_HOME;
+    case KC_END:       return GUI_KEY_END;
+    case KC_PAGEUP:    return GUI_KEY_PGUP;
+    case KC_PAGEDOWN:  return GUI_KEY_PGDN;
+    case KC_BACKSPACE: return 0x7Fu;
+    case KC_DELETE:    return 0x7Fu;
+    case KC_TAB:       return 0x09u;
+    case KC_ENTER:     return 0x0Du;
+    case KC_ESC:       return 0x1Bu;
+    default: break;
+    }
+    if (code < 128) {
+        char base = kc_to_ascii[code];
+        if (base) return (uint32_t)(uint8_t)base;
+    }
+    return 0;
 }
 
 /* ---- helpers ---- */
@@ -501,9 +573,20 @@ static void handle_event(const struct virtio_input_event *ev)
     if (code == KC_LSHIFT || code == KC_RSHIFT) g_shift_down = (uint8_t)down;
     if (code == KC_LCTRL  || code == KC_RCTRL)  g_ctrl_down  = (uint8_t)down;
 
-    /* Only press + repeat generate keystrokes (releases are dropped
-     * for the byte-stream model used by the shell). */
-    if (value == KEY_VAL_RELEASE) return;
+    /* RELEASE for non-modifier keys: produce a key-up event for the
+     * focused window via the parallel release ring.  Modifiers
+     * never produced bytes either; their tracker above already
+     * handled the state flip. */
+    if (value == KEY_VAL_RELEASE) {
+        if (code == KC_LSHIFT || code == KC_RSHIFT ||
+            code == KC_LCTRL  || code == KC_RCTRL  ||
+            code == KC_LALT   || code == KC_RALT   ||
+            code == KC_CAPSLOCK)
+            return;
+        uint32_t k = code_to_gui_release(code);
+        if (k) rel_ring_push(k);
+        return;
+    }
 
     translate_key(code);
 }
@@ -553,4 +636,10 @@ int virtio_input_try_getc(char *out)
 {
     virtio_input_poll();
     return ring_pop(out);
+}
+
+int virtio_input_try_get_release(uint32_t *out)
+{
+    virtio_input_poll();
+    return rel_ring_pop(out);
 }

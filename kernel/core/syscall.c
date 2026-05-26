@@ -99,8 +99,9 @@ static long sys_write(long fd, long buf_ptr, long len)
                 if (n > sizeof(chunk)) n = sizeof(chunk);
                 if (copy_from_user(chunk, (uint64_t)buf_ptr + (uint64_t)total, n) < 0)
                     return -EFAULT;
-                long w = tmpfs_write(e->ramfs_index, chunk, n);
+                long w = tmpfs_write(e->ramfs_index, (uint32_t)e->offset, chunk, n);
                 if (w < 0) return total > 0 ? total : w;
+                e->offset += (uint64_t)w;
                 total += w;
             }
             return total;
@@ -298,6 +299,15 @@ static void pump_input_into_wm(void)
      * "ESC ..." sequence held back during the drain above is now
      * flushed as a bare ESC keypress.  See wm_flush_pending_keys. */
     wm_flush_pending_keys();
+    /* Key-release events ride a parallel ring (they have no ASCII
+     * representation).  Drain after the press path so any same-tick
+     * press-then-release pair lands in the focused window's event
+     * queue in the right order. */
+    if (virtio_input_present()) {
+        uint32_t k;
+        while (virtio_input_try_get_release(&k))
+            (void)wm_keyboard_release(k);
+    }
     if (virtio_tablet_present())
         virtio_tablet_poll();
 }
@@ -2191,6 +2201,40 @@ static long sys_mkdir(long path_uptr)
 }
 
 /*
+ * Chapter 117 -- sys_stat / sys_fstat.  Thin marshaling on top
+ * of vfs_stat_path / vfs_fstat; the real work lives in vfs.c.
+ *
+ *   sys_stat (const char *path, struct kstat *out) -> 0 / -errno
+ *   sys_fstat(int fd,         struct kstat *out)  -> 0 / -errno
+ */
+static long sys_stat(long path_uptr, long out_uptr)
+{
+    if (uaccess_check((uint64_t)out_uptr, sizeof(struct kstat)) != 0)
+        return -EFAULT;
+    char path[256];
+    long n = copy_string_from_user(path, (uint64_t)path_uptr, sizeof(path));
+    if (n < 0) return n;
+    struct kstat st;
+    long r = vfs_stat_path(path, &st);
+    if (r < 0) return r;
+    if (copy_to_user((uint64_t)out_uptr, &st, sizeof(st)) < 0)
+        return -EFAULT;
+    return 0;
+}
+
+static long sys_fstat(long fd, long out_uptr)
+{
+    if (uaccess_check((uint64_t)out_uptr, sizeof(struct kstat)) != 0)
+        return -EFAULT;
+    struct kstat st;
+    long r = vfs_fstat((int)fd, &st);
+    if (r < 0) return r;
+    if (copy_to_user((uint64_t)out_uptr, &st, sizeof(st)) < 0)
+        return -EFAULT;
+    return 0;
+}
+
+/*
  * sys_listdir_at(const char *path, int idx, char *name,
  *                size_t cap, uint32_t *size_out,
  *                uint32_t *type_out) -> int
@@ -2222,21 +2266,38 @@ static long sys_listdir_at(long path_uptr, long idx, long name_ptr,
     long pn = copy_string_from_user(path, (uint64_t)path_uptr, sizeof(path));
     if (pn < 0) return pn;
 
+    /* Normalise: strip trailing '/' (except for the root path
+     * "/" itself) so that "/data/" and "/data" enumerate
+     * identically AND so child-mount comparison below works
+     * with whole-prefix equality. */
+    {
+        size_t plen = 0;
+        while (path[plen]) plen++;
+        if (plen > 1 && path[plen - 1] == '/') path[plen - 1] = '\0';
+    }
+
     /* Chapter 113 — try the mount-table vtable first.  Any
      * filesystem that has been ported to fs_ops AND implements
-     * `listdir` handles its own enumeration here; everything else
-     * falls through to the legacy ladder below.  As each
-     * chapter-113 step lands one more driver, the corresponding
-     * branch in the ladder is deleted. */
-    {
-        const char *rel = NULL;
-        const struct mount *m = vfs_resolve(path, &rel);
-        if (m && m->ops && m->ops->listdir) {
-            char name[256];
-            uint32_t type = 0;
-            int got = m->ops->listdir(m->cookie, rel, (int)idx,
-                                      name, sizeof(name), &type);
-            if (got < 0) return -ENOENT_VFS;
+     * `listdir` handles its own enumeration here; the legacy
+     * prefix ladders are now gone.
+     *
+     * After the driver's entries are exhausted we ALSO synthesize
+     * one DIR-typed entry per mount whose prefix is a direct
+     * child of `path` (e.g. "/data" and "/mnt" appear inside
+     * ls /).  Without this `ls /` would only see the root
+     * ramfs's own files and the user could not discover the
+     * mount points from the root listing.  Order: driver entries
+     * first (idx 0..N-1), then synthesized mount-point entries
+     * (idx N..N+M-1). */
+    const char *rel = NULL;
+    const struct mount *m = vfs_resolve(path, &rel);
+    int    driver_n = 0;
+    if (m && m->ops && m->ops->listdir) {
+        char name[256];
+        uint32_t type = 0;
+        int got = m->ops->listdir(m->cookie, rel, (int)idx,
+                                  name, sizeof(name), &type);
+        if (got >= 0) {
             size_t out_n = 0;
             while (out_n + 1 < (size_t)cap && name[out_n]) out_n++;
             if (copy_to_user((uint64_t)name_ptr, name, out_n + 1) < 0)
@@ -2253,13 +2314,93 @@ static long sys_listdir_at(long path_uptr, long idx, long name_ptr,
                 return -EFAULT;
             return (long)out_n;
         }
+        /* Driver said "no entry at idx" -- count how many it has
+         * so we can compute the mount-point offset.  Cap the scan
+         * to keep a misbehaving driver from looping forever. */
+        char tmp[256];
+        uint32_t ttmp = 0;
+        while (driver_n < 4096) {
+            int g = m->ops->listdir(m->cookie, rel, driver_n,
+                                    tmp, sizeof(tmp), &ttmp);
+            if (g < 0) break;
+            driver_n++;
+        }
+    } else {
+        /* No driver claims this path -- callers (e.g. opendir on
+         * a nonexistent directory) must see ENOENT, not surprise
+         * mount-point listings.  Refuse early. */
+        return -ENOENT_VFS;
     }
 
-    /* /proc enumeration: handled by the chapter-114 userfs
-     * mount installed at boot by /bin/procd.  /data enumeration
-     * is also handled by osfs2_fs_ops::listdir.  No legacy
-     * branch remains here. */
-    return -EINVAL_VFS;
+    /* Walk the mount table for direct children of `path`.  A
+     * mount prefix counts as a direct child iff:
+     *   path == "/"   and prefix == "/X" (no further '/')
+     *   path == "/P"  and prefix == "/P/X" (no further '/')
+     * The root mount itself ("/") is always excluded. */
+    int      want      = (int)idx - driver_n;
+    int      seen      = 0;
+    size_t   path_len  = 0;
+    while (path[path_len]) path_len++;
+    int      path_is_root = (path_len == 1 && path[0] == '/');
+    int      total_mounts = vfs_mount_count();
+    for (int i = 0; i < total_mounts; i++) {
+        const struct mount *mm = vfs_mount_at(i);
+        if (!mm || !mm->prefix) continue;
+        size_t mp_len = 0;
+        while (mm->prefix[mp_len]) mp_len++;
+        if (mp_len <= 1) continue;  /* the root mount itself */
+
+        size_t expect_slash;
+        if (path_is_root) {
+            expect_slash = 0;            /* prefix[0] must be '/' */
+        } else {
+            if (mp_len <= path_len + 1) continue;
+            int match = 1;
+            for (size_t j = 0; j < path_len; j++) {
+                if (mm->prefix[j] != path[j]) { match = 0; break; }
+            }
+            if (!match) continue;
+            expect_slash = path_len;
+        }
+        if (mm->prefix[expect_slash] != '/') continue;
+        /* Leaf must contain no further '/' for "direct child". */
+        int extra_slash = 0;
+        for (size_t j = expect_slash + 1; j < mp_len; j++)
+            if (mm->prefix[j] == '/') { extra_slash = 1; break; }
+        if (extra_slash) continue;
+
+        if (seen == want) {
+            const char *leaf = mm->prefix + expect_slash + 1;
+            size_t lf = 0;
+            while (leaf[lf]) lf++;
+            if (lf + 1 > (size_t)cap) lf = (size_t)cap - 1;
+            char nbuf[256];
+            for (size_t j = 0; j < lf; j++) nbuf[j] = leaf[j];
+            nbuf[lf] = '\0';
+            if (copy_to_user((uint64_t)name_ptr, nbuf, lf + 1) < 0)
+                return -EFAULT;
+            if (size_out_ptr) {
+                uint32_t zero = 0;
+                if (copy_to_user((uint64_t)size_out_ptr, &zero,
+                                 sizeof(zero)) < 0)
+                    return -EFAULT;
+            }
+            if (type_out_ptr) {
+                /* 2u == LISTDIR_TYPE_DIR (userspace) ==
+                 * OSFS2_TYPE_DIR (kernel) -- the same wire
+                 * value every driver already returns for a
+                 * directory entry. */
+                uint32_t dt = 2u;
+                if (copy_to_user((uint64_t)type_out_ptr, &dt,
+                                 sizeof(dt)) < 0)
+                    return -EFAULT;
+            }
+            return (long)lf;
+        }
+        seen++;
+    }
+
+    return -ENOENT_VFS;
 }
 
 /*
@@ -2367,8 +2508,8 @@ static long sys_set_fg_pid(long pid)
  * directly instead of just (a0..a3).
  */
 
-#define MAX_EXEC_ARGV    16
-#define MAX_EXEC_ARG_LEN 96       /* per-arg cap, kernel staging buffer */
+#define MAX_EXEC_ARGV    64
+#define MAX_EXEC_ARG_LEN 256      /* per-arg cap, kernel staging buffer */
 
 static long sys_fork(struct exception_frame *frame)
 {
@@ -3311,6 +3452,10 @@ void svc_dispatch(struct exception_frame *frame)
         serial_puts("        FAR_EL1 = "); serial_puthex(far); serial_puts("\n");
         serial_puts("        ELR_EL1 = "); serial_puthex(frame->elr); serial_puts("\n");
         serial_puts("        SPSR    = "); serial_puthex(frame->spsr); serial_puts("\n");
+        serial_puts("        x0      = "); serial_puthex(frame->x[0]); serial_puts("\n");
+        serial_puts("        x1      = "); serial_puthex(frame->x[1]); serial_puts("\n");
+        serial_puts("        x29(FP) = "); serial_puthex(frame->x[29]); serial_puts("\n");
+        serial_puts("        x30(LR) = "); serial_puthex(frame->x[30]); serial_puts("\n");
         serial_puts("        thread  = "); serial_puts(thread_current()->name); serial_puts("\n");
         /* Kill the offending thread instead of returning to it
          * (which would just refault). */
@@ -3352,6 +3497,9 @@ void svc_dispatch(struct exception_frame *frame)
     case SYS_OPEN:   ret = sys_open(a0, a1);         break;
     case SYS_READ:   ret = sys_read(a0, a1, a2);     break;
     case SYS_CLOSE:  ret = sys_close(a0);            break;
+    case SYS_LSEEK:  ret = vfs_lseek((int)a0, (int64_t)a1, (int)a2); break;
+    case SYS_STAT:   ret = sys_stat(a0, a1);         break;
+    case SYS_FSTAT:  ret = sys_fstat(a0, a1);        break;
     case SYS_SPAWN:  ret = sys_spawn(a0, a1);        break;
     case SYS_WAIT:   ret = sys_wait(a0);             break;
     case SYS_GETARGS:ret = sys_getargs(a0, a1);      break;

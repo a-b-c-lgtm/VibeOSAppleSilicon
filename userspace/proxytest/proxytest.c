@@ -53,6 +53,9 @@
 
 #include "../libc/syscall.h"
 #include "../libc/printf.h"
+#include "../libc/errno.h"
+#include "../libc/malloc.h"
+#include "../libc/env.h"
 
 /* Helper: hand-rolled streq to avoid pulling in libc string.h. */
 static int s_eq(const char *a, const char *b)
@@ -149,7 +152,7 @@ int main(int argc, char **argv)
      * requests to it would 502.  setenv writes the kernel's
      * env table for the current proc; the browser child picks
      * it up via the same inheritance path HTTPD_UPSTREAM uses. */
-    if (setenv("BROWSER_PROXY", "http://127.0.0.1:8080/") < 0) {
+    if (setenv("BROWSER_PROXY", "http://127.0.0.1:8080/", 1) < 0) {
         printf("proxytest: setenv BROWSER_PROXY failed\n");
         return 1;
     }

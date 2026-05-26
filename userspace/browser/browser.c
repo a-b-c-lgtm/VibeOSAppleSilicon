@@ -72,6 +72,8 @@
 #include "../libc/clipboard.h"
 #include "../libc/pocketjs.h"
 #include "../libc/tls_socket.h"
+#include "../libc/errno.h"
+#include "../libc/env.h"
 #include "jsdom.h"
 #include "../libgui/draw.h"
 #include "../libgui/wmclient.h"
@@ -209,7 +211,7 @@ static char *slurp_file(const char *path, size_t *out_len)
 {
     int fd = open(path, 0);
     if (fd < 0) {
-        printf("browser: cannot open '%s': errno=%d\n", path, -fd);
+        printf("browser: cannot open '%s': %s\n", path, strerror(errno));
         return 0;
     }
     size_t cap = 4096, len = 0;
@@ -2050,9 +2052,8 @@ static int g_proxy_was_set = 0;
  * "Plain mode parity" section. */
 static void load_proxy_from_env(void)
 {
-    char tmp[160];
-    long got = getenv("BROWSER_PROXY", tmp, sizeof(tmp));
-    if (got <= 0) return;
+    const char *tmp = getenv("BROWSER_PROXY");
+    if (!tmp || !tmp[0]) return;
     g_proxy_was_set = 1;
     int n = 0;
     while (tmp[n] && n < (int)sizeof(g_proxy_prefix) - 1) {
@@ -4508,9 +4509,8 @@ int main(int argc, char **argv)
         return 1;
     }
     {
-        char envbuf[8];
-        if (getenv("BROWSER_TIMING", envbuf, sizeof(envbuf)) > 0
-            && envbuf[0] && envbuf[0] != '0')
+        const char *envv = getenv("BROWSER_TIMING");
+        if (envv && envv[0] && envv[0] != '0')
             g_timing = 1;
     }
     if (i >= argc) {

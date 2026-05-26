@@ -72,6 +72,30 @@ mmu_enable:
     msr     sctlr_el1, x1
     isb
 
+    /* Chapter 129 — enable FP/SIMD access at EL0 and EL1.
+     *
+     * CPACR_EL1.FPEN [21:20]:
+     *   0b00 : every FP/SIMD instruction at EL0 or EL1 traps to EL1
+     *          as EC=0x07 (FP/SIMD trapped).
+     *   0b01 : EL1 access permitted, EL0 access traps.
+     *   0b10 : reserved.
+     *   0b11 : EL0 and EL1 access both permitted.
+     *
+     * We pick 0b11 so user binaries built without
+     * -mgeneral-regs-only can issue FADD/LDR Q-reg/etc. without
+     * the kernel having to lazy-allocate FP state on first use.
+     * The kernel itself is still built with -mgeneral-regs-only
+     * (see USER_CFLAGS vs CFLAGS in the top-level Makefile), so
+     * kernel code never touches FP regs and cswitch_to is the
+     * one and only place that saves/restores them.
+     *
+     * RMW so any other bits CPACR_EL1 brings up at reset (ZEN
+     * for SVE, TTA for trace) are preserved. */
+    mrs     x1, cpacr_el1
+    orr     x1, x1, #(0x3 << 20)    /* FPEN = 0b11 */
+    msr     cpacr_el1, x1
+    isb
+
     ret
 
 /* mmu_disable — symmetric inverse, used only by debug/teardown.

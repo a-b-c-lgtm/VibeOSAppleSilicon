@@ -16,6 +16,7 @@
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/printf.h"
 #include "../libc/png.h"
 
@@ -23,7 +24,7 @@ static uint8_t *slurp_png(const char *path, size_t *out_len)
 {
     int fd = open(path, 0);
     if (fd < 0) {
-        printf("pngdec: open %s: errno=%d\n", path, -fd);
+        printf("pngdec: open %s: %s\n", path, strerror(errno));
         return 0;
     }
     size_t cap = 4096, len = 0;

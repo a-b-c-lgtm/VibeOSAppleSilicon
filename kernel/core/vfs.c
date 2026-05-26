@@ -884,6 +884,287 @@ int vfs_close(int fd)
     return 0;
 }
 
+/* ── Chapter 116b — POSIX lseek ─────────────────────────────
+ *
+ * Re-position `fd`'s offset.  Most fs drivers keep state in
+ * `fd_entry->offset` (which vfs_read advances after each chunk),
+ * so for them sys_lseek mutates the field directly.  Drivers
+ * that own remote state -- today only userfs -- get a vtable
+ * call via ops->lseek.
+ *
+ * SEEK_END requires knowing the file's size:
+ *   - FD_FILE (OSFS-1)        : osfs_size already on the fd
+ *   - FD_OSFS2_FILE           : osfs2_size(ino)
+ *   - FD_TMPFS_RW             : tmpfs_size_of(idx)
+ *   - FD_USERFS_FILE          : delegated to ops->lseek, which
+ *                               today returns -EINVAL for SEEK_END
+ *                               (will grow proper support when
+ *                               the daemon protocol does)
+ *
+ * Pipes, ptys, sockets, the console, and IPC server fds are
+ * not seekable -- return -ESPIPE per POSIX.
+ */
+long vfs_lseek(int fd, int64_t off, int whence)
+{
+    if (fd < 0 || fd >= FD_TABLE_SIZE) return -EBADF;
+    struct thread *t = thread_current();
+    struct fd_entry *e = &t->fdt->fds[fd];
+    if (!e->in_use) return -EBADF;
+
+    if (whence < 0 || whence > 2) return -EINVAL_VFS;
+
+    switch (e->kind) {
+    case FD_CONSOLE:
+    case FD_PIPE_R:
+    case FD_PIPE_W:
+    case FD_SOCKET:
+    case FD_SOCKET_LISTEN:
+    case FD_PTY_MASTER:
+    case FD_PTY_SLAVE:
+    case FD_SRV_LISTEN:
+    case FD_SRV_CONN:
+        return -ESPIPE;
+
+    case FD_USERFS_FILE:
+        if (!e->userfs_ch) return -EBADF;
+        return g_userfs_ops.lseek(e->userfs_ch, e, off, whence);
+
+    case FD_FILE: {
+        int64_t cur = (int64_t)e->offset;
+        int64_t base = (whence == 0) ? 0
+                     : (whence == 1) ? cur
+                     : (int64_t)e->osfs_size;
+        int64_t neu = base + off;
+        if (neu < 0) return -EINVAL_VFS;
+        e->offset = (uint64_t)neu;
+        return (long)neu;
+    }
+
+    case FD_OSFS2_FILE: {
+        int64_t cur = (int64_t)e->offset;
+        int64_t base = (whence == 0) ? 0
+                     : (whence == 1) ? cur
+                     : (int64_t)osfs2_size(e->osfs2_ino);
+        int64_t neu = base + off;
+        if (neu < 0) return -EINVAL_VFS;
+        e->offset = (uint64_t)neu;
+        return (long)neu;
+    }
+
+    case FD_TMPFS_RW: {
+        int64_t cur = (int64_t)e->offset;
+        int64_t base = (whence == 0) ? 0
+                     : (whence == 1) ? cur
+                     : (int64_t)tmpfs_size_of(e->ramfs_index);
+        int64_t neu = base + off;
+        if (neu < 0) return -EINVAL_VFS;
+        e->offset = (uint64_t)neu;
+        return (long)neu;
+    }
+    }
+
+    /* Unknown kind -- should not happen.  Be conservative. */
+    return -EINVAL_VFS;
+}
+
+/* ── Chapter 117 — POSIX stat / fstat ───────────────────────
+ *
+ * Two operations:
+ *   - vfs_stat_path(path, out)  reads metadata by name.  Uses
+ *     ops->is_dir(rel) to distinguish directories from files
+ *     without opening; for files, opens (via vfs_open) so the
+ *     resulting fd_entry carries the size already-cached by
+ *     the FS driver, then closes.
+ *   - vfs_fstat(fd, out)  reads metadata straight off an open
+ *     fd_entry.  No path resolution, no allocation, can't race
+ *     with unlink.
+ *
+ * Size is read from the FS-specific field of fd_entry:
+ *   FD_FILE        -> osfs_size            (OSFS-1, set at open)
+ *   FD_OSFS2_FILE  -> osfs2_size(ino)      (writable disk fs)
+ *   FD_TMPFS_RW    -> tmpfs_size_of(idx)   (writable in-mem fs)
+ *   everything else (pipes, ptys, sockets, IPC, userfs, console)
+ *                  -> size 0; mode reflects the kind below.
+ *
+ * mtime is sourced from the OSFS-2 inode when available; every
+ * other path reports 0 (we don't track mtime for ramfs / tmpfs
+ * yet -- adequate for the GCC / TCC / make use cases this
+ * chapter unlocks).
+ */
+static void fill_size_from_fd_entry(const struct fd_entry *e,
+                                    struct kstat *out)
+{
+    out->st_size = 0;
+    out->st_mtime = 0;
+    out->st_uid = 0;
+    out->st_gid = 0;
+    switch (e->kind) {
+    case FD_FILE:
+        out->st_size = e->osfs_size;
+        break;
+    case FD_OSFS2_FILE:
+        out->st_size = osfs2_size(e->osfs2_ino);
+        break;
+    case FD_TMPFS_RW:
+        out->st_size = tmpfs_size_of(e->ramfs_index);
+        break;
+    default:
+        break;
+    }
+}
+
+/* Chapter 131d — populate POSIX `st_dev` / `st_ino`.
+ *
+ * libiberty (fdmatch.c, getpwd.c) compares two stats for "same
+ * file?" via `a.st_dev == b.st_dev && a.st_ino == b.st_ino`.
+ * The pair has to be stable per file, but the actual values
+ * are only meaningful relative to other stats on the same
+ * filesystem.
+ *
+ * We assign one device number per fd_kind that backs a real
+ * file, and a per-FS inode index:
+ *   OSFS-1 -> dev=1, ino=osfs_start (directory-entry sector)
+ *   OSFS-2 -> dev=2, ino=osfs2_ino
+ *   tmpfs  -> dev=3, ino=ramfs_index + 1   (avoid 0)
+ *   userfs -> dev=4, ino=userfs_handle
+ *   pipes / sockets / consoles -> dev=0, ino=fd-table slot
+ *
+ * Path-based stat on directories (root / mount roots) leaves
+ * dev/ino at 0; libiberty never compares directory stats. */
+static void fill_dev_ino_from_fd_entry(const struct fd_entry *e,
+                                       struct kstat *out)
+{
+    out->st_dev = 0;
+    out->st_ino = 0;
+    switch (e->kind) {
+    case FD_FILE:
+        out->st_dev = 1;
+        out->st_ino = e->osfs_start;
+        break;
+    case FD_OSFS2_FILE:
+        out->st_dev = 2;
+        out->st_ino = e->osfs2_ino;
+        break;
+    case FD_TMPFS_RW:
+        out->st_dev = 3;
+        out->st_ino = (uint64_t)e->ramfs_index + 1u;
+        break;
+    case FD_USERFS_FILE:
+        out->st_dev = 4;
+        out->st_ino = e->userfs_handle;
+        break;
+    default:
+        break;
+    }
+}
+
+static uint32_t mode_for_fd_kind(enum fd_kind k)
+{
+    switch (k) {
+    case FD_CONSOLE:        return S_IFCHR_K | 0666u;
+    case FD_PIPE_R:
+    case FD_PIPE_W:         return S_IFIFO_K | 0600u;
+    case FD_SOCKET:
+    case FD_SOCKET_LISTEN:  return S_IFSOCK_K | 0600u;
+    case FD_PTY_MASTER:
+    case FD_PTY_SLAVE:      return S_IFCHR_K | 0620u;
+    case FD_SRV_LISTEN:
+    case FD_SRV_CONN:       return S_IFSOCK_K | 0600u;
+    case FD_FILE:           return S_IFREG_K | 0444u;
+    case FD_OSFS2_FILE:     return S_IFREG_K | 0644u;
+    case FD_TMPFS_RW:       return S_IFREG_K | 0644u;
+    case FD_USERFS_FILE:    return S_IFREG_K | 0644u;
+    default:                return S_IFREG_K | 0644u;
+    }
+}
+
+long vfs_stat_path(const char *path, struct kstat *out)
+{
+    if (!path || !out) return -EINVAL_VFS;
+
+    /* Root and bare mount prefixes are always directories. */
+    if (path[0] == '/' && path[1] == '\0') {
+        out->st_mode = S_IFDIR_K | 0755u;
+        out->st_size = 0;
+        out->st_mtime = 0;
+        out->_pad = 0;
+        out->st_dev = 0;
+        out->st_ino = 0;
+        out->st_uid = 0;
+        out->st_gid = 0;
+        return 0;
+    }
+
+    const char *rel = NULL;
+    const struct mount *m = vfs_resolve(path, &rel);
+    if (!m || !m->ops) return -ENOENT_VFS;
+
+    /* Empty `rel` means the path WAS the mount prefix itself
+     * (e.g. "/data" against the /data mount).  Treat as the
+     * mount's root directory. */
+    if (!rel || rel[0] == '\0' ||
+        (rel[0] == '/' && rel[1] == '\0')) {
+        out->st_mode = S_IFDIR_K | 0755u;
+        out->st_size = 0;
+        out->st_mtime = 0;
+        out->_pad = 0;
+        out->st_dev = 0;
+        out->st_ino = 0;
+        out->st_uid = 0;
+        out->st_gid = 0;
+        return 0;
+    }
+
+    /* Ask the filesystem whether it's a directory.  Drivers
+     * that don't implement is_dir get treated as "file" and
+     * fall through to the open-and-read-size path; if open
+     * fails we propagate the error. */
+    if (m->ops->is_dir) {
+        int isd = m->ops->is_dir(m->cookie, rel);
+        if (isd == 1) {
+            out->st_mode = S_IFDIR_K | 0755u;
+            out->st_size = 0;
+            out->st_mtime = 0;
+            out->_pad = 0;
+            out->st_dev = 0;
+            out->st_ino = 0;
+            out->st_uid = 0;
+            out->st_gid = 0;
+            return 0;
+        }
+        /* isd == 0 means "file"; isd < 0 means lookup failure --
+         * we still try open below, which will return the same
+         * errno from a richer path. */
+    }
+
+    int fd = vfs_open(path, O_RDONLY);
+    if (fd < 0) return fd;
+
+    struct thread *t = thread_current();
+    struct fd_entry *e = &t->fdt->fds[fd];
+    out->st_mode = mode_for_fd_kind(e->kind);
+    out->_pad = 0;
+    fill_size_from_fd_entry(e, out);
+    fill_dev_ino_from_fd_entry(e, out);
+    vfs_close(fd);
+    return 0;
+}
+
+long vfs_fstat(int fd, struct kstat *out)
+{
+    if (!out) return -EINVAL_VFS;
+    if (fd < 0 || fd >= FD_TABLE_SIZE) return -EBADF;
+    struct thread *t = thread_current();
+    struct fd_entry *e = &t->fdt->fds[fd];
+    if (!e->in_use) return -EBADF;
+
+    out->st_mode = mode_for_fd_kind(e->kind);
+    out->_pad = 0;
+    fill_size_from_fd_entry(e, out);
+    fill_dev_ino_from_fd_entry(e, out);
+    return 0;
+}
+
 void vfs_close_all(struct thread *t)
 {
     if (!t) return;

@@ -25,6 +25,7 @@
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/printf.h"
 #include "../libc/malloc.h"
 
@@ -138,7 +139,7 @@ static int do_clear(const char *one_host)
         snprintf(path, sizeof(path), "%s/%s", COOKIE_DIR, one_host);
         int rc = unlink(path);
         if (rc < 0) {
-            printf("cookies: cannot remove %s (errno=%d)\n", path, -rc);
+            printf("cookies: cannot remove %s: %s\n", path, strerror(errno));
             return 1;
         }
         printf("cookies: removed %s\n", path);
@@ -160,7 +161,7 @@ static int do_clear(const char *one_host)
         snprintf(path, sizeof(path), "%s/%s", COOKIE_DIR, name);
         int urc = unlink(path);
         if (urc < 0) {
-            printf("cookies: cannot remove %s (errno=%d)\n", path, -urc);
+            printf("cookies: cannot remove %s: %s\n", path, strerror(errno));
             return 1;
         }
         removed++;

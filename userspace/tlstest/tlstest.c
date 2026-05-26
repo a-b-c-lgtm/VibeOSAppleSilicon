@@ -241,7 +241,7 @@ static int run_handshake_mode(const char *host_str, const char *port_str,
          * starts running before 2010 or after 2037 we want a
          * clearer error than "BR_ERR_X509_EXPIRED". */
         struct timeval tv;
-        if (gettimeofday(&tv) == 0 && tv.tv_sec > 0) {
+        if (gettimeofday(&tv, NULL) == 0 && tv.tv_sec > 0) {
             printf("tlstest: wallclock tv_sec=%ld (validator anchored to it)\n",
                    (long)tv.tv_sec);
         }

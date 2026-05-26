@@ -23,6 +23,10 @@
 
 #include "syscall.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef MALLOC_GROW
 #define MALLOC_GROW (16 * 1024)   /* sbrk in 16 KiB chunks */
 #endif
@@ -183,5 +187,49 @@ static inline void free(void *p)
      * right-coalescing above, which is the common case.) */
     _ualloc_lock_release();
 }
+
+/* calloc(n, size): allocate n*size bytes, zero-initialised.
+ * Chapter 130a addition (DoomGeneric needs it).  We do the
+ * malloc + memset by hand to avoid pulling in <string.h> here
+ * (which would create a circular include via stdlib.h). */
+static inline void *calloc(size_t n, size_t size)
+{
+    size_t total = n * size;
+    if (n != 0 && total / n != size) return (void *)0; /* overflow */
+    void *p = malloc(total);
+    if (!p) return p;
+    unsigned char *q = (unsigned char *)p;
+    for (size_t i = 0; i < total; i++) q[i] = 0;
+    return p;
+}
+
+/* realloc(p, want): grow or shrink an allocation.  Chapter 130a
+ * addition.  Always malloc-new-copy-free-old — we don't try to
+ * extend in place even when the trailing slack is sufficient,
+ * because the free-list shape after coalescing makes the math
+ * fragile.  Doom only calls realloc on small WAD-checksum
+ * buffers so the extra copy is invisible.
+ *
+ * realloc(NULL, n) == malloc(n); realloc(p, 0) frees p and
+ * returns NULL, both per C11. */
+static inline void *realloc(void *p, size_t want)
+{
+    if (!p) return malloc(want);
+    if (want == 0) { free(p); return (void *)0; }
+    struct ualloc_blk *b = (struct ualloc_blk *)((char *)p - UALLOC_HDR_SIZE);
+    size_t old_payload = b->size - UALLOC_HDR_SIZE;
+    void *np = malloc(want);
+    if (!np) return (void *)0;
+    size_t copy = old_payload < want ? old_payload : want;
+    unsigned char       *d = (unsigned char *)np;
+    const unsigned char *s = (const unsigned char *)p;
+    for (size_t i = 0; i < copy; i++) d[i] = s[i];
+    free(p);
+    return np;
+}
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* USER_MALLOC_H */

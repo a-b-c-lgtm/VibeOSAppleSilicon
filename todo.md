@@ -8,3 +8,4 @@ X - gui terminal needs longer history
 X - Move window decoration to user space
 - porting gcc
 - build and run applications built with gcc
+X - Get key released signal to fix doom controls

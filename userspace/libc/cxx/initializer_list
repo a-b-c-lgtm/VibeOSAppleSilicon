@@ -1,0 +1,57 @@
+// userspace/libc/cxx/initializer_list — chapter 132f
+//
+// Freestanding <initializer_list>.  This header is special:
+// the compiler itself knows about std::initializer_list and
+// emits brace-list literals as instances of it.  All we have
+// to do is declare the class with the exact shape the
+// compiler expects: a pair of (T*, size_t) members in that
+// order, plus begin/end/size accessors.
+//
+// libstdc++'s real header does the same — there's no library
+// code, just the declarations.  Same approach used by libc++
+// in freestanding mode.
+#ifndef _OSDEV_CXX_INITIALIZER_LIST
+#define _OSDEV_CXX_INITIALIZER_LIST 1
+
+#include <stddef.h>
+
+namespace std {
+
+template <class _E>
+class initializer_list {
+public:
+    typedef _E              value_type;
+    typedef const _E&       reference;
+    typedef const _E&       const_reference;
+    typedef size_t          size_type;
+    typedef const _E*       iterator;
+    typedef const _E*       const_iterator;
+
+private:
+    iterator  _M_array;
+    size_type _M_len;
+
+    // The compiler magically emits this private constructor when
+    // it lowers a brace-enclosed initializer list.
+    constexpr initializer_list(const_iterator __a, size_type __l) noexcept
+        : _M_array(__a), _M_len(__l) {}
+
+public:
+    constexpr initializer_list() noexcept : _M_array(0), _M_len(0) {}
+
+    constexpr size_type size() const noexcept { return _M_len; }
+    constexpr const_iterator begin() const noexcept { return _M_array; }
+    constexpr const_iterator end()   const noexcept { return _M_array + _M_len; }
+};
+
+template <class _Tp>
+constexpr const _Tp *begin(initializer_list<_Tp> __ils) noexcept
+    { return __ils.begin(); }
+
+template <class _Tp>
+constexpr const _Tp *end(initializer_list<_Tp> __ils) noexcept
+    { return __ils.end(); }
+
+} // namespace std
+
+#endif

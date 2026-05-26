@@ -1,0 +1,52 @@
+# Patch: register `osdev` as a valid OS suffix in
+# gmp-6.2.1's bundled `configfsf.sub`, so cross-building
+# gmp with `--host=aarch64-osdev` is accepted.
+#
+# Background.  gmp ships TWO config.sub layers:
+#   - `config.sub`     — gmp-specific wrapper for aliases
+#                         like `pentium4 -> i786`.  Delegates
+#                         the canonicalisation arm to ...
+#   - `configfsf.sub`  — a stock GNU config.sub copy.  This
+#                         is where the OS recognition list
+#                         lives, so the patch lands here.
+#
+# Without this hunk gmp's `configure --host=aarch64-osdev`
+# aborts with:
+#
+#   Invalid configuration `aarch64-osdev': OS `osdev' not
+#   recognized
+#
+# before any compiler flag is consulted.  Adding `osdev*`
+# to the recognised-OS case is a one-line additive change;
+# the canonical form gmp then sees is the same
+# `aarch64-unknown-osdev` that gcc and binutils receive
+# (because both of their config.subs have the same edit,
+# via vendor/gcc-aarch64-osdev.patch and
+# vendor/binutils-aarch64-osdev.patch respectively).
+#
+# Companion patches in the same chapter:
+#   vendor/mpfr-aarch64-osdev.patch  — older `-osdev*`
+#                                       prefix form
+#   vendor/mpc-aarch64-osdev.patch   — same bare form
+#
+# Apply with:
+#   patch -p1 -d vendor/gmp-6.2.1/ < \
+#       vendor/gmp-aarch64-osdev.patch
+#
+# Re-application is gated by the marker file
+# `vendor/gmp-6.2.1/.patched-osdev` written by
+# scripts/fetch_gcc_prereqs.sh after a successful apply.
+#
+# Chapter 132e (cross-building gmp/mpfr/mpc for the
+# aarch64-osdev guest sysroot).
+#
+--- a/configfsf.sub
++++ b/configfsf.sub
+@@ -1709,6 +1709,7 @@
+ 	     | udi* | lites* | ieee* | go32* | aux* | hcos* \
+ 	     | chorusrdb* | cegcc* | glidix* \
+ 	     | cygwin* | msys* | pe* | moss* | proelf* | rtems* \
++	     | osdev* \
+ 	     | midipix* | mingw32* | mingw64* | mint* \
+ 	     | uxpv* | beos* | mpeix* | udk* | moxiebox* \
+ 	     | interix* | uwin* | mks* | rhapsody* | darwin* \

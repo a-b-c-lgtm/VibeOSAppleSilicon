@@ -53,6 +53,7 @@
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/thread.h"
 #include "../libc/printf.h"
 #include "../libc/font_proto.h"
@@ -297,8 +298,8 @@ int main(void)
 
         int cfd = srv_accept(lfd);
         if (cfd < 0) {
-            if (cfd == -4 /*EINTR*/) continue;
-            printf("[fontd] accept failed: %d\n", cfd);
+            if (errno == EINTR) continue;
+            printf("[fontd] accept failed: %s\n", strerror(errno));
             close(lfd);
             return 1;
         }

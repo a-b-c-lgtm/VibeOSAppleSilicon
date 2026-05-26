@@ -1,0 +1,34 @@
+// userspace/libc/cxx/cstdlib — chapter 132f
+//
+// Freestanding <cstdlib>.  C++ standard says <cstdlib> declares
+// the same things as <stdlib.h> in namespace std::.  We include
+// the C header and `using` the names into std.
+//
+// gcc/system.h pulls this in via the unconditional system block.
+#ifndef _OSDEV_CXX_CSTDLIB
+#define _OSDEV_CXX_CSTDLIB 1
+
+#include "../stdlib.h"
+
+namespace std {
+    using ::size_t;
+    using ::malloc;
+    using ::free;
+    using ::calloc;
+    using ::realloc;
+    using ::exit;
+    using ::abort;
+    using ::atexit;
+    using ::getenv;
+    using ::setenv;
+    using ::unsetenv;
+    using ::atoi;
+    using ::atol;
+    using ::strtol;
+    using ::strtoul;
+    using ::qsort;
+    using ::bsearch;
+    using ::abs;
+}
+
+#endif

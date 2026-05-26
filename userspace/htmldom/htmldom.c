@@ -28,6 +28,7 @@
  * bytes escaped (newlines as \n etc) so each node stays on one line.
  */
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/printf.h"
 #include "../libc/malloc.h"
 #include "../libc/html.h"
@@ -39,7 +40,7 @@ static char *slurp(const char *path, size_t *out_len)
 {
     int fd = open(path, 0);
     if (fd < 0) {
-        printf("htmldom: cannot open %s: errno=%d\n", path, -fd);
+        printf("htmldom: cannot open %s: %s\n", path, strerror(errno));
         return 0;
     }
     size_t cap = 4096;

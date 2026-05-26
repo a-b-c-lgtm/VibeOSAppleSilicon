@@ -1,0 +1,276 @@
+// userspace/libc/cxx/vector — chapter 132f
+//
+// Freestanding std::vector.  Real implementation (not just a
+// stub) using ::malloc / ::free.  Provides the methods gcc
+// proper actually uses: push_back, emplace_back, pop_back,
+// size, capacity, reserve, resize, clear, empty, front, back,
+// operator[], at, begin/end iterators, erase, insert, swap,
+// data, assignment, copy/move ctors.
+//
+// No allocator template parameter awareness — the second
+// template arg is accepted but ignored (always std::allocator).
+//
+// This is **not** a libstdc++ port; it's a header-only
+// "good enough for gcc's bookkeeping data structures" vector.
+// Doesn't support exception safety semantics that real
+// libstdc++ guarantees, but our build uses -fno-exceptions
+// anyway.
+#ifndef _OSDEV_CXX_VECTOR
+#define _OSDEV_CXX_VECTOR 1
+
+#include "../malloc.h"
+#include "type_traits"
+#include "utility"
+#include "bits/_alloc.h"
+#include "initializer_list"
+#include "new"
+
+namespace std {
+
+template <class _T, class _A = allocator<_T>>
+class vector {
+public:
+    typedef _T              value_type;
+    typedef unsigned long   size_type;
+    typedef long            difference_type;
+    typedef _T &            reference;
+    typedef const _T &      const_reference;
+    typedef _T *            pointer;
+    typedef const _T *      const_pointer;
+    typedef _T *            iterator;
+    typedef const _T *      const_iterator;
+
+private:
+    _T   *_d;
+    size_type _n;
+    size_type _c;
+
+    void _grow_to(size_type want) {
+        if (want <= _c) return;
+        size_type nc = _c ? _c * 2 : 4;
+        while (nc < want) nc *= 2;
+        _T *nd = (_T *)::malloc(nc * sizeof(_T));
+        for (size_type i = 0; i < _n; ++i) {
+            new (&nd[i]) _T(std::move(_d[i]));
+            _d[i].~_T();
+        }
+        if (_d) ::free(_d);
+        _d = nd;
+        _c = nc;
+    }
+
+public:
+    vector() noexcept : _d(0), _n(0), _c(0) {}
+    explicit vector(size_type n) : _d(0), _n(0), _c(0) {
+        _grow_to(n);
+        for (size_type i = 0; i < n; ++i) new (&_d[i]) _T();
+        _n = n;
+    }
+    vector(size_type n, const _T &v) : _d(0), _n(0), _c(0) {
+        _grow_to(n);
+        for (size_type i = 0; i < n; ++i) new (&_d[i]) _T(v);
+        _n = n;
+    }
+    vector(initializer_list<_T> il) : _d(0), _n(0), _c(0) {
+        _grow_to(il.size());
+        size_type i = 0;
+        for (auto it = il.begin(); it != il.end(); ++it, ++i) {
+            new (&_d[i]) _T(*it);
+        }
+        _n = il.size();
+    }
+    vector(const vector &o) : _d(0), _n(0), _c(0) {
+        _grow_to(o._n);
+        for (size_type i = 0; i < o._n; ++i) new (&_d[i]) _T(o._d[i]);
+        _n = o._n;
+    }
+    vector(vector &&o) noexcept : _d(o._d), _n(o._n), _c(o._c) {
+        o._d = 0; o._n = 0; o._c = 0;
+    }
+    template <class _It>
+    vector(_It first, _It last) : _d(0), _n(0), _c(0) {
+        for (; first != last; ++first) push_back(*first);
+    }
+    ~vector() {
+        for (size_type i = 0; i < _n; ++i) _d[i].~_T();
+        if (_d) ::free(_d);
+    }
+
+    vector &operator=(const vector &o) {
+        if (this == &o) return *this;
+        clear();
+        _grow_to(o._n);
+        for (size_type i = 0; i < o._n; ++i) new (&_d[i]) _T(o._d[i]);
+        _n = o._n;
+        return *this;
+    }
+    vector &operator=(vector &&o) noexcept {
+        if (this == &o) return *this;
+        clear();
+        if (_d) ::free(_d);
+        _d = o._d; _n = o._n; _c = o._c;
+        o._d = 0; o._n = 0; o._c = 0;
+        return *this;
+    }
+
+    reference       operator[](size_type i)       { return _d[i]; }
+    const_reference operator[](size_type i) const { return _d[i]; }
+    reference       at(size_type i)               { return _d[i]; }
+    const_reference at(size_type i)         const { return _d[i]; }
+    reference       front()                       { return _d[0]; }
+    const_reference front()                 const { return _d[0]; }
+    reference       back()                        { return _d[_n - 1]; }
+    const_reference back()                  const { return _d[_n - 1]; }
+    pointer         data()                  noexcept { return _d; }
+    const_pointer   data()                  const noexcept { return _d; }
+
+    iterator        begin()       noexcept { return _d; }
+    iterator        end()         noexcept { return _d + _n; }
+    const_iterator  begin() const noexcept { return _d; }
+    const_iterator  end()   const noexcept { return _d + _n; }
+    const_iterator  cbegin()const noexcept { return _d; }
+    const_iterator  cend()  const noexcept { return _d + _n; }
+
+    bool      empty()    const noexcept { return _n == 0; }
+    size_type size()     const noexcept { return _n; }
+    size_type capacity() const noexcept { return _c; }
+    size_type max_size() const noexcept { return (size_type)-1 / sizeof(_T); }
+
+    void reserve(size_type n) { _grow_to(n); }
+
+    void clear() noexcept {
+        for (size_type i = 0; i < _n; ++i) _d[i].~_T();
+        _n = 0;
+    }
+
+    void resize(size_type n) {
+        if (n < _n) {
+            for (size_type i = n; i < _n; ++i) _d[i].~_T();
+            _n = n;
+        } else if (n > _n) {
+            _grow_to(n);
+            for (size_type i = _n; i < n; ++i) new (&_d[i]) _T();
+            _n = n;
+        }
+    }
+    void resize(size_type n, const _T &v) {
+        if (n < _n) {
+            for (size_type i = n; i < _n; ++i) _d[i].~_T();
+            _n = n;
+        } else if (n > _n) {
+            _grow_to(n);
+            for (size_type i = _n; i < n; ++i) new (&_d[i]) _T(v);
+            _n = n;
+        }
+    }
+
+    void push_back(const _T &v) {
+        _grow_to(_n + 1);
+        new (&_d[_n]) _T(v);
+        ++_n;
+    }
+    void push_back(_T &&v) {
+        _grow_to(_n + 1);
+        new (&_d[_n]) _T(std::move(v));
+        ++_n;
+    }
+    template <class... _Args>
+    reference emplace_back(_Args&&... args) {
+        _grow_to(_n + 1);
+        new (&_d[_n]) _T(std::forward<_Args>(args)...);
+        return _d[_n++];
+    }
+    void pop_back() {
+        --_n;
+        _d[_n].~_T();
+    }
+
+    iterator erase(iterator pos) {
+        size_type idx = (size_type)(pos - _d);
+        _d[idx].~_T();
+        for (size_type i = idx; i + 1 < _n; ++i) {
+            new (&_d[i]) _T(std::move(_d[i + 1]));
+            _d[i + 1].~_T();
+        }
+        --_n;
+        return _d + idx;
+    }
+    iterator erase(iterator first, iterator last) {
+        size_type i0 = (size_type)(first - _d);
+        size_type i1 = (size_type)(last - _d);
+        for (size_type i = i0; i < i1; ++i) _d[i].~_T();
+        size_type gap = i1 - i0;
+        for (size_type i = i1; i < _n; ++i) {
+            new (&_d[i - gap]) _T(std::move(_d[i]));
+            _d[i].~_T();
+        }
+        _n -= gap;
+        return _d + i0;
+    }
+
+    iterator insert(iterator pos, const _T &v) {
+        size_type idx = (size_type)(pos - _d);
+        _grow_to(_n + 1);
+        for (size_type i = _n; i > idx; --i) {
+            new (&_d[i]) _T(std::move(_d[i - 1]));
+            _d[i - 1].~_T();
+        }
+        new (&_d[idx]) _T(v);
+        ++_n;
+        return _d + idx;
+    }
+
+    iterator insert(iterator pos, size_type cnt, const _T &v) {
+        size_type idx = (size_type)(pos - _d);
+        if (cnt == 0) return _d + idx;
+        _grow_to(_n + cnt);
+        for (size_type i = _n; i > idx; --i) {
+            new (&_d[i + cnt - 1]) _T(std::move(_d[i - 1]));
+            _d[i - 1].~_T();
+        }
+        for (size_type k = 0; k < cnt; ++k) new (&_d[idx + k]) _T(v);
+        _n += cnt;
+        return _d + idx;
+    }
+
+    template <class _It,
+              class = typename std::enable_if<!std::is_integral<_It>::value>::type>
+    iterator insert(iterator pos, _It first, _It last) {
+        size_type idx = (size_type)(pos - _d);
+        size_type cnt = 0;
+        for (_It t = first; t != last; ++t) ++cnt;
+        if (cnt == 0) return _d + idx;
+        _grow_to(_n + cnt);
+        for (size_type i = _n; i > idx; --i) {
+            new (&_d[i + cnt - 1]) _T(std::move(_d[i - 1]));
+            _d[i - 1].~_T();
+        }
+        size_type k = 0;
+        for (_It t = first; t != last; ++t, ++k) new (&_d[idx + k]) _T(*t);
+        _n += cnt;
+        return _d + idx;
+    }
+
+    void swap(vector &o) noexcept {
+        _T *td = _d;          _d = o._d; o._d = td;
+        size_type tn = _n;    _n = o._n; o._n = tn;
+        size_type tc = _c;    _c = o._c; o._c = tc;
+    }
+};
+
+template <class _T, class _A>
+inline bool operator==(const vector<_T, _A> &a, const vector<_T, _A> &b) {
+    if (a.size() != b.size()) return false;
+    for (typename vector<_T, _A>::size_type i = 0; i < a.size(); ++i) {
+        if (!(a[i] == b[i])) return false;
+    }
+    return true;
+}
+template <class _T, class _A>
+inline bool operator!=(const vector<_T, _A> &a, const vector<_T, _A> &b) {
+    return !(a == b);
+}
+
+}  // namespace std
+
+#endif

@@ -31,6 +31,7 @@
 
 #include "wmclient.h"
 #include "../libc/printf.h"
+#include "../libc/errno.h"
 
 static int      g_conn    = -1;
 static uint32_t g_session = 0;
@@ -97,7 +98,7 @@ int wm_connect(void)
     for (int attempt = 0; attempt < 50; attempt++) {
         fd = srv_connect(WM_SOCK_PATH);
         if (fd >= 0) break;
-        if (fd != -2 /* -ENOENT */) break;
+        if (errno != ENOENT) break;
         sleep_ms(100);
     }
     if (fd < 0) {
@@ -460,7 +461,18 @@ int wm_window_dirty(struct wm_window *win,
     struct wm_msg rep;
     if (wm_recv(&rep) < 0) return -1;
     if (rep.op != WM_WIN_DAMAGE || rep.status != WM_OK) {
-        printf("[wmclient] DAMAGE failed status=%d\n", (int)rep.status);
+        /* DAMAGE replies can return -ENOTIMPL (wsd scanout not
+         * ready) or -EBUSY transients during heavy disk I/O
+         * (chapter 133e diagnostic).  Apps already check the
+         * return code; print once per process so the serial
+         * channel stays usable during long-running ops like
+         * a 6 MB tar extract. */
+        static int once = 0;
+        if (!once) {
+            once = 1;
+            printf("[wmclient] DAMAGE failed status=%d (further suppressed)\n",
+                   (int)rep.status);
+        }
         return -1;
     }
     return 0;

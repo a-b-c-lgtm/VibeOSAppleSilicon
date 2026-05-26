@@ -215,7 +215,7 @@ static inline int ck_slurp(const char *host, char **out, size_t *out_len)
  * (-EEXIST = -17). */
 static inline void ck_ensure_dir(void)
 {
-    int rc = mkdir(COOKIE_DIR);
+    int rc = mkdir(COOKIE_DIR, 0700);
     (void)rc;  /* -17 EEXIST is the steady-state case */
 }
 

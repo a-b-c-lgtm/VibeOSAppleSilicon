@@ -157,18 +157,30 @@ flowchart TB
 
     subgraph APPS["apps and tools"]
       direction LR
-      SH["sh + ls/cat/grep/ps/top/strace/..."]
+      SH["sh + ls/cat/grep/ps/top/strace/date/mount/..."]
       DESKTOP["desktop + wallpaper"]
       LAUNCHER["launcher"]
       TASKBAR["taskbar + clock"]
-      NOTEPAD["notepad"]
+      NOTEPAD["notepad (with Build button)"]
       PAINT["paint"]
       TERM["gui_term"]
       BROWSER["browser (paint / plain / ANSI / GUI)"]
+      DOOM["doom (in-guest WAD + framebuffer)"]
       HTTPGET["httpget"]
       TLSTEST["tlstest, getrand, echod, ..."]
     end
-    class SH,DESKTOP,LAUNCHER,TASKBAR,NOTEPAD,PAINT,TERM,BROWSER,HTTPGET,TLSTEST uapp
+    class SH,DESKTOP,LAUNCHER,TASKBAR,NOTEPAD,PAINT,TERM,BROWSER,DOOM,HTTPGET,TLSTEST uapp
+
+    subgraph TOOLCHAIN["developer toolchain (on-disk, runs in-guest)"]
+      direction LR
+      AS["/bin/as (real GNU binutils)"]
+      LD["/bin/ld + /bin/ar (real GNU binutils)"]
+      CC["/bin/cc (small native compiler)"]
+      GCC["/bin/gcc (cross-built real GCC)"]
+      MAKE["/bin/make"]
+      TAR["/bin/tar (ustar)"]
+    end
+    class AS,LD,CC,GCC,MAKE,TAR uapp
   end
 
   USER =="svc # syscalls"==> KCORE
@@ -180,6 +192,11 @@ flowchart TB
   BROWSER --> BR
   BROWSER --> JS
   BROWSER --> PNG
+  DOOM --> LG
+  NOTEPAD --> MAKE
+  MAKE --> GCC
+  GCC --> AS
+  GCC --> LD
   HTTPSD  --> BR
   WSD =="SYS_FB_PRESENT + shadow window"==> WIN
   INIT --> WSD
@@ -273,6 +290,39 @@ The regression sweep that gates every chapter lives in `scripts/`:
 ./scripts/sweep.sh
 ```
 
+### Troubleshooting: `RuntimeError: no socket: /tmp/osdev-serial-*.sock`
+
+If `sweep.sh` (or a single `python3 scripts/test_*.py`) suddenly
+shows mass failures with messages like
+
+```
+RuntimeError: no socket: /tmp/osdev-serial-fontd.sock
+```
+
+and the same tests pass when re-run on their own, the failure is
+almost always **a leftover qemu from a previous run** (or an
+abandoned debug session) holding HVF and racing on socket paths —
+not a regression in the OS itself. The harness times out waiting
+for qemu to bind its unix-domain serial socket, qemu's stderr never
+reaches the screen, and you're left blind.
+
+The canonical diagnostic is checked into the tree:
+
+```bash
+bash scripts/_dbg_qemu_socket_diag.sh
+```
+
+It kills any orphan `sweep.sh` / `python3 scripts/test_*` / `qemu-
+system-aarch64` processes, removes stale `/tmp/osdev-*.sock` files,
+launches one qemu the way `test_echod.py` does with stderr and
+stdout redirected to `/tmp/qemu_diag_stderr.txt` and
+`/tmp/qemu_diag_stdout.txt`, and reports whether the socket
+appeared. If qemu came up cleanly, the original sweep failure was
+host pollution — re-run the sweep with `pgrep -fl qemu-system`
+confirmed empty beforehand and it will pass. If qemu died, the
+captured stderr file tells you why (a missing image, an HVF lock,
+a bad device line after an edit).
+
 ## Where to start reading
 
 - [Book index](book/INDEX.md) — master table of contents and status
@@ -327,7 +377,7 @@ to open windowed apps:
   (typing `news.ycombinator.com` performs a real chain-validated
   TLS 1.2 handshake against the live public site).
 - **Browser** — `/bin/browser` parses HTML, builds a DOM, parses
-  CSS, runs a CSS-driven layout engine, decodes PNG/JPEG, fetches
+  CSS, runs a CSS-driven layout engine, decodes PNG, fetches
   external stylesheets and images over `http://` *or* `https://`,
   evaluates a pocket-sized JavaScript (`pocketjs`) for `onclick`
   handlers, submits HTML forms with cookies under a same-origin
@@ -350,18 +400,43 @@ to open windowed apps:
   browser image cache, TrueType fonts rasterised in `fontd`,
   a `/proc`-shaped pseudo-filesystem with `ps` and `top`, and
   `strace` over `/proc/<pid>/trace`.
+- **POSIX-ish libc** — `errno`, `<stdio.h>` (real `printf`/`scanf`
+  with `%o`, precision, and `scanf` parsing), `<ctype.h>`,
+  `<string.h>`, `<assert.h>`, `<setjmp.h>` with full register
+  save/restore, `<signal.h>` with `raise`/`abort` and the POSIX
+  signal table, `<time.h>` (`struct tm`, `gmtime_r`, `strftime`),
+  `<stdlib.h>` (`qsort`, `bsearch`, `strtol`, `getopt`),
+  `<sys/stat.h>`, `<dirent.h>`, `<fcntl.h>`, and FP/SIMD enabled
+  at EL0 so the context switch saves `q0..q31`+`fpsr`+`fpcr`.
+  Enough libc surface to host real upstream C.
+- **On-disk developer toolchain** — a small native `/bin/cc`
+  (one chapter, ~1k lines) plus, alongside it, the real GNU
+  binutils `/bin/as`, `/bin/ld`, `/bin/ar` and a cross-built
+  real `/bin/gcc` (with GMP/MPFR/MPC and the C runtime in
+  `/lib`). `/bin/make` drives multi-file builds, `/bin/tar`
+  unpacks ustar archives, and `notepad` has a **Build button**
+  that runs `make` on the current file's directory. The Doom
+  source tree compiles and links end-to-end inside the guest
+  (chapters 133c–133f).
+- **Games and real software** — `/bin/doom`: id Software's
+  Doom shareware running on the framebuffer, fed by the
+  virtio-keyboard with real `GUI_EVENT_KEY_UP` plumbing so
+  movement keys release the same tick the user lifts them
+  (chapter 133g). The Doom binary on disk is the one
+  `/bin/gcc` produced in-guest, not the cross-built artefact.
 
 ## Project status
 
-The codebase tracks the book chapter by chapter. As of chapter 113g
-(`MOUNT_RO` + `EROFS_VFS` hardening, completing Part XVI's first
-half — the mount-table refactor), every part through XV — Browser
-Maturation — has been shipped end to end, the prefix-special-cased
-VFS ladders have been replaced with a `struct fs_ops` vtable
-dispatched through a longest-prefix-match mount table, `/bin/mount`
-prints the live table via the new `SYS_MOUNTS` syscall, and every
-mutation against a read-only mount returns `EROFS_VFS` uniformly.
-The headline gaps still open on the roadmap are:
+The codebase tracks the book chapter by chapter. As of chapter 133g
+(real `GUI_EVENT_KEY_UP` plumbing, retiring the Doom timed-release
+shim and closing Part XVIII), every part through XVIII — *Real GCC,
+Real Software, Real Doom* — has been shipped end to end. The OS now
+boots to a desktop with a wallpaper, taskbar, and clock; talks to
+the public internet over chain-validated HTTPS using a ~130-anchor
+trust store taken from the host; ships a real GNU binutils + GCC
+toolchain on disk that compiles real upstream C; and runs id
+Software's Doom from a binary the in-guest compiler produced. The
+headline gaps still open on the roadmap are:
 
 - **Part IX — Process Model.** A POSIX-shaped `fork`/`exec`/COW
   pair with signals and job control. `init` and the shell currently
@@ -369,14 +444,17 @@ The headline gaps still open on the roadmap are:
   to retire it (73–79) is stubbed and being written.
 - **Part X — Persistence.** A writable on-disk filesystem with a
   small journal so `notepad` saves, shell history, and browser
-  cookies survive reboot. Today writes go to in-memory `tmpfs`.
+  cookies survive reboot. Today writes go to in-memory `tmpfs`
+  (`/tmp`) and to the writable on-disk OSFS-2 at `/data`, but
+  without journalling.
 - **Part XVI — Filesystem Architecture, second half.** The
   mount-table refactor (chapter 113) is done; user-space
-  filesystem servers via a 9P-shaped RPC and `SYS_MOUNT`/
+  filesystem servers via a 9P-shaped RPC and `SYS_MOUNT` /
   `SYS_UMOUNT` (chapter 114) is the next milestone.
-- **Part XVII — Self-hosting GCC.** A POSIX-ish libc growth pass,
-  `/bin/as` + `/bin/ld` + `/bin/ar` + a crt0/libgcc shim, a TinyCC
-  native port, and eventually GCC building itself on the OS.
+- **Part VI — Window manager extras.** Menus, window snapping,
+  and the remaining 52+ items in the GUI roadmap.
+- **Section 19 onward.** Next roadmap item is undefined at the
+  time of writing; see the book index for the most recent plan.
 
 See the [project status snapshot](book/INDEX.md#project-status-snapshot)
 in the book index for the canonical chapter-by-chapter table.

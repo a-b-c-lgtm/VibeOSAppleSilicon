@@ -41,6 +41,7 @@
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/printf.h"
 #include "../libc/freestanding.h"
 #include "../libc/malloc.h"
@@ -273,8 +274,8 @@ int main(int argc, char **argv)
 
     int lfd = socket_listen((uint16_t)port, 4);
     if (lfd < 0) {
-        printf("httpsd: socket_listen(%d) failed errno=%d\n",
-               port, -lfd);
+        printf("httpsd: socket_listen(%d) failed: %s\n",
+               port, strerror(errno));
         return 1;
     }
     printf("httpsd: " HTTPSD_VERSION " listening on port %d\n", port);
@@ -288,7 +289,7 @@ int main(int argc, char **argv)
         uint16_t peer_port = 0;
         int cfd = socket_accept(lfd, &peer_ip, &peer_port);
         if (cfd < 0) {
-            printf("httpsd: accept failed errno=%d\n", -cfd);
+            printf("httpsd: accept failed: %s\n", strerror(errno));
             return 1;
         }
         printf("httpsd: tls connection from %u.%u.%u.%u:%u\n",

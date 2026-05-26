@@ -26,6 +26,9 @@
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
+#include "../libc/malloc.h"
+#include "../libc/env.h"
 
 /* ---------------- chapter 108 supervisor ----------------
  *
@@ -59,7 +62,7 @@ static int supervise(const char *path, const char *args)
         write(1, "[init] supervise spawn FAILED ", 30);
         write(1, path, strlen(path));
         write(1, " errno=", 7);
-        putd(-tid);
+        putd(errno);
         write(1, "\n", 1);
         return tid;
     }
@@ -91,7 +94,7 @@ static int supervise_check(int reaped, int code)
         int tid = spawn(g_supervised[i].path, g_supervised[i].args);
         if (tid < 0) {
             write(1, "[init] respawn FAILED errno=", 28);
-            putd(-tid);
+            putd(errno);
             write(1, "\n", 1);
             g_supervised[i].tid = -1;
         } else {
@@ -112,7 +115,7 @@ static void run(const char *path)
     int tid = spawn(path, "");
     if (tid < 0) {
         write(1, " FAILED errno=", 14);
-        putd(-tid);
+        putd(errno);
         write(1, "\n", 1);
         return;
     }
@@ -136,9 +139,9 @@ int main(void)
     /* Seed the environment.  Children inherit this byte-for-byte
      * via SYS_SPAWN, so the shell and every program it launches
      * see the same defaults. */
-    setenv("PATH", "/bin");
-    setenv("HOME", "/");
-    setenv("SHELL", "/bin/sh");
+    setenv("PATH", "/bin", 1);
+    setenv("HOME", "/", 1);
+    setenv("SHELL", "/bin/sh", 1);
 
     /* Self-test: run two non-interactive programs to prove the
      * spawn/wait path is alive before handing control to the
@@ -204,7 +207,7 @@ int main(void)
     int dtid = spawn("/bin/desktop", "");
     if (dtid < 0) {
         write(1, "[init] spawn /bin/desktop FAILED errno=", 39);
-        putd(-dtid);
+        putd(errno);
         write(1, "\n", 1);
     }
 
@@ -212,7 +215,7 @@ int main(void)
     int btid = spawn("/bin/taskbar", "");
     if (btid < 0) {
         write(1, "[init] spawn /bin/taskbar FAILED errno=", 39);
-        putd(-btid);
+        putd(errno);
         write(1, "\n", 1);
         /* non-fatal */
     }
@@ -221,7 +224,7 @@ int main(void)
     int gtid = spawn("/bin/launcher", "");
     if (gtid < 0) {
         write(1, "[init] spawn /bin/launcher FAILED errno=", 40);
-        putd(-gtid);
+        putd(errno);
         write(1, "\n", 1);
         /* non-fatal — keep going */
     }
@@ -253,7 +256,7 @@ int main(void)
     int httid = spawn("/bin/httpd", "80");
     if (httid < 0) {
         write(1, "[init] spawn /bin/httpd FAILED errno=", 37);
-        putd(-httid);
+        putd(errno);
         write(1, "\n", 1);
         /* non-fatal — desktop is still usable without it */
     }
@@ -284,7 +287,7 @@ int main(void)
     int httsid = spawn("/bin/httpsd", "8443");
     if (httsid < 0) {
         write(1, "[init] spawn /bin/httpsd FAILED errno=", 38);
-        putd(-httsid);
+        putd(errno);
         write(1, "\n", 1);
         /* non-fatal — TLS tests will surface this */
     }
@@ -300,7 +303,7 @@ int main(void)
     int httpsid_ec = spawn("/bin/httpsd", "--ec 8444");
     if (httpsid_ec < 0) {
         write(1, "[init] spawn /bin/httpsd --ec FAILED errno=", 43);
-        putd(-httpsid_ec);
+        putd(errno);
         write(1, "\n", 1);
     }
 
@@ -349,7 +352,7 @@ int main(void)
     int tid = spawn("/bin/sh", "");
     if (tid < 0) {
         write(1, "[init] spawn /bin/sh FAILED errno=", 34);
-        putd(-tid);
+        putd(errno);
         write(1, "\n", 1);
         return 1;
     }

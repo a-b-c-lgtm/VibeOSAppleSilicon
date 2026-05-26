@@ -267,33 +267,23 @@ static void render(const struct wm_win_desc *infos, int n)
 static int g_known_count = -1;       /* count from last render */
 static int g_last_clock_sec = -1;    /* last second value rendered */
 
-/* Format civil time `ct` into "HH:MM:SS" at *out (UTC). */
-static void format_clock(const struct civil_time *ct, char out[9])
-{
-    static const char digits[] = "0123456789";
-    out[0] = digits[(ct->hour / 10) % 10];
-    out[1] = digits[ ct->hour       % 10];
-    out[2] = ':';
-    out[3] = digits[(ct->min  / 10) % 10];
-    out[4] = digits[ ct->min        % 10];
-    out[5] = ':';
-    out[6] = digits[(ct->sec  / 10) % 10];
-    out[7] = digits[ ct->sec        % 10];
-    out[8] = '\0';
-}
+/* Chapter 128d: taskbar consumes POSIX `struct tm` + strftime
+ * directly now that <time.h> exposes them.  The old
+ * format_clock helper hand-formatted from struct civil_time. */
 
 static void draw_clock(void)
 {
     struct timeval tv;
-    int rc = gettimeofday(&tv);
+    int rc = gettimeofday(&tv, NULL);
     long secs_total = (rc == 0) ? (long)tv.tv_sec
                                 : (long)(uptime_ms() / 1000ul);
 
-    struct civil_time ct;
-    gmtime_r((time_t)secs_total, &ct);
+    time_t t = (time_t)secs_total;
+    struct tm tm;
+    gmtime_r(&t, &tm);
 
     char buf[9];
-    format_clock(&ct, buf);
+    strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
 
     /* Body. */
     draw_fill_rect(&g_win.fb, CLOCK_X, CLOCK_Y, CLOCK_W, CLOCK_H,
@@ -406,7 +396,7 @@ int main(void)
 
         /* Tick the clock once per WALL-clock second. */
         struct timeval tv_tick;
-        long secs = (gettimeofday(&tv_tick) == 0)
+        long secs = (gettimeofday(&tv_tick, NULL) == 0)
                   ? (long)tv_tick.tv_sec
                   : (long)(uptime_ms() / 1000ul);
         if (redraw || (int)secs != g_last_clock_sec) {

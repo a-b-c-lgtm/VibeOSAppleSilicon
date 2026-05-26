@@ -1,0 +1,198 @@
+#!/bin/sh
+# build/toolchain/bin/aarch64-osdev-cc — target compiler wrapper.
+#
+# This file is INSTALLED by `make aarch64-osdev-cc-install` (see
+# the Makefile's chapter-131b section).  It is NOT checked into
+# git — the canonical source lives in
+# scripts/aarch64-osdev-cc.in, which the install rule copies into
+# place after substituting @OSDEV_ROOT@ with the absolute path
+# to this checkout.  Re-run the install target after `make
+# clean-binutils` or after moving the checkout.
+#
+# Chapter 131b background:  we don't yet have an aarch64-osdev-gcc
+# (that's chapter 132).  Until then we synthesise one by wrapping
+# the host's aarch64-elf-gcc with these overrides:
+#
+#   1.  -B build/toolchain/bin/   — adds our chapter 131a toolchain
+#       dir to gcc's program-and-library search path.  Symlinks in
+#       that dir point the unprefixed names `as` and `ld` at our
+#       real aarch64-osdev-as / aarch64-osdev-ld.
+#
+#       Caveat: aarch64-elf-gcc on Homebrew was configured with
+#       --with-as=/opt/homebrew/.../aarch64-elf-as and the same for
+#       --with-ld, and those absolute paths are hardcoded into the
+#       gcc spec — they take precedence over -B.  So today the
+#       wrapper compile/link path still goes through brew's
+#       binutils.  That's fine because brew's binutils is the same
+#       binutils-2.44 we built ours from in 131a, so the output
+#       bytes are identical (the chapter 131b smoke test proves
+#       this end-to-end).  When chapter 132 builds a real
+#       aarch64-osdev-gcc, it gets configured with --with-as=our
+#       binutils and --with-ld=our binutils, and the routing
+#       becomes real for free.  Until then the -B prefix and the
+#       symlinks are forward-compatible scaffolding.
+#
+#   2.  -isystem $ROOT/userspace/libc — surface our header-only
+#       libc (chapters 116-128) ahead of aarch64-elf-gcc's bundled
+#       newlib.  We deliberately do NOT pass -nostdinc here:
+#         (a) gcc-internal headers (stdint.h, stdarg.h, stddef.h,
+#             float.h) must stay reachable;
+#         (b) bypassing newlib for everything else is a fight we
+#             defer to 131c, when real binutils gas's autoconf will
+#             surface every missing-header gap.
+#       Relative `#include "../libc/syscall.h"` paths in our own
+#       userspace code are unaffected by this flag.
+#
+#   3.  -ffreestanding (always)  — gcc-internal stdint.h, stddef.h,
+#       etc. do `#include_next` to find the "real" definitions
+#       only when __STDC_HOSTED__=1.  brew's aarch64-elf-gcc was
+#       built --without-headers, so there is no "next" stdint.h
+#       to find — link tests would die at `#include <stdio.h>`.
+#       In freestanding mode the gcc-internal stdint.h falls back
+#       to its self-contained stdint-gcc.h and everything resolves
+#       through our libc.  Callers who pass -ffreestanding too
+#       (the Makefile) are unaffected (the flag is idempotent).
+#
+#   4.  -D__OSDEV_LIBC__  — identifies the in-flight TU as one
+#       compiled against osdev libc.  Used by the chapter 131d
+#       libiberty patch to ELIDE_CODE in getopt.c (libiberty's
+#       getopt would otherwise duplicate-define optarg/optind/
+#       optopt/opterr/getopt that already come from
+#       userspace/libc/stdlib.h).  See vendor/binutils-aarch64-
+#       osdev.patch hunk 5.
+#
+#   5.  AUTO-INJECTED LINK INPUTS (link mode only) — autoconf-
+#       driven configures run link tests like
+#         aarch64-osdev-cc -o conftest conftest.c
+#       with no crt0 and no linker script.  Those fail with
+#       "undefined reference to __errno_value" (the symbol our
+#       errno.h declares; defined in crt0.S) and "cannot find
+#       entry symbol _user_start" (also crt0.S).  A single failed
+#       link test makes autoconf set GCC_NO_EXECUTABLES and
+#       refuse all further link tests, which sinks the configure.
+#       So in link mode we auto-add crt0.o and -T linker_user.ld,
+#       unless the caller has already supplied either.  Detection
+#       is conservative: any *crt0.o or *crt0.S in the args, or
+#       any -T / -Wl,-T,... pair, suppresses the corresponding
+#       auto-inject.  Compile-only modes (-c, -S, -E, dependency
+#       generation) skip injection entirely.
+#
+# Failure to set OSDEV_ROOT below (i.e. you copied the .in file
+# without running the install rule) means a relative-path lookup
+# would point at a random directory; bail loudly.
+
+OSDEV_ROOT="@OSDEV_ROOT@"
+case "$OSDEV_ROOT" in
+    @*)
+        echo "aarch64-osdev-cc: install template not substituted; run \`make aarch64-osdev-cc-install\`" >&2
+        exit 1
+        ;;
+esac
+
+# ---- mode detection ----
+# Default to link mode; downgrade to compile mode if we see any
+# flag that produces .o / .s / .i output instead of an executable.
+mode=link
+for arg in "$@"; do
+    case "$arg" in
+        -c|-S|-E|-M|-MM|-MD|-MMD)
+            mode=compile
+            break
+            ;;
+        -r|-Ur)
+            # Relocatable link; no entry point or crt expected.
+            mode=compile
+            break
+            ;;
+    esac
+done
+
+extra_pre=""
+extra_post=""
+if [ "$mode" = link ]; then
+    # Scan args to decide whether to inject crt0 / linker script.
+    needs_crt0=true
+    needs_script=true
+    # Track previous arg to catch the `-T script.ld` form
+    # (two separate args), not just `-T script.ld` joined.
+    prev=""
+    for arg in "$@"; do
+        case "$arg" in
+            *crt0.o|*crt0.S|*crt0.s|*crt0.c)
+                needs_crt0=false
+                ;;
+            -T|-T*|-Wl,-T,*|-Wl,-T*)
+                needs_script=false
+                ;;
+            *)
+                if [ "$prev" = "-Xlinker" ] && [ "$arg" = "-T" ]; then
+                    needs_script=false
+                fi
+                ;;
+        esac
+        prev="$arg"
+    done
+    if [ "$needs_crt0" = true ]; then
+        if [ -f "$OSDEV_ROOT/build/userspace/crt/crt0.o" ]; then
+            extra_post="$extra_post $OSDEV_ROOT/build/userspace/crt/crt0.o"
+        else
+            echo "aarch64-osdev-cc: warning: link mode wanted crt0.o but $OSDEV_ROOT/build/userspace/crt/crt0.o is missing; run \`make build/userspace/crt/crt0.o\` first" >&2
+        fi
+    fi
+    if [ "$needs_script" = true ]; then
+        extra_post="$extra_post -Wl,-T,$OSDEV_ROOT/userspace/linker_user.ld"
+    fi
+    # Chapter 132e: pull libc extern wrappers (memcpy / memset /
+    # memmove / malloc / strerror / ...) from libosdevc.a in the
+    # xgcc sysroot so autoconf link tests in cross-builds of gmp,
+    # mpfr, mpc, and gcc itself resolve their references.  Archive
+    # form means ld only pulls symbols the conftest actually used;
+    # the chapter-131e binutils Makefile injection of cstring.o
+    # remains valid (additional resolution path, lazy by construction).
+    # --start-group/--end-group covers the case where crt0.o or a
+    # later object references an osdevc symbol after the library
+    # has already been seen.
+    osdevc_lib="$OSDEV_ROOT/build/toolchain/aarch64-osdev/lib"
+    if [ -f "$osdevc_lib/libosdevc.a" ]; then
+        extra_post="$extra_post -L$osdevc_lib -Wl,--start-group -losdevc -Wl,--end-group"
+    fi
+    # Link mode also needs -nostdlib -nostartfiles for autoconf
+    # invocations; the Makefile passes them explicitly so the
+    # duplication is harmless.
+    extra_pre="-nostdlib -nostartfiles"
+fi
+
+# ---- C vs C++ dispatch (chapter 132f) ----
+# This single wrapper file serves both `aarch64-osdev-cc` (C
+# compiler) and `aarch64-osdev-CC` (C++ compiler).  We can't ship
+# two distinct files on a case-insensitive APFS volume — they
+# alias to the same inode — so we dispatch on `$0` instead, which
+# preserves the case the caller used when invoking us.
+#
+# CC mode adds the C++ driver (aarch64-elf-g++), -nostdinc++ to
+# kill the (nonexistent) bundled libstdc++ include path, and a
+# second -isystem pointing at userspace/libc/cxx/ where chapter
+# 132f's minimal freestanding C++ headers live (<new>, <utility>,
+# <type_traits>, ...).  -fno-exceptions / -fno-rtti make the
+# freestanding C++ ABI usable without a full libstdc++ runtime.
+self="${0##*/}"
+case "$self" in
+    *CC|*c++|*g++)
+        compiler="aarch64-elf-g++"
+        cxx_pre="-nostdinc++ -fno-exceptions -fno-rtti -isystem $OSDEV_ROOT/userspace/libc/cxx"
+        ;;
+    *)
+        compiler="aarch64-elf-gcc"
+        cxx_pre=""
+        ;;
+esac
+
+exec "$compiler" \
+    -ffreestanding \
+    -D__OSDEV_LIBC__ \
+    -B "$OSDEV_ROOT/build/toolchain/bin/" \
+    $cxx_pre \
+    -isystem "$OSDEV_ROOT/userspace/libc" \
+    $extra_pre \
+    "$@" \
+    $extra_post

@@ -1,0 +1,51 @@
+// userspace/libc/cxx/iosfwd — chapter 132f
+//
+// Forward declarations for the C++ iostream library.  GMP and
+// some gcc headers include this purely to declare references
+// like `std::ostream&` in function signatures they won't
+// actually instantiate.
+//
+// We're a freestanding build with no real iostream library, so
+// these are *only* forward declarations.  Any TU that actually
+// tries to USE std::cout etc. will fail at link time — which is
+// the correct behaviour for chapter 132f (no iostream support).
+#ifndef _OSDEV_CXX_IOSFWD
+#define _OSDEV_CXX_IOSFWD 1
+
+namespace std {
+
+template <class _CharT> struct char_traits;
+
+template <class _CharT, class _Traits = char_traits<_CharT>>
+class basic_ios;
+
+template <class _CharT, class _Traits = char_traits<_CharT>>
+class basic_streambuf;
+
+template <class _CharT, class _Traits = char_traits<_CharT>>
+class basic_istream;
+
+template <class _CharT, class _Traits = char_traits<_CharT>>
+class basic_ostream;
+
+template <class _CharT, class _Traits = char_traits<_CharT>>
+class basic_iostream;
+
+template <class _CharT, class _Traits, class _Allocator>
+class basic_string;
+
+template <class _T> class allocator;
+
+typedef basic_ios<char>       ios;
+typedef basic_streambuf<char> streambuf;
+typedef basic_istream<char>   istream;
+typedef basic_ostream<char>   ostream;
+typedef basic_iostream<char>  iostream;
+typedef basic_string<char, char_traits<char>, allocator<char>> string;
+
+template <class _State> class fpos;
+typedef fpos<int> streampos;
+
+} // namespace std
+
+#endif

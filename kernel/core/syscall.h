@@ -467,6 +467,38 @@ enum {
     SYS_THREAD_SNAPSHOT = 99,
     SYS_STRACE_RENDER   = 100,
 
+    /* Chapter 116b — POSIX-shaped lseek for the new stdio FILE *
+     * layer.  Lets fseek / ftell / rewind sit on top of the
+     * existing fd_entry->offset that vfs_read already maintains.
+     *
+     *   sys_lseek(int fd, int64_t off, int whence) -> new_off / -errno
+     *     whence: 0 = SEEK_SET, 1 = SEEK_CUR, 2 = SEEK_END
+     *     -ESPIPE on pipes / sockets / consoles / ptys (anything
+     *      where "current position" is meaningless).
+     *     -EINVAL for an unknown whence or a negative resulting
+     *      offset.
+     *     -ENOSYS for SEEK_END on filesystems that can't report
+     *      file size (today: tmpfs and osfs2 — they'll grow size
+     *      reporting in chapter 117 when stat lands).
+     */
+    SYS_LSEEK           = 101,
+
+    /* Chapter 117 — POSIX-shaped stat / fstat.  Returns a
+     * `struct kstat` (defined in vfs.h) by path or fd.  The
+     * underlying mode bits use S_IFREG_K / S_IFDIR_K / S_IFCHR_K
+     * / S_IFIFO_K / S_IFSOCK_K (vfs.h); the userspace surface
+     * in `userspace/libc/sys/stat.h` aliases those to the POSIX
+     * S_IF* names and provides the S_IS{REG,DIR,...} macros.
+     * size and mtime_ms are 64-bit; mtime_ms is 0 for
+     * filesystems that don't track it yet (everything except
+     * OSFS-2 — see vfs.c::fill_size_from_fd_entry).
+     *
+     *   sys_stat(const char *path, struct kstat *out) -> 0 / -errno
+     *   sys_fstat(int fd, struct kstat *out)          -> 0 / -errno
+     */
+    SYS_STAT            = 102,
+    SYS_FSTAT           = 103,
+
     /* Chapter 108d — userspace-driven GPU flush.  Wsd
      * holds a writable mapping of the scanout (via
      * SYS_FB_MAP_SCANOUT) and now also owns composition end to

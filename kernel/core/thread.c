@@ -47,7 +47,7 @@
 #include <stdint.h>
 
 #define THREAD_STACK_SIZE  (16 * 1024)   /* 16 KiB per thread */
-#define FRAME_SIZE         288           /* 272 GPR/ELR/SPSR + 16 SP_EL0+pad */
+#define FRAME_SIZE         816           /* 272 GPR/ELR/SPSR + 16 SP_EL0+pad + 528 FP (ch 129) */
 
 extern void cswitch_to(uint64_t *save_sp, uint64_t load_sp);
 extern void thread_trampoline(void);   /* defined in arch/context_switch.S */
@@ -1105,7 +1105,7 @@ void thread_inherit_fds(struct thread *child, struct thread *parent)
 /*
  * thread_fork_user — see thread.h for the contract.
  *
- * Synthesises a 288-byte cswitch_to-style frame at the top of
+ * Synthesises an 816-byte cswitch_to-style frame at the top of
  * the child's kernel stack.  Layout matches cswitch_to's restore
  * sequence in arch/context_switch.s:
  *
@@ -1228,12 +1228,13 @@ struct thread *thread_fork_user(struct thread *parent,
 
     all_push(t);
 
-    /* Build the 288-byte exception/cswitch frame. */
+    /* Build the 816-byte exception/cswitch frame (272 GPR/ELR/SPSR
+     * + 16 SP_EL0+pad + 528 FP state since chapter 129). */
     uint8_t *frame_top   = stack + THREAD_STACK_SIZE;
     uintptr_t top_aligned = ((uintptr_t)frame_top) & ~((uintptr_t)0xF);
-    uint8_t *frame        = (uint8_t *)(top_aligned - 288);
+    uint8_t *frame        = (uint8_t *)(top_aligned - FRAME_SIZE);
 
-    for (size_t i = 0; i < 288; i++) frame[i] = 0;
+    for (size_t i = 0; i < FRAME_SIZE; i++) frame[i] = 0;
 
     /* x0..x30 from parent's saved trap frame.  Force x0 = 0 for
      * the child's fork() return value. */

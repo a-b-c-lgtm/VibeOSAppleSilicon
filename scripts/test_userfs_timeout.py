@@ -165,16 +165,18 @@ def main():
 
         # Open a file under /hang.  The daemon will never reply,
         # so cat should sit for ~5 s then print
-        #   "cat: cannot open /hang/anything: errno=110"
-        # and the shell prompt should follow.  We allow up to
-        # 15 s before declaring a hang.
+        #   "cat: cannot open /hang/anything: Connection timed out"
+        # (chapter 116d: cat uses strerror(errno)) and the shell
+        # prompt should follow.  We allow up to 15 s before
+        # declaring a hang.
         t0 = time.time()
         out = send_cmd(s, "/bin/cat /hang/anything", timeout=15.0).decode(
             "utf-8", "replace")
         elapsed = time.time() - t0
 
-        expect("errno=110" in out,
-               f"cat /hang/anything returns errno=110 (got {out!r})")
+        expect("Connection timed out" in out,
+               f"cat /hang/anything reports ETIMEDOUT via strerror "
+               f"(got {out!r})")
 
         # The deadline is 5 s on the kernel side; the call
         # round-trip should be in [5, 10] s once shell echo and
@@ -201,9 +203,9 @@ def main():
         out = send_cmd(s, "/bin/cat /hang/another", timeout=10.0).decode(
             "utf-8", "replace")
         elapsed2 = time.time() - t0
-        expect("errno=" in out and "errno=110" not in out and
+        expect("I/O error" in out and "Connection timed out" not in out and
                "cannot open" in out,
-               f"second open returns a different errno (got {out!r})")
+               f"second open returns EIO via strerror (got {out!r})")
         expect(elapsed2 < 4.0,
                f"second open short-circuits (elapsed={elapsed2:.2f}s)")
 

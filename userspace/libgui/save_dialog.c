@@ -632,7 +632,7 @@ int gui_save_dialog(struct wm_window *win,
                     char path[MAX_DIR + NAME_FIELD_MAX];
                     s_copy(path, g_dir, sizeof(path));
                     s_append(path, g_field, sizeof(path));
-                    int rc = mkdir(path);
+                    int rc = mkdir(path, 0755);
                     if (rc != 0) {
                         /* Bounce out of new-folder mode but keep
                          * the dialog open so the user can try

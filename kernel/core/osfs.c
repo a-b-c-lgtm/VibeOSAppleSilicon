@@ -189,7 +189,7 @@ static int osfs_op_listdir(void *cookie, const char *rel, int idx,
     for (; i + 1 < cap && i < OSFS_NAME_MAX && e->name[i]; i++)
         name[i] = e->name[i];
     name[i] = '\0';
-    if (type) *type = 0;   /* OSFS-1 has no subdirs */
+    if (type) *type = 1u;   /* OSFS-1 is flat: every entry is a file (DT_REG) */
     return (int)i;
 }
 

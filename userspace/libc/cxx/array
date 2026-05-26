@@ -1,0 +1,48 @@
+// userspace/libc/cxx/array — chapter 132f
+//
+// Freestanding std::array.  Fixed-size aggregate with iterator
+// access.  Single template, no runtime data — just N values of T.
+#ifndef _OSDEV_CXX_ARRAY
+#define _OSDEV_CXX_ARRAY 1
+
+#include <stddef.h>
+
+namespace std {
+
+template <class _T, size_t _N>
+struct array {
+    typedef _T              value_type;
+    typedef _T &            reference;
+    typedef const _T &      const_reference;
+    typedef _T *            iterator;
+    typedef const _T *      const_iterator;
+    typedef size_t          size_type;
+
+    _T _d[_N ? _N : 1];
+
+    reference       operator[](size_type i)       { return _d[i]; }
+    const_reference operator[](size_type i) const { return _d[i]; }
+    reference       at(size_type i)               { return _d[i]; }
+    const_reference at(size_type i)         const { return _d[i]; }
+    reference       front()                       { return _d[0]; }
+    const_reference front()                 const { return _d[0]; }
+    reference       back()                        { return _d[_N - 1]; }
+    const_reference back()                  const { return _d[_N - 1]; }
+    _T             *data()                  noexcept { return _d; }
+    const _T       *data()                  const noexcept { return _d; }
+
+    iterator       begin()       noexcept { return _d; }
+    iterator       end()         noexcept { return _d + _N; }
+    const_iterator begin() const noexcept { return _d; }
+    const_iterator end()   const noexcept { return _d + _N; }
+
+    constexpr bool      empty() const noexcept { return _N == 0; }
+    constexpr size_type size()  const noexcept { return _N; }
+    constexpr size_type max_size() const noexcept { return _N; }
+
+    void fill(const _T &v) { for (size_type i = 0; i < _N; ++i) _d[i] = v; }
+};
+
+}  // namespace std
+
+#endif

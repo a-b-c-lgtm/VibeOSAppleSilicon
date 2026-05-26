@@ -5,10 +5,15 @@
  *
  * Stops reading once N newlines have been emitted; doesn't slurp
  * the rest of the file.
+ *
+ * Chapter 116d: drives the FILE * layer.
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/printf.h"
+#include "../libc/malloc.h"
+#include "../libc/stdio.h"
 
 static int parse_int(const char *s, long *out)
 {
@@ -38,26 +43,26 @@ int main(int argc, char **argv)
     }
     if (ai < argc) path = argv[ai];
 
-    int fd;
+    FILE *f;
     if (path) {
-        fd = open(path, 0);
-        if (fd < 0) {
-            printf("head: cannot open %s: errno=%d\n", path, -fd);
+        f = fopen(path, "r");
+        if (!f) {
+            printf("head: cannot open %s: %s\n", path, strerror(errno));
             return 1;
         }
     } else {
-        fd = 0;   /* stdin */
+        f = stdin;
     }
 
     char buf[256];
     long emitted_lines = 0;
-    long n;
+    size_t n;
     int done = 0;
-    while (!done && (n = read(fd, buf, sizeof(buf))) > 0) {
-        long start = 0;
-        for (long i = 0; i < n; i++) {
+    while (!done && (n = fread(buf, 1, sizeof(buf), f)) > 0) {
+        size_t start = 0;
+        for (size_t i = 0; i < n; i++) {
             if (buf[i] == '\n') {
-                write(1, buf + start, (size_t)(i - start + 1));
+                fwrite(buf + start, 1, (i - start + 1), stdout);
                 start = i + 1;
                 emitted_lines++;
                 if (emitted_lines >= count) {
@@ -67,8 +72,8 @@ int main(int argc, char **argv)
             }
         }
         if (!done && start < n)
-            write(1, buf + start, (size_t)(n - start));
+            fwrite(buf + start, 1, (n - start), stdout);
     }
-    if (fd != 0) close(fd);
+    if (f != stdin) fclose(f);
     return 0;
 }

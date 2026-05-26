@@ -293,33 +293,101 @@ next milestone and still **PLAN**.
 ### Part XVII — A C compiler on the OS
 
 After Part XVI the OS has the syscalls and filesystem
-shape a compiler needs. Part XVII stands up a native
-C toolchain — libc, assembler, linker, compiler,
+shape a compiler needs. Part XVII stands up a tiny
+native C toolchain — libc, assembler, linker, compiler,
 build driver — so that source files in `/data/src/`
-can be compiled to binaries in `/bin/` from inside
-the running OS itself. Two compilers ship: TinyCC
-(one chapter, proves the libc surface is complete)
-and GCC (the headline, culminating in a self-hosting
-bootstrap).
+can be compiled to binaries in `/tmp/` from inside the
+running OS itself.
 
-Every chapter in this part is a **stub or plan
-document**. The implementation is the largest single
-undertaking in the book; the chapters here lay out
-the design so the work that follows is mechanical.
+The compiler that ships is `/bin/cc`: a from-scratch,
+under-1000-line tool that accepts a deliberately small
+subset of C (literals, locals, `int` arithmetic, calls
+to a fixed-shape `printf`, `return`/`exit`). It is not
+GCC, it is not TinyCC, and it does not self-host. What
+it does do is close the loop end-to-end — source on
+disk, compiler in the guest, executable in the guest,
+all without leaving QEMU. Chapter 125 spells out what
+the gap between `/bin/cc` and a self-hosting compiler
+actually looks like; chapter 127 closes the loop with
+a Build button in notepad.
 
-115. [PLAN: A C compiler that runs on the OS](chapters/17-self-hosting-gcc/115-c-compiler-strategy.md) *(strategy doc for the whole section)*
-116. [A POSIX-ish libc, part 1: stdio, errno, env](chapters/17-self-hosting-gcc/116-libc-stdio-and-env.md)
-117. [A POSIX-ish libc, part 2: stat, fcntl, dirent, getcwd](chapters/17-self-hosting-gcc/117-libc-stat-fcntl-dirent.md)
-118. [An AArch64 assembler: /bin/as](chapters/17-self-hosting-gcc/118-bin-as-assembler.md)
-119. [An AArch64 linker: /bin/ld and /bin/ar](chapters/17-self-hosting-gcc/119-bin-ld-linker.md)
-120. [Bootstrap glue: crt0, crti, crtn, libgcc stubs](chapters/17-self-hosting-gcc/120-crt0-and-libgcc-stubs.md)
-121. [TinyCC: a one-chapter native C compiler](chapters/17-self-hosting-gcc/121-tinycc-port.md)
-122. [Cross-building a GCC that targets osdev](chapters/17-self-hosting-gcc/122-gcc-cross-build.md)
-123. [Cross-building a GCC that runs on osdev](chapters/17-self-hosting-gcc/123-gcc-native-build.md)
-124. [First native compile: hello.c on the desktop](chapters/17-self-hosting-gcc/124-first-native-compile.md)
-125. [Self-hosting GCC: stage 2 builds stage 3](chapters/17-self-hosting-gcc/125-self-hosting-bootstrap.md)
-126. [Porting GNU make](chapters/17-self-hosting-gcc/126-make-port.md)
-127. [Notepad gets a Build button: an in-OS dev loop](chapters/17-self-hosting-gcc/127-notepad-build-button.md)
+A real GCC port is left for Part XVIII (planned). Part
+XVII deliberately ships the smallest thing that proves
+the OS can host its own toolchain, then stops.
+
+115. [PLAN: A C compiler that runs on the OS](chapters/17-a-c-compiler-on-the-os/115-c-compiler-strategy.md) *(strategy doc for the whole section)*
+116. [A POSIX-ish libc, part 1: stdio, errno, env](chapters/17-a-c-compiler-on-the-os/116-libc-stdio-and-env.md)
+     116a. [Step 1 — errno populated by every syscall wrapper](chapters/17-a-c-compiler-on-the-os/116a-errno.md)
+     116b. [Step 2 — FILE *, fopen, fread, fwrite, fseek, fprintf](chapters/17-a-c-compiler-on-the-os/116b-stdio.md)
+     116c. [Step 3 — environ[], getenv, setenv, unsetenv, putenv](chapters/17-a-c-compiler-on-the-os/116c-env-arena.md)
+     116d. [Step 4 — POSIX errno convention + strerror + cat/wc/head/tail on FILE *](chapters/17-a-c-compiler-on-the-os/116d-errno-convention.md)
+117. [A POSIX-ish libc, part 2: stat, fstat, fcntl, dirent](chapters/17-a-c-compiler-on-the-os/117-libc-stat-fcntl-dirent.md)
+118. [An AArch64 assembler: /bin/as](chapters/17-a-c-compiler-on-the-os/118-bin-as-assembler.md)
+119. [An AArch64 linker: /bin/ld and /bin/ar](chapters/17-a-c-compiler-on-the-os/119-bin-ld-linker.md)
+120. [Bootstrap glue: crt0, crti, crtn, libgcc-style stubs](chapters/17-a-c-compiler-on-the-os/120-crt0-and-libgcc-stubs.md)
+121. [/bin/cc: a one-chapter native C compiler](chapters/17-a-c-compiler-on-the-os/121-bin-cc.md)
+122. [The host cross-toolchain contract](chapters/17-a-c-compiler-on-the-os/122-cross-toolchain-contract.md)
+123. [/bin/cc grows variables and arithmetic](chapters/17-a-c-compiler-on-the-os/123-cc-variables-and-arithmetic.md)
+124. [The first native compile from disk](chapters/17-a-c-compiler-on-the-os/124-first-native-compile.md)
+125. [The self-hosting gap, and why we don't close it here](chapters/17-a-c-compiler-on-the-os/125-self-hosting-bootstrap.md)
+126. [A tiny build driver: /bin/make](chapters/17-a-c-compiler-on-the-os/126-make-port.md)
+127. [Notepad gets a Build button: an in-OS dev loop](chapters/17-a-c-compiler-on-the-os/127-notepad-build-button.md)
+
+### Part XVIII — Real GCC, real software, real Doom
+
+Part XVII shipped a deliberately tiny `/bin/cc` and an
+honest accounting of the self-hosting gap it doesn't
+close. Part XVIII closes that gap the practical way:
+cross-build real GCC + GNU binutils on the host
+targeting our OS, ship the binaries as `/bin/gcc`,
+`/bin/as`, `/bin/ld`, and grow libc until real upstream
+software compiles and runs in-guest.
+
+The section is shaped around a concrete demo: download
+the Doom source over HTTP, untar it, build it with
+`/bin/gcc`, and play it on the framebuffer. Phase 1
+(chapters 128a–130c) cross-builds Doom on the host and
+proves the platform integration. Phase 2 (chapters
+131a–133f) brings up real GCC + binutils in-guest and
+rebuilds Doom from source on the booted OS.
+
+The section is multi-month. The chapter sequence is the
+plan; deviations get written down as they happen.
+
+128. [PLAN: Real GCC on the OS, and a playable Doom](chapters/18-real-gcc-and-real-software/128-plan-real-gcc-and-doom.md) *(plan; implementation in 128a–133g)*
+   - [128a — setjmp / longjmp](chapters/18-real-gcc-and-real-software/128a-setjmp-longjmp.md)
+   - [128b — raise / abort / full POSIX signal table](chapters/18-real-gcc-and-real-software/128b-signal-and-raise.md)
+   - [128c — ctype / assert / str* family](chapters/18-real-gcc-and-real-software/128c-ctype-assert-string.md)
+   - [128d — POSIX `<time.h>` (struct tm, gmtime_r, strftime)](chapters/18-real-gcc-and-real-software/128d-posix-time.md)
+   - [128e — `<stdlib.h>`: qsort, bsearch, strtol, getopt](chapters/18-real-gcc-and-real-software/128e-stdlib-getopt.md)
+   - [128f — real printf + scanf (%o, precision, scanf)](chapters/18-real-gcc-and-real-software/128f-real-printf-scanf.md)
+   - [129 — FP / SIMD at EL0](chapters/18-real-gcc-and-real-software/129-fp-simd-at-el0.md)
+   - [130a — Doom (the port)](chapters/18-real-gcc-and-real-software/130a-doomgeneric-port.md)
+   - [130b — Staging the WAD (so Doom actually plays)](chapters/18-real-gcc-and-real-software/130b-doom-wad-staging.md)
+   - [130c — Doom plays (closing Phase 1)](chapters/18-real-gcc-and-real-software/130c-doom-plays.md)
+   - [131a — Binutils with an `aarch64-osdev` target](chapters/18-real-gcc-and-real-software/131a-binutils-target.md)
+   - [131b — `aarch64-osdev-cc`: the target-compiler seam](chapters/18-real-gcc-and-real-software/131b-osdev-cc-wrapper.md)
+   - [131c — Cross-build seam: link-mode wrapper and the libc-gap catalog](chapters/18-real-gcc-and-real-software/131c-cross-build-seam.md)
+   - [131d — Closing the libc gap for cross-built `libiberty`](chapters/18-real-gcc-and-real-software/131d-libc-gaps.md)
+   - [131e — `ld` in-guest: cross-building binutils' linker](chapters/18-real-gcc-and-real-software/131e-binutils-ld-in-guest.md)
+   - [131f — Replacing `/bin/as` and `/bin/ld` with the real binutils](chapters/18-real-gcc-and-real-software/131f-replace-bin-as-ld.md)
+   - [132a — GCC with an `aarch64-osdev` target](chapters/18-real-gcc-and-real-software/132a-gcc-target.md)
+   - [132b — GMP, MPFR, MPC as in-tree prerequisites](chapters/18-real-gcc-and-real-software/132b-gcc-prereqs.md)
+   - [132c — Cross-building `aarch64-osdev-gcc`](chapters/18-real-gcc-and-real-software/132c-cross-build-xgcc.md)
+   - [132d — Real cross-compiler specs: retiring the wrapper](chapters/18-real-gcc-and-real-software/132d-real-cross-specs.md)
+   - [132e — Cross-building GMP/MPFR/MPC for the guest sysroot](chapters/18-real-gcc-and-real-software/132e-gcc-prereqs-for-guest.md)
+   - [132f — `gcc hello.c` works on the OS](chapters/18-real-gcc-and-real-software/132f-gcc-runs-in-guest.md)
+   - [132g — `gcc hello.c -o hello` (no escape-hatch flags)](chapters/18-real-gcc-and-real-software/132g-gcc-default-specs.md)
+   - [132h — `/bin/gcc` builds a medium real program (`bf`)](chapters/18-real-gcc-and-real-software/132h-gcc-builds-real-program.md)
+   - [132i — `#include <stdio.h>` works in the guest](chapters/18-real-gcc-and-real-software/132i-libc-headers-on-disk.md)
+   - [132j — `sys/` headers without a hierarchical filesystem](chapters/18-real-gcc-and-real-software/132j-osfs1-subdirs.md)
+   - [133a — `/bin/tar` (ustar reader)](chapters/18-real-gcc-and-real-software/133a-tar.md)
+   - [133b — expanding `/bin/make` for a real multi-file build](chapters/18-real-gcc-and-real-software/133b-make-expansion.md)
+   - [133c — in-guest Doom rebuild, pilot (three real vendor files)](chapters/18-real-gcc-and-real-software/133c-doom-pilot.md)
+   - [133d — in-guest Doom rebuild, full vendor compile (77 files)](chapters/18-real-gcc-and-real-software/133d-full-doom-compile.md)
+   - [133e — in-guest Doom link (binutils @file response files)](chapters/18-real-gcc-and-real-software/133e-link-doomgeneric-in-guest.md)
+   - [133f — the rebuilt Doom plays](chapters/18-real-gcc-and-real-software/133f-rebuilt-doom-plays.md)
+   - [133g — Real key-up events (retiring the doom timed-release shim)](chapters/18-real-gcc-and-real-software/133g-real-key-up-events.md)
 
 ## Appendices
 
@@ -445,9 +513,10 @@ tracks layered on top of "syscalls work."
 | XV   | 83f — PEM ingest + recursive chain walk | Done | [Chapter 112f](chapters/15-browser-maturation/112f-pem-ingest.md) — [`scripts/mkcabundle.py`](scripts/mkcabundle.py) grows a `--pem PATH` mode (regex-extracted `-----BEGIN CERTIFICATE-----` blocks, whitespace-collapsed base64 decode via `base64.b64decode(..., validate=True)`); Makefile retargets the `assets/osfs/ca.bundle` rule at the BearSSL sample ROOT PEMs (`vendor/bearssl/samples/cert-root-{rsa,ec}.pem`) instead of the intermediate-from-header path so `httpsd`'s served leaf+ica chain now forces the validator's full root → intermediate → leaf walk in both algorithms; `TLS_MAX_ANCHORS` raised from 8 to 32 ([`userspace/libc/tls_socket.h`](userspace/libc/tls_socket.h)) and `BR_CA_BUNDLE_MAX` from 32 KiB to 256 KiB ([`userspace/browser/browser.c`](userspace/browser/browser.c)) to fit a future Mozilla NSS drop without a recompile; regression [`scripts/test_tls_pem_bundle.py`](scripts/test_tls_pem_bundle.py) asserts the host-side `CAB1`-framed bundle layout (magic + count + 1208 bytes for both BearSSL roots) AND end-to-end 2-link chain validation against both `:8443` (RSA) and `:8444` (ECDSA) |
 | XV   | 83g — Direct outbound HTTPS to real public sites | Done | [Chapter 112g](chapters/15-browser-maturation/112g-public-trust.md) — new [`scripts/fetch_public_roots.sh`](scripts/fetch_public_roots.sh) cross-platform-probes the host's system CA store (`/etc/ssl/cert.pem` on macOS, `/etc/ssl/certs/ca-certificates.crt` on Debian, `/etc/pki/tls/certs/ca-bundle.crt` on RHEL, Homebrew openssl@3 paths) and atomic-copies it to `vendor/testcerts/public-roots.pem` (.gitignored, fetched on first build); Makefile [`assets/osfs/ca.bundle`](Makefile) rule folds the resulting ~140 KiB / 128-anchor PEM in alongside the BearSSL sample roots via a third `--pem` argument so the production bundle now ships 130 anchors / 142,861 bytes; capacity bumps `TLS_MAX_ANCHORS` 32→256 ([`userspace/libc/tls_socket.h`](userspace/libc/tls_socket.h)) and `BR_CA_BUNDLE_MAX` 256 KiB→512 KiB ([`userspace/browser/browser.c`](userspace/browser/browser.c)) with no logic change; [`scripts/test_tls_pem_bundle.py`](scripts/test_tls_pem_bundle.py) loosens the count assertion from `== 2` to `>= 2` while keeping the end-to-end recursive-walk check; new manual probe [`scripts/_dbg_tls_outbound.py`](scripts/_dbg_tls_outbound.py) (per debug-scripts policy, not in regression sweep) drives `browser https://example.com/` and `browser https://news.ycombinator.com/` end-to-end through SLIRP → DNS → real public CA chain validation → SAN/CN match against an in-guest-unknown hostname, both confirmed working; nothing in `tls_socket.c` / `browser.c`'s TLS path needed to change — SNI, recursive walk, hostname check, and wall-clock validity were all already wired since chapters 112b–112f, the only blocker was the trust list itself |
 | XV   | 83h — URL-bar UX after native TLS | Done | [Chapter 112h](chapters/15-browser-maturation/112h-url-bar-relatives.md) — `canonicalize_url` in [`userspace/browser/browser.c`](userspace/browser/browser.c) gains a new case (5a) that resolves path-relative references against an http(s):// current page via the existing chapter-110a `resolve_url` helper, gated on a "looks like a host" heuristic (input contains a `.` or `:` before the first `/` or `?` ⇒ host, otherwise relative); case (6) default flipped from "prepend `g_proxy_prefix`" to "prepend `https://`" so typing `news.ycombinator.com` (no scheme) goes through native TLS instead of the chapter-106b in-guest proxy; both changes gated on `g_proxy_was_set` so `BROWSER_PROXY=...` callers ([`scripts/test_browser_proxy.py`](scripts/test_browser_proxy.py), the `test_browser_hn_*` GUI suite) keep the legacy rewrite untouched; the first live HN load uncovered and fixed a latent bug in `resolve_url`'s path-relative branch where `last_slash` was pre-initialised to `path_start` so the `>=` test was always true and the "no path in base" else branch was unreachable — for a base URL like `https://news.ycombinator.com` (no trailing `/`) the merge planted a NUL byte at `out[host_len]` and every relative ref (`news.css?...`, `y18.gif`, `item?id=...`) silently truncated to the bare host, manifesting as three apparently unrelated symptoms (stylesheet skip-https log line with no path, png_decode failure decoding the HTML body as PNG, comment-link click reloading the front page), all collapsed by initialising `last_slash = 0` instead; the latent bug had survived the entire 109a→112g arc because no prior fetched page had a no-path base URL and link clicks had never gone through `resolve_url` before case (5a); follow-on cleanup deletes the vestigial `if (br_starts(abs, "https://")) { skip }` guard in `apply_link_sheets` since chapter 112d already made `http_fetch` → `br_conn_open` transport-agnostic, so HN's `news.css` now fetches over its own native-TLS handshake instead of being skipped; new manual probes [`scripts/_dbg_bare_host.py`](scripts/_dbg_bare_host.py) and [`scripts/_dbg_hn_resources.py`](scripts/_dbg_hn_resources.py) (per debug-scripts policy, not in regression sweep) assert the bare-host TLS path and the resolve_url/stylesheet-fetch fix respectively against live HN, the latter requiring TWO `TLS handshake OK with news.ycombinator.com:443` lines (page + stylesheet) and a `fetching stylesheet https://news.ycombinator.com/news.css...` line; fixes the user-reported bug that comment-link clicks from `https://news.ycombinator.com/` were navigating to `http://127.0.0.1:80/item?id=...` because HN's `<a href="item?id=...">` hrefs are relative path-references, not absolute URLs, AND the follow-on bug that those refs still re-loaded the front page after case (5a) landed because `resolve_url` was truncating them to the bare host |
-| XVII | 100 — POSIX-ish libc growth for compiler hosting | Planned | Stubs [116](chapters/17-self-hosting-gcc/116-libc-stdio-and-env.md)–[117](chapters/17-self-hosting-gcc/117-libc-stat-fcntl-dirent.md) |
-| XVII | 101 — /bin/as + /bin/ld + /bin/ar + crt0/libgcc | Planned | Stubs [118](chapters/17-self-hosting-gcc/118-bin-as-assembler.md)–[120](chapters/17-self-hosting-gcc/120-crt0-and-libgcc-stubs.md) |
-| XVII | 102 — TinyCC native port (first compiler on the OS) | Planned | Stub [121](chapters/17-self-hosting-gcc/121-tinycc-port.md) |
-| XVII | 103 — GCC native port + self-hosting bootstrap | Planned | Stubs [122](chapters/17-self-hosting-gcc/122-gcc-cross-build.md)–[125](chapters/17-self-hosting-gcc/125-self-hosting-bootstrap.md) |
-| XVII | 104 — GNU make + notepad "Build" button | Planned | Stubs [126](chapters/17-self-hosting-gcc/126-make-port.md)–[127](chapters/17-self-hosting-gcc/127-notepad-build-button.md) |
+| XVII | 100 — POSIX-ish libc growth for hosting a compiler | **Done** | [116a](chapters/17-a-c-compiler-on-the-os/116a-errno.md)–[116d](chapters/17-a-c-compiler-on-the-os/116d-errno-convention.md), [117](chapters/17-a-c-compiler-on-the-os/117-libc-stat-fcntl-dirent.md) |
+| XVII | 101 — /bin/as + /bin/ld + /bin/ar + crt0 + libgcc-style stubs | **Done** | [118](chapters/17-a-c-compiler-on-the-os/118-bin-as-assembler.md)–[120](chapters/17-a-c-compiler-on-the-os/120-crt0-and-libgcc-stubs.md) |
+| XVII | 102 — /bin/cc: one-chapter native C compiler (first compiler on the OS) | **Done** | [121](chapters/17-a-c-compiler-on-the-os/121-bin-cc.md) |
+| XVII | 103 — Cross-toolchain contract + /bin/cc grows locals & arithmetic + first on-disk native compile + honest self-hosting-gap chapter | **Done** | [122](chapters/17-a-c-compiler-on-the-os/122-cross-toolchain-contract.md), [123](chapters/17-a-c-compiler-on-the-os/123-cc-variables-and-arithmetic.md), [124](chapters/17-a-c-compiler-on-the-os/124-first-native-compile.md), [125](chapters/17-a-c-compiler-on-the-os/125-self-hosting-bootstrap.md) |
+| XVII | 104 — /bin/make + notepad "Build" button | **Done** | [126](chapters/17-a-c-compiler-on-the-os/126-make-port.md), [127](chapters/17-a-c-compiler-on-the-os/127-notepad-build-button.md) |
+| XVIII | 105 — Real GCC on the OS + playable Doom | PLAN | [Chapter 128](chapters/18-real-gcc-and-real-software/128-plan-real-gcc-and-doom.md) — strategy: cross-build `aarch64-osdev-gcc` and `aarch64-osdev-binutils` on the host (do not bootstrap GCC on the OS), grow libc to host real upstream software (setjmp, signal, ctype, time, qsort, full printf, getopt), turn on FP/SIMD at EL0 (chapter 129; lift `-mgeneral-regs-only`, extend context switch with `q0..q31`+`fpsr`+`fpcr`), validate platform integration with a cross-built Doom (Phase 1: chapters 128a–130c) before sinking chapters into the toolchain port (Phase 2: chapters 131a–133f), end-state is `httpget <doom.tar.gz>` + `tar -xzf` + `make` + `./doomgeneric -iwad doom1.wad` all on the booted OS with no host involvement past "booted QEMU"; multi-month section, ~20 chapters, biggest unknowns are FP-at-EL0 context-switch interactions and the binutils/GCC libc-gap long tail |
 | VIII | 65+ — book polish, more sites, TLS bridge | Not started | Stubs |

@@ -19,6 +19,7 @@
  * — easy to grep, easy to diff against fixtures.
  */
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/printf.h"
 #include "../libc/malloc.h"
 #include "../libc/html.h"
@@ -30,7 +31,7 @@ static char *slurp(const char *path, size_t *out_len)
 {
     int fd = open(path, 0);
     if (fd < 0) {
-        printf("htmltok: cannot open %s: errno=%d\n", path, -fd);
+        printf("htmltok: cannot open %s: %s\n", path, strerror(errno));
         return 0;
     }
     size_t cap = 4096;

@@ -61,6 +61,8 @@
 #include "../libc/syscall.h"
 #include "../libc/printf.h"
 #include "../libc/malloc.h"
+#include "../libc/errno.h"
+#include "../libc/env.h"
 
 #define HTTPD_VERSION       "osdev/1.0"
 /* 4 KiB request cap -- big enough for a curl request with all
@@ -252,9 +254,8 @@ static int parse_upstream(const char *spec,
  * is loud at startup. */
 static void load_upstream_from_env(void)
 {
-    char tmp[80];
-    long n = getenv("HTTPD_UPSTREAM", tmp, sizeof(tmp));
-    if (n <= 0) return;       /* unset -> defaults */
+    const char *tmp = getenv("HTTPD_UPSTREAM");
+    if (!tmp || !tmp[0]) return;       /* unset -> defaults */
     uint32_t ip   = g_upstream_ip;
     uint16_t port = g_upstream_port;
     if (parse_upstream(tmp, &ip, &port) < 0) {
@@ -519,10 +520,10 @@ static long serve_get(int cfd, const char *path, char method)
 {
     int fd = open(path, 0);
     if (fd < 0) {
-        /* -ENOENT is the common case; everything else (we don't
-         * have errno introspection in userspace) we collapse to
-         * 500.  Both responses still travel back to the client. */
-        if (fd == -2) {
+        /* -ENOENT is the common case; everything else falls
+         * back to 500.  Both responses still travel back to
+         * the client.  Chapter 116d: read errno not -fd. */
+        if (errno == ENOENT) {
             send_error(cfd, 404, "Not Found");
             return -404;
         }

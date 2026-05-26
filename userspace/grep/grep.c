@@ -11,6 +11,7 @@
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/printf.h"
 
 #define LINE_MAX 512
@@ -39,7 +40,7 @@ int main(int argc, char **argv)
     if (path) {
         fd = open(path, 0);
         if (fd < 0) {
-            printf("grep: cannot open %s: errno=%d\n", path, -fd);
+            printf("grep: cannot open %s: %s\n", path, strerror(errno));
             return 1;
         }
     } else {

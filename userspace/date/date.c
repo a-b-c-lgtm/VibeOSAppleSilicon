@@ -21,17 +21,18 @@ int main(int argc, char **argv)
     (void)argv;
 
     struct timeval tv;
-    int rc = gettimeofday(&tv);
+    int rc = gettimeofday(&tv, NULL);
     if (rc != 0) {
         printf("date: gettimeofday failed: %d\n", rc);
         return 1;
     }
 
-    struct civil_time ct;
-    gmtime_r((time_t)tv.tv_sec, &ct);
+    time_t t = (time_t)tv.tv_sec;
+    struct tm tm;
+    gmtime_r(&t, &tm);
 
     char buf[24];
-    strftime_iso(buf, sizeof(buf), &ct);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
     printf("%s UTC\n", buf);
     return 0;
 }

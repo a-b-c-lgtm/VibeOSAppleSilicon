@@ -1,0 +1,103 @@
+// userspace/libc/cxx/memory — chapter 132f
+//
+// Freestanding <memory>.  gcc/system.h includes this when
+// INCLUDE_MEMORY is defined.  Real libstdc++ <memory> provides
+// std::unique_ptr, std::shared_ptr, std::allocator_traits, etc.
+//
+// We provide the absolute minimum: std::unique_ptr (single-
+// object form) and std::allocator (already declared in <string>;
+// re-declare here for TUs that include <memory> without first
+// including <string>).  No shared_ptr — gcc proper doesn't need
+// it.  Add more as TUs surface the gap.
+#ifndef _OSDEV_CXX_MEMORY
+#define _OSDEV_CXX_MEMORY 1
+
+#include "../malloc.h"
+#include "type_traits"
+#include "utility"
+#include "bits/_alloc.h"
+
+namespace std {
+
+template <class _T> struct default_delete {
+    constexpr default_delete() noexcept = default;
+    void operator()(_T *p) const { delete p; }
+};
+
+template <class _T, class _D = default_delete<_T>>
+class unique_ptr {
+private:
+    _T *_p;
+    _D  _d;
+public:
+    typedef _T  element_type;
+    typedef _D  deleter_type;
+    typedef _T *pointer;
+
+    constexpr unique_ptr() noexcept : _p(nullptr), _d() {}
+    constexpr unique_ptr(decltype(nullptr)) noexcept : _p(nullptr), _d() {}
+    explicit unique_ptr(_T *p) noexcept : _p(p), _d() {}
+    unique_ptr(_T *p, const _D &d) noexcept : _p(p), _d(d) {}
+    unique_ptr(_T *p, _D &&d) noexcept : _p(p), _d(std::move(d)) {}
+    unique_ptr(unique_ptr &&o) noexcept : _p(o._p), _d(std::move(o._d)) { o._p = nullptr; }
+    template <class _U, class _UD>
+    unique_ptr(unique_ptr<_U, _UD> &&o) noexcept : _p(o.release()), _d() {}
+
+    ~unique_ptr() { if (_p) _d(_p); }
+
+    unique_ptr &operator=(unique_ptr &&o) noexcept {
+        if (this == &o) return *this;
+        reset(o._p);
+        o._p = nullptr;
+        return *this;
+    }
+    unique_ptr &operator=(decltype(nullptr)) noexcept { reset(); return *this; }
+
+    unique_ptr(const unique_ptr &) = delete;
+    unique_ptr &operator=(const unique_ptr &) = delete;
+
+    _T *get()         const noexcept { return _p; }
+    _T &operator*()   const          { return *_p; }
+    _T *operator->()  const noexcept { return _p; }
+    explicit operator bool() const noexcept { return _p != nullptr; }
+
+    _T *release() noexcept { _T *r = _p; _p = nullptr; return r; }
+    void reset(_T *p = nullptr) noexcept {
+        _T *old = _p;
+        _p = p;
+        if (old) _d(old);
+    }
+    void swap(unique_ptr &o) noexcept {
+        _T *tmp = _p; _p = o._p; o._p = tmp;
+    }
+};
+
+template <class _T, class _D>
+inline bool operator==(const unique_ptr<_T, _D> &p, decltype(nullptr)) noexcept { return !p; }
+template <class _T, class _D>
+inline bool operator==(decltype(nullptr), const unique_ptr<_T, _D> &p) noexcept { return !p; }
+template <class _T, class _D>
+inline bool operator!=(const unique_ptr<_T, _D> &p, decltype(nullptr)) noexcept { return (bool)p; }
+template <class _T, class _D>
+inline bool operator!=(decltype(nullptr), const unique_ptr<_T, _D> &p) noexcept { return (bool)p; }
+template <class _T1, class _D1, class _T2, class _D2>
+inline bool operator==(const unique_ptr<_T1, _D1> &a, const unique_ptr<_T2, _D2> &b) noexcept { return a.get() == b.get(); }
+template <class _T1, class _D1, class _T2, class _D2>
+inline bool operator!=(const unique_ptr<_T1, _D1> &a, const unique_ptr<_T2, _D2> &b) noexcept { return a.get() != b.get(); }
+
+template <class _T, class... _Args>
+inline unique_ptr<_T> make_unique(_Args&&... args) {
+    return unique_ptr<_T>(new _T(std::forward<_Args>(args)...));
+}
+
+template <class _T> struct allocator_traits {
+    typedef _T                 value_type;
+    typedef _T *               pointer;
+    typedef const _T *         const_pointer;
+    typedef size_t             size_type;
+    typedef long               difference_type;
+};
+
+}  // namespace std
+
+#endif

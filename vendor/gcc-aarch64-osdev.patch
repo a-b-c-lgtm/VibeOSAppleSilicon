@@ -1,0 +1,205 @@
+# Patch: register the `aarch64-osdev` target triple in gcc-14.2.0.
+#
+# Four changes, all minimal and 100% additive (no existing line
+# is rewritten; only new lines are inserted into existing case
+# statements):
+#
+#   1. config.sub  — accept `osdev*` as a valid OS name.  Without
+#      this, `configure --target=aarch64-osdev` fails at the
+#      canonicalisation step (`OS 'osdev' not recognized`).
+#      Note gcc-14.2.0 ships an older `config.sub` than
+#      binutils-2.44 (gcc's is 2021-10-27, binutils' is 2024); the
+#      OS validation list is differently structured so the patch
+#      shape is not identical to binutils-aarch64-osdev.patch's
+#      hunk 1 — both achieve the same effect (the canonical form
+#      `aarch64-unknown-osdev` is what comes out).
+#   2. gcc/config.gcc  — add `aarch64-*-osdev*` as the first arm
+#      of the existing aarch64 target case.  Uses the same
+#      tm_file chain as the existing `aarch64*-*-elf` case
+#      (elfos.h + newlib-stdint.h + aarch64-elf.h +
+#      aarch64-errata.h + aarch64-elf-raw.h) but appends our
+#      `aarch64/aarch64-osdev.h` so OS-specific predefines
+#      override anything inherited from the elf chain.
+#      `use_gcc_stdint=wrap` matches the elf case — there is no
+#      libc-provided <stdint.h> in our world either.
+#   3. gcc/config/aarch64/aarch64-osdev.h  — NEW file.  Defines
+#      `TARGET_OS_CPP_BUILTINS` so the compiler predefines
+#      `__osdev__` (and asserts system=osdev, system=unix,
+#      system=posix) every time it runs.  Userspace code can
+#      `#ifdef __osdev__` to opt into things that aren't portable
+#      to aarch64-elf.
+#      Chapter 132d also overrides CPP_SPEC (-D__OSDEV_LIBC__),
+#      STARTFILE_SPEC (just crt0, no crti/crtbegin/crtend/crtn),
+#      ENDFILE_SPEC (empty), LIB_SPEC (empty — header-only libc),
+#      LIBGCC_SPEC + REAL_LIBGCC_SPEC (empty — header-only
+#      libgcc shim), and LINK_SPEC (defaults to
+#      `-T linker_user.ld` unless the user passes their own
+#      `-T`).  Those overrides assume the sysroot under
+#      $prefix/aarch64-osdev/{lib,include}/ is populated by
+#      `make xgcc-sysroot`.
+#   4. libgcc/config.host  — add `aarch64*-*-osdev*` as the first
+#      arm of the existing aarch64 host case.  Mirrors
+#      `aarch64*-*-elf` minus the unwind header (we don't ship a
+#      libunwind matching glibc's siginfo_t shape yet; revisit in
+#      132b).
+#
+# Apply with `patch -p1 -d vendor/gcc-14.2.0 <
+# vendor/gcc-aarch64-osdev.patch` from the workspace root.
+#
+# Re-application is harmless: the Makefile rule that drives this
+# uses a marker file (`vendor/gcc-14.2.0/.patched-osdev`) to
+# avoid double-patching.
+
+--- a/config.sub
++++ b/config.sub
+@@ -1730,6 +1730,7 @@
+ 	     | udi* | lites* | ieee* | go32* | aux* | hcos* \
+ 	     | chorusrdb* | cegcc* | glidix* | serenity* \
+ 	     | cygwin* | msys* | pe* | moss* | proelf* | rtems* \
++	     | osdev* \
+ 	     | midipix* | mingw32* | mingw64* | mint* \
+ 	     | uxpv* | beos* | mpeix* | udk* | moxiebox* \
+ 	     | interix* | uwin* | mks* | rhapsody* | darwin* \
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -1192,6 +1192,12 @@
+ esac
+ 
+ case ${target} in
++aarch64-*-osdev*)
++	tm_file="${tm_file} elfos.h newlib-stdint.h"
++	tm_file="${tm_file} aarch64/aarch64-elf.h aarch64/aarch64-errata.h aarch64/aarch64-elf-raw.h aarch64/aarch64-osdev.h"
++	tmake_file="${tmake_file} aarch64/t-aarch64"
++	use_gcc_stdint=wrap
++	;;
+ aarch64*-*-elf | aarch64*-*-fuchsia* | aarch64*-*-rtems*)
+ 	tm_file="${tm_file} elfos.h newlib-stdint.h"
+ 	tm_file="${tm_file} aarch64/aarch64-elf.h aarch64/aarch64-errata.h aarch64/aarch64-elf-raw.h"
+--- /dev/null
++++ b/gcc/config/aarch64/aarch64-osdev.h
+@@ -0,0 +1,108 @@
++/* Machine description for the aarch64-osdev target.
++   See book/chapters/18-real-gcc-and-real-software/132a-gcc-target.md
++   for the predefined-macro layer (chapter 132a) and 132d for the
++   spec overrides below.
++
++   Layered on top of aarch64-elf.h + aarch64-elf-raw.h: ELF
++   assembly conventions are inherited unchanged; everything the
++   driver needs to wire crt0 / linker script / libc paths is
++   overridden here so the real `aarch64-osdev-gcc` can drive a
++   full compile+link without the chapter-131b wrapper.
++
++   The osdev userspace runtime is:
++     - chapter 120 crt0      (userspace/crt/crt0.S)
++     - chapter 15 link script (userspace/linker_user.ld) — owns
++       ENTRY, PHDRS, SECTIONS, USER_LOAD_ADDR
++     - header-only libc      (userspace/libc/*.h) — no libc.a
++     - header-only libgcc    (userspace/libc/libgcc.h) — no libgcc.a
++
++   Sysroot layout populated by `make xgcc-sysroot`:
++     $prefix/aarch64-osdev/lib/crt0.o
++     $prefix/aarch64-osdev/lib/linker_user.ld
++     $prefix/aarch64-osdev/include/<libc headers>
++
++   gcc's default cross-compiler search path adds these to the
++   library lookup, so `crt0%O%s` (STARTFILE_SPEC) and
++   `-T linker_user.ld` (LINK_SPEC) resolve without absolute
++   paths — same recipe works on host and (chapter 132e) in the
++   guest after `/bin/gcc` is shipped.  */
++
++#ifndef GCC_AARCH64_OSDEV_H
++#define GCC_AARCH64_OSDEV_H
++
++/* Predefine `__osdev__` so userspace code can `#ifdef __osdev__`
++   to opt into things that aren't portable to aarch64-elf.  Also
++   define non-strict spellings (`osdev`, `__osdev`) when -ansi is
++   not in effect, and assert system=osdev / system=unix /
++   system=posix so portable `#if defined(__unix__)` style guards
++   work the same way they do on linux / freebsd targets.  */
++#undef TARGET_OS_CPP_BUILTINS
++#define TARGET_OS_CPP_BUILTINS()		\
++  do {						\
++    builtin_define ("__osdev__");		\
++    builtin_define_std ("osdev");		\
++    builtin_assert ("system=osdev");		\
++    builtin_assert ("system=unix");		\
++    builtin_assert ("system=posix");		\
++  } while (0)
++
++/* libiberty's getopt.c uses #ifdef __OSDEV_LIBC__ to elide its
++   body in favour of our header-only getopt (chapter 131d).  The
++   chapter-131b wrapper supplied this; the real compiler bakes it
++   into every preprocess so the wrapper can be retired.  */
++#undef CPP_SPEC
++#define CPP_SPEC "-D__OSDEV_LIBC__"
++
++/* Force `-ffreestanding` by default.  Our world has no hosted
++   libc (no <stdint.h>, no <stdlib.h> from libc — only header-
++   only shims), so `__STDC_HOSTED__` must be 0.  Without this,
++   gcc's wrap-stdint.h does `#include_next <stdint.h>` and fails
++   to find one.  With this, gcc falls through to its bundled
++   `stdint-gcc.h` (a full freestanding integer-types header) and
++   our libc inttypes.h / freestanding.h pick up int32_t etc.  */
++#undef CC1_SPEC
++#define CC1_SPEC "%{!ffreestanding:%{!fno-freestanding:-ffreestanding}}"
++
++/* Just crt0.  No crti / crtn / crtbegin / crtend — our linker
++   script does not reference _init / _fini, and gcc's chapter-120
++   crt0 walks .init_array / .fini_array itself.  Honour
++   -nostartfiles so kernel-side standalone tests can opt out.  */
++#undef STARTFILE_SPEC
++#define STARTFILE_SPEC "%{!nostartfiles:crt0%O%s}"
++
++#undef ENDFILE_SPEC
++#define ENDFILE_SPEC ""
++
++/* Header-only libc: nothing to -l.  -nodefaultlibs is respected
++   anyway because both LIB_SPEC and LIBGCC_SPEC are empty.  */
++#undef LIB_SPEC
++#define LIB_SPEC ""
++
++/* Header-only libgcc shim (userspace/libc/libgcc.h).  Without
++   this override gcc would auto-append `-lgcc` and fail to link.  */
++#undef REAL_LIBGCC_SPEC
++#define REAL_LIBGCC_SPEC ""
++#undef LIBGCC_SPEC
++#define LIBGCC_SPEC ""
++
++/* Use our user-space linker script by default; let the user
++   override with their own -T.  Keep aarch64-elf-raw's -X
++   (discard local symbols) and -maarch64elf emulation, drop the
++   ilp32 / -shared / -symbolic / -rdynamic clauses we don't
++   support.  AARCH64_ERRATA_LINK_SPEC is appended verbatim so
++   the -mfix-cortex-a53-* knobs still work.
++
++   The script path goes through %R (gcc's sysroot expansion)
++   because ld's `-T` does not search -L paths or its own
++   default SEARCH_DIR for the script file.  Configure xgcc
++   with `--with-sysroot=$prefix/aarch64-osdev` so %R resolves
++   to the same directory `xgcc-sysroot` populates.  */
++#undef LINK_SPEC
++#define LINK_SPEC "                              \
++   %{static:-Bstatic}                            \
++   %{mbig-endian:-EB} %{mlittle-endian:-EL} -X   \
++   %{!T*:-T %R/lib/linker_user.ld}               \
++   -maarch64elf%{mbig-endian:b}"                 \
++  AARCH64_ERRATA_LINK_SPEC
++
++#endif /* GCC_AARCH64_OSDEV_H */
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -411,6 +411,14 @@
+ esac
+ 
+ case ${host} in
++aarch64*-*-osdev*)
++	extra_parts="$extra_parts crtbegin.o crtend.o crti.o crtn.o"
++	extra_parts="$extra_parts crtfastmath.o"
++	tmake_file="${tmake_file} ${cpu_type}/t-aarch64"
++	tmake_file="${tmake_file} ${cpu_type}/t-lse t-slibgcc-libgcc"
++	tmake_file="${tmake_file} ${cpu_type}/t-softfp t-softfp t-crtfm"
++	tmake_file="${tmake_file} t-dfprules"
++	;;
+ aarch64*-*-elf | aarch64*-*-rtems*)
+ 	extra_parts="$extra_parts crtbegin.o crtend.o crti.o crtn.o"
+ 	extra_parts="$extra_parts crtfastmath.o"

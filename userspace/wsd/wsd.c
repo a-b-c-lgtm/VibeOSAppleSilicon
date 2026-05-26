@@ -59,6 +59,7 @@
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/printf.h"
 #include "../libc/thread.h"
 #include "../libc/wm_proto.h"
@@ -141,12 +142,12 @@ static void wait_for_fb_then_map(struct fb_map_args *out)
     for (uint32_t tries = 0; tries < 30000; tries++) {
         int r = fb_map_scanout(out);
         if (r == 0) return;
-        if (r != -11 /* -EAGAIN */) {
-            /* Real failure (e.g. -EBUSY: another process won
+        if (errno != EAGAIN) {
+            /* Real failure (e.g. EBUSY: another process won
              * the race).  Report once, then keep retrying so
              * a future release_owner gives us a chance. */
-            printf("[wsd] fb_map_scanout failed err=%d try=%u\n",
-                   r, tries);
+            printf("[wsd] fb_map_scanout failed: %s try=%u\n",
+                   strerror(errno), tries);
         }
         yield();
     }
@@ -2882,8 +2883,8 @@ int main(int argc, char **argv)
     for (;;) {
         int cfd = srv_accept(lfd);
         if (cfd < 0) {
-            if (cfd == -4 /* -EINTR */) continue;
-            printf("[wsd] srv_accept failed: %d\n", cfd);
+            if (errno == EINTR) continue;
+            printf("[wsd] srv_accept failed: %s\n", strerror(errno));
             close(lfd);
             return 1;
         }

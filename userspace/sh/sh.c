@@ -23,6 +23,9 @@
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
+#include "../libc/malloc.h"
+#include "../libc/env.h"
 
 #define LINE_MAX 128
 #define PATH_MAX 96
@@ -71,9 +74,9 @@ static int trim(char *line, int len)
 static void prompt(void)
 {
     char cwd[96];
-    long n = getcwd(cwd, sizeof(cwd));
+    long n = __sys_getcwd(cwd, sizeof(cwd));
     if (n > 0) {
-        /* getcwd returns bytes including NUL; subtract one. */
+        /* __sys_getcwd returns bytes including NUL; subtract one. */
         write(1, cwd, (size_t)(n - 1));
     }
     write(1, "$ ", 2);
@@ -154,7 +157,7 @@ static void resolve_path(const char *name, char *out)
     /* `./foo` — relative to current cwd. */
     if (name[0] == '.' && name[1] == '/') {
         char cwd[96];
-        long cwn = getcwd(cwd, sizeof(cwd));
+        long cwn = __sys_getcwd(cwd, sizeof(cwd));
         int i = 0;
         if (cwn > 0) {
             for (long k = 0; k < cwn - 1 && i < PATH_MAX - 1; k++)
@@ -176,7 +179,7 @@ static void resolve_path(const char *name, char *out)
      * cwd segment and recurse on a built path. */
     if (name[0] == '.' && name[1] == '.' && name[2] == '/') {
         char cwd[96];
-        long cwn = getcwd(cwd, sizeof(cwd));
+        long cwn = __sys_getcwd(cwd, sizeof(cwd));
         int i = 0;
         if (cwn > 1) {
             int last_slash = -1;
@@ -196,11 +199,19 @@ static void resolve_path(const char *name, char *out)
         return;
     }
 
-    /* Read PATH from env.  256 bytes is plenty for our use
-     * cases; longer values fall back to the /bin/ shortcut. */
+    /* Read PATH from env.  POSIX getenv returns a pointer into
+     * the env arena (or NULL); no caller buffer needed. */
+    const char *path_env_p = getenv("PATH");
+    if (!path_env_p) { prepend_bin(name, out); return; }
     char path_env[256];
-    long n = getenv("PATH", path_env, sizeof(path_env));
-    if (n <= 0) { prepend_bin(name, out); return; }
+    {
+        int i = 0;
+        while (path_env_p[i] && i < (int)sizeof(path_env) - 1) {
+            path_env[i] = path_env_p[i];
+            i++;
+        }
+        path_env[i] = '\0';
+    }
 
     /* Walk ':'-separated entries.  For each, build
      * "<entry>/<name>" in `cand` and open() it; first hit wins. */
@@ -281,7 +292,6 @@ static void expand_vars(const char *src, char *dst, int cap)
 {
     int  pos     = 0;
     int  in_dq   = 0;       /* inside double-quoted run */
-    char val[256];
 
     while (*src && pos < cap - 1) {
         char c = *src;
@@ -345,8 +355,8 @@ static void expand_vars(const char *src, char *dst, int cap)
             if (pos < cap - 1) dst[pos++] = '$';
             continue;
         }
-        long got = getenv(name, val, sizeof(val));
-        if (got > 0) append_str(dst, &pos, cap, val);
+        const char *val = getenv(name);
+        if (val) append_str(dst, &pos, cap, val);
         /* Unknown var: silent empty expansion. */
     }
     dst[pos] = '\0';
@@ -720,7 +730,7 @@ int main(void)
         /* `pwd` builtin. */
         if (streq(line, "pwd")) {
             char cwd[96];
-            long got = getcwd(cwd, sizeof(cwd));
+            long got = __sys_getcwd(cwd, sizeof(cwd));
             if (got > 0) {
                 write(1, cwd, (size_t)(got - 1));
                 write(1, "\n", 1);
@@ -741,7 +751,7 @@ int main(void)
                 write(1, "cd: ", 4);
                 write(1, target, (size_t)strlen(target));
                 write(1, ": no such directory (errno=", 28);
-                putd(-rc);
+                putd(errno);
                 write(1, ")\n", 2);
             }
             continue;
@@ -759,10 +769,10 @@ int main(void)
             }
             *eq = '\0';
             const char *val = eq + 1;
-            int rc = setenv(kv, val);
+            int rc = setenv(kv, val, 1);
             if (rc != 0) {
                 write(1, "export: setenv failed errno=", 28);
-                putd(-rc);
+                putd(errno);
                 write(1, "\n", 1);
             }
             continue;
@@ -773,9 +783,9 @@ int main(void)
             const char *key = line + 6;
             while (*key == ' ' || *key == '\t') key++;
             int rc = unsetenv(key);
-            if (rc != 0 && rc != -2 /* ENOENT */) {
+            if (rc != 0) {
                 write(1, "unset: errno=", 13);
-                putd(-rc);
+                putd(errno);
                 write(1, "\n", 1);
             }
             continue;
@@ -799,7 +809,7 @@ int main(void)
                     write(1, "rm: ", 4);
                     write(1, start, (size_t)strlen(start));
                     write(1, ": errno=", 8);
-                    putd(-rc);
+                    putd(errno);
                     write(1, "\n", 1);
                     any_err = 1;
                 }
@@ -823,12 +833,12 @@ int main(void)
                 while (*p && *p != ' ' && *p != '\t') p++;
                 char saved = *p;
                 *p = '\0';
-                int rc = mkdir(start);
+                int rc = mkdir(start, 0755);
                 if (rc != 0) {
                     write(1, "mkdir: ", 7);
                     write(1, start, (size_t)strlen(start));
                     write(1, ": errno=", 8);
-                    putd(-rc);
+                    putd(errno);
                     write(1, "\n", 1);
                     any_err = 1;
                 }
@@ -1105,7 +1115,7 @@ int main(void)
                         write(1, "[sh] no such command: ", 22);
                         write(1, segs[i], (size_t)strlen(segs[i]));
                         write(1, " (errno=", 8);
-                        putd(-tid);
+                        putd(errno);
                         write(1, ")\n", 2);
                         spawn_failed = 1;
                         tids[i] = -1;
@@ -1196,7 +1206,7 @@ int main(void)
                 write(1, "[sh] redirect: cannot open ", 27);
                 write(1, redir_out, (size_t)strlen(redir_out));
                 write(1, " for writing (errno=", 20);
-                putd(-sh_out_fd);
+                putd(errno);
                 write(1, ")\n", 2);
                 g_last_exit = 1;
                 continue;
@@ -1219,7 +1229,7 @@ int main(void)
             tid = spawn(path, args);
         }
         if (tid < 0) {
-            if ((redir_in || redir_out) && tid == -2 /* ENOENT */) {
+            if ((redir_in || redir_out) && errno == ENOENT) {
                 write(1, "[sh] redirect: cannot open ", 27);
                 if (redir_in)  write(1, redir_in,  (size_t)strlen(redir_in));
                 else           write(1, redir_out, (size_t)strlen(redir_out));
@@ -1228,7 +1238,7 @@ int main(void)
                 write(1, "[sh] no such command: ", 22);
                 write(1, cmd, (size_t)strlen(cmd));
                 write(1, " (errno=", 8);
-                putd(-tid);
+                putd(errno);
                 write(1, ")\n", 2);
             }
             if (sh_in_fd  >= 0) close(sh_in_fd);

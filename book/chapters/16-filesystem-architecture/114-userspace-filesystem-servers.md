@@ -19,11 +19,16 @@ fine for filesystems that need block-device access (OSFS-1,
 OSFS-2) or kernel-internal state (procfs walks the thread
 table), but it's wrong for everything else.
 
-We have a system clipboard coming (Chapter 108 stub,
-itself riding on the named-IPC bus from Chapter 107). We
-have audio that probably wants `/dev/audio` or `/dev/snd/`
-shaped paths. We have a future where the browser exposes
-its history as `/sys/browser/history/`. None of these need
+We have a system clipboard already shipped
+([Chapter 108](../14-userspace-services/108-clipboard.md),
+riding on the named-IPC bus from
+[Chapter 107](../14-userspace-services/107-ipc.md)) —
+but it lives outside the filesystem namespace, with its
+own one-off API. Step [114d](114d-clipboardd-port.md)
+re-fronts it as `/clipboard/text`. We also have audio
+that probably wants `/dev/audio` or `/dev/snd/` shaped
+paths. We have a future where the browser exposes its
+history as `/sys/browser/history/`. None of these need
 to live in the kernel — they need *interactivity* with
 running userspace processes, which the kernel is bad at.
 
@@ -234,11 +239,16 @@ its clients knowing.
 
 ## What user-space filesystems unlock
 
-Concrete things we'd build in the chapters after 109:
+Concrete things we'd build on top of the userspace-fs
+machinery (some are re-implementations of already-shipped
+IPC services, some are new):
 
-- **`/bin/clipboardd`** mounts `/clipboard/text`. `notepad`
-  Ctrl-C writes to `/clipboard/text`; Ctrl-V reads from
-  it. No new syscalls.
+- **`/bin/clipboardd`** mounts `/clipboard/text`. Today
+  the clipboard is a chapter-108 IPC service with its
+  own bespoke API; step
+  [114d](114d-clipboardd-port.md) re-fronts it as a
+  file. `notepad` Ctrl-C writes to `/clipboard/text`;
+  Ctrl-V reads from it. No new syscalls.
 - **`/bin/audiofs`** mounts `/dev/audio`. Programs play
   sound by `cat foo.raw > /dev/audio`. No new syscalls.
 - **`/bin/cookiesd`** mounts `/sys/browser/cookies/`.
@@ -336,11 +346,12 @@ pattern as `ps`, `top`, `ls`.)
 
 ### `ls` and `cat` get auto-discovery
 
-Once the mount table is exposed via `SYS_MOUNTS` (chapter
-108), `ls /` shows every mounted prefix as a directory.
+The mount table is already exposed via `SYS_MOUNTS`
+(shipped in [chapter 113f](113f-sys-mounts.md)), so
+`ls /` shows every mounted prefix as a directory.
 `cat <unknown_mount>` falls through to the userspace
 daemon. No `ls`-side or `cat`-side changes needed
-beyond what chapter 113 already requires.
+beyond what chapter 113 already provides.
 
 ### `top` shows daemon stats
 
@@ -387,13 +398,14 @@ Chapter 113 (mount table) is a pure refactor with no new
 features. Chapter 114 (userspace fs) is a major new
 feature.
 
-If we shipped 109 first (i.e., added a sixth prefix
-ladder for `/userspace_fs_$N/` paths), we'd cement the
-prefix-special-casing pattern even harder and the
-eventual 108 refactor would have to undo it. Doing 108
-first gives 109 a clean abstraction to slot into, and 108
-ships value (clean dispatch, runtime mount) immediately
-even if 109 slips.
+If we had shipped 114 first (i.e., added a sixth prefix
+ladder for `/userspace_fs_$N/` paths), we'd have
+cemented the prefix-special-casing pattern even harder
+and the eventual 113 refactor would have had to undo
+it. Doing 113 first gave 114 a clean abstraction to
+slot into, and 113 shipped value (clean dispatch,
+runtime mount) immediately — which is exactly the
+order we ended up landing them in.
 
 ## When to schedule
 

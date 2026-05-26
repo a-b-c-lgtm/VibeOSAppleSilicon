@@ -382,7 +382,7 @@ int tls_socket_init_chain_from_bundle(tls_socket_t *t,
 static void tls_set_validator_time(br_x509_minimal_context *xc)
 {
     struct timeval tv;
-    if (gettimeofday(&tv) != 0) return;
+    if (gettimeofday(&tv, NULL) != 0) return;
     if (tv.tv_sec <= 0) return;
     uint64_t s = (uint64_t)tv.tv_sec;
     uint32_t days = (uint32_t)(s / 86400u) + TLS_UNIX_EPOCH_DAYS;

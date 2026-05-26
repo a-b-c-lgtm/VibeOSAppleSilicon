@@ -1,0 +1,43 @@
+# Patch: register `osdev` as a valid OS suffix in
+# mpc-1.2.1's `build-aux/config.sub`, so cross-building
+# mpc with `--host=aarch64-osdev` is accepted.
+#
+# Without this hunk mpc's `configure --host=aarch64-osdev`
+# aborts with:
+#
+#   Invalid configuration `aarch64-osdev': OS `osdev' not
+#   recognized
+#
+# before any compiler flag is consulted.
+#
+# Same shape as the gmp patch (bare `osdev*` form, newer
+# config.sub style — the leading `-` is no longer required
+# in this generation of the file).  The added line follows
+# the existing `cygwin* | msys* | pe* | moss* | proelf* |
+# rtems*` neighbour and matches its indentation.
+#
+# Companion patches in the same chapter:
+#   vendor/gmp-aarch64-osdev.patch   — same form
+#   vendor/mpfr-aarch64-osdev.patch  — older `-osdev*` form
+#
+# Apply with:
+#   patch -p1 -d vendor/mpc-1.2.1/ < \
+#       vendor/mpc-aarch64-osdev.patch
+#
+# Re-application is gated by the marker file
+# `vendor/mpc-1.2.1/.patched-osdev` written by
+# scripts/fetch_gcc_prereqs.sh after a successful apply.
+#
+# Chapter 132e (cross-building gmp/mpfr/mpc for the
+# aarch64-osdev guest sysroot).
+#
+--- a/build-aux/config.sub
++++ b/build-aux/config.sub
+@@ -1354,6 +1354,7 @@
+ 	     | udi* | eabi* | lites* | ieee* | go32* | aux* | hcos* \
+ 	     | chorusrdb* | cegcc* | glidix* \
+ 	     | cygwin* | msys* | pe* | moss* | proelf* | rtems* \
++	     | osdev* \
+ 	     | midipix* | mingw32* | mingw64* | linux-gnu* | linux-android* \
+ 	     | linux-newlib* | linux-musl* | linux-uclibc* \
+ 	     | uxpv* | beos* | mpeix* | udk* | moxiebox* \

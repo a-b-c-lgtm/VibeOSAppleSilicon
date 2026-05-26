@@ -38,7 +38,7 @@
 .section .text
 .global cswitch_to
 cswitch_to:
-    sub     sp, sp, #288
+    sub     sp, sp, #816
 
     /* Save every GP register, including x0/x1 (the args).  This is
      * deliberately uniform with the IRQ-entry frame so the same
@@ -94,6 +94,51 @@ cswitch_to:
      * one user thread run with another's stack pointer. */
     mrs     x16, sp_el0
     stp     x16, xzr, [sp, #272]    /* sp_el0 (+ pad for 16-byte align) */
+
+    /* Chapter 129 — save FP/SIMD state into the frame.
+     *
+     * Layout from offset 288:
+     *   288..303  q0,  q1
+     *   304..319  q2,  q3
+     *   ...
+     *   784..799  q30, q31
+     *   800..803  fpsr
+     *   804..807  fpcr
+     *   808..815  pad
+     *
+     * Eager save/restore: we always pay for 32 quad-stores + 2
+     * MSR reads on every context switch.  The cost is trivial
+     * compared to the alternative (lazy save with a CPACR trap +
+     * per-thread "owns FP" flag + reset on each context switch).
+     * The kernel itself is built with -mgeneral-regs-only, so
+     * the live FP register file across cswitch_to is exactly the
+     * outgoing user thread's state.
+     *
+     * x16/x17 are already saved at offset 128 above, so it's
+     * safe to clobber them as scratch for fpsr/fpcr. */
+    stp     q0,  q1,  [sp, #288]
+    stp     q2,  q3,  [sp, #320]
+    stp     q4,  q5,  [sp, #352]
+    stp     q6,  q7,  [sp, #384]
+    stp     q8,  q9,  [sp, #416]
+    stp     q10, q11, [sp, #448]
+    stp     q12, q13, [sp, #480]
+    stp     q14, q15, [sp, #512]
+    stp     q16, q17, [sp, #544]
+    stp     q18, q19, [sp, #576]
+    stp     q20, q21, [sp, #608]
+    stp     q22, q23, [sp, #640]
+    stp     q24, q25, [sp, #672]
+    stp     q26, q27, [sp, #704]
+    stp     q28, q29, [sp, #736]
+    stp     q30, q31, [sp, #768]
+    mrs     x16, fpsr
+    mrs     x17, fpcr
+    /* fpsr/fpcr stored together at offset 800.  Offset is out of
+     * range for `stp x16, x17, [sp, #800]` (X-reg stp imm is
+     * ±504), so materialise the address in x6 first. */
+    add     x6, sp, #800
+    stp     x16, x17, [x6]          /* fpsr (low 32), fpcr (low 32) */
 
     /* Persist current SP into *save_sp.  Original x0 (save_sp) is
      * in the frame at offset 0; original x1 (load_sp) at offset 8. */
@@ -239,6 +284,32 @@ cswitch_to:
     ldr     x16, [sp, #272]
     msr     sp_el0, x16
 
+    /* Chapter 129 — restore FP/SIMD state before GPRs.  Same
+     * layout as the save side at offset 288.  Doing this here
+     * (before the GPR restore) keeps x16/x17 free as scratch
+     * for fpsr/fpcr; the subsequent ldp x16, x17 from offset 128
+     * overwrites our scratch use with the real saved values. */
+    add     x6, sp, #800
+    ldp     x16, x17, [x6]
+    msr     fpsr, x16
+    msr     fpcr, x17
+    ldp     q0,  q1,  [sp, #288]
+    ldp     q2,  q3,  [sp, #320]
+    ldp     q4,  q5,  [sp, #352]
+    ldp     q6,  q7,  [sp, #384]
+    ldp     q8,  q9,  [sp, #416]
+    ldp     q10, q11, [sp, #448]
+    ldp     q12, q13, [sp, #480]
+    ldp     q14, q15, [sp, #512]
+    ldp     q16, q17, [sp, #544]
+    ldp     q18, q19, [sp, #576]
+    ldp     q20, q21, [sp, #608]
+    ldp     q22, q23, [sp, #640]
+    ldp     q24, q25, [sp, #672]
+    ldp     q26, q27, [sp, #704]
+    ldp     q28, q29, [sp, #736]
+    ldp     q30, q31, [sp, #768]
+
     /* Restore the new context.  Order matters: we must write
      * ELR_EL1 and SPSR_EL1 before restoring x0/x1 because the
      * inline pop uses x0/x1 as scratch. */
@@ -261,7 +332,7 @@ cswitch_to:
     ldp     x4,  x5,  [sp, #32]
     ldp     x2,  x3,  [sp, #16]
     ldp     x0,  x1,  [sp, #0]
-    add     sp, sp, #288
+    add     sp, sp, #816
     eret
 
 /* thread_trampoline — the address landed at by `eret` for a freshly

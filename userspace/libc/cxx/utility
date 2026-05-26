@@ -1,0 +1,101 @@
+// userspace/libc/cxx/utility — chapter 132f
+//
+// Freestanding <utility>.  libcpp uses essentially nothing from
+// here (system.h includes it speculatively), but downstream gcc
+// proper will eventually want std::move / std::swap / std::pair /
+// std::forward.  Implement the minimum that compiles cleanly.
+#ifndef _OSDEV_CXX_UTILITY
+#define _OSDEV_CXX_UTILITY 1
+
+#include <stddef.h>
+#include "type_traits"
+
+namespace std {
+
+// std::nullptr_t — type of the `nullptr` literal.  Required by
+// gcc's mux-utils.h (`pointer_mux (std::nullptr_t)`).
+using nullptr_t = decltype(nullptr);
+
+template <typename T>
+constexpr typename remove_reference<T>::type &&move(T &&t) noexcept {
+    return static_cast<typename remove_reference<T>::type &&>(t);
+}
+
+template <typename T>
+constexpr T &&forward(typename remove_reference<T>::type &t) noexcept {
+    return static_cast<T &&>(t);
+}
+template <typename T>
+constexpr T &&forward(typename remove_reference<T>::type &&t) noexcept {
+    return static_cast<T &&>(t);
+}
+
+template <typename T>
+inline void swap(T &a, T &b) noexcept {
+    T tmp = std::move(a);
+    a = std::move(b);
+    b = std::move(tmp);
+}
+
+template <typename T1, typename T2>
+struct pair {
+    T1 first;
+    T2 second;
+    pair() : first(), second() {}
+    pair(const T1 &a, const T2 &b) : first(a), second(b) {}
+    template <typename U1, typename U2>
+    pair(U1 &&a, U2 &&b)
+        : first(std::forward<U1>(a)), second(std::forward<U2>(b)) {}
+    template <typename U1, typename U2>
+    pair(const pair<U1, U2> &p) : first(p.first), second(p.second) {}
+    template <typename U1, typename U2>
+    pair(pair<U1, U2> &&p)
+        : first(std::move(p.first)), second(std::move(p.second)) {}
+    pair(const pair &) = default;
+    pair(pair &&)      = default;
+    pair &operator=(const pair &) = default;
+    pair &operator=(pair &&)      = default;
+};
+
+template <typename T1, typename T2>
+inline bool operator==(const pair<T1, T2> &a, const pair<T1, T2> &b) {
+    return a.first == b.first && a.second == b.second;
+}
+template <typename T1, typename T2>
+inline bool operator!=(const pair<T1, T2> &a, const pair<T1, T2> &b) {
+    return !(a == b);
+}
+template <typename T1, typename T2>
+inline bool operator<(const pair<T1, T2> &a, const pair<T1, T2> &b) {
+    if (a.first  < b.first)  return true;
+    if (b.first  < a.first)  return false;
+    return a.second < b.second;
+}
+
+template <typename T1, typename T2>
+inline pair<T1, T2> make_pair(T1 a, T2 b) { return pair<T1, T2>(a, b); }
+
+// ── iterator helpers (std::next, std::prev, std::advance) ────
+// These live in <iterator> in real libstdc++ but plenty of gcc
+// TUs use them without including <iterator>.  Putting them in
+// utility (always pulled in by system.h) makes them universally
+// available.
+template <typename _It>
+inline _It next(_It it, long n = 1) {
+    while (n-- > 0) ++it;
+    return it;
+}
+template <typename _It>
+inline _It prev(_It it, long n = 1) {
+    while (n-- > 0) --it;
+    return it;
+}
+template <typename _It, typename _D>
+inline void advance(_It &it, _D n) {
+    while (n > 0) { ++it; --n; }
+    while (n < 0) { --it; ++n; }
+}
+
+}  // namespace std
+
+#endif

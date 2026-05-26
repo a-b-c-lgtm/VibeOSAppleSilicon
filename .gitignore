@@ -6,6 +6,7 @@ build/
 *.img
 *.map
 *.o
+*.pyc
 
 # Runtime logs
 *.log
@@ -28,3 +29,43 @@ build/
 # large, host-specific, and changes every time the host updates its
 # root list.
 vendor/testcerts/public-roots.pem
+
+# Chapter 130b: optional Doom IWAD asset, drop your own copy at
+# assets/wads/doom1.wad (any Doom-engine WAD works: doom1.wad,
+# doom2.wad, tnt.wad, plutonia.wad, heretic.wad, hexen.wad).
+# Not committed because (a) doom1.wad is freely *playable* but its
+# redistribution licence is jurisdiction-dependent, (b) commercial
+# WADs cannot be redistributed at all.
+assets/wads/*.wad
+assets/wads/*.WAD
+
+# Chapter 131a: binutils source for the aarch64-osdev cross
+# toolchain.  Fetched by scripts/fetch_binutils.sh from
+# ftp.gnu.org; not committed because it's ~27 MiB compressed,
+# ~370 MiB extracted, and any developer can re-fetch with the
+# sha256 the fetch script pins.  The patch that turns it into an
+# aarch64-osdev cross is at vendor/binutils-aarch64-osdev.patch
+# (committed).
+vendor/binutils-2.44.tar.xz
+vendor/binutils-2.44/
+
+# Chapter 132a: gcc source for the aarch64-osdev cross
+# toolchain.  Fetched by scripts/fetch_gcc.sh from ftp.gnu.org;
+# not committed because it's ~88 MiB compressed, ~860 MiB
+# extracted.  The patch that turns it into an aarch64-osdev
+# cross is at vendor/gcc-aarch64-osdev.patch (committed).
+vendor/gcc-14.2.0.tar.xz
+vendor/gcc-14.2.0/
+
+# Chapter 132b: GMP / MPFR / MPC vendored as gcc's in-tree
+# link-time prerequisites.  Fetched by
+# scripts/fetch_gcc_prereqs.sh from gcc.gnu.org/pub/.  Tarballs
+# are ~5 MiB total; extracted dirs ~50 MiB.  Versions are
+# sha256-pinned in the fetch script and cross-checked against
+# gcc-14.2.0's own contrib/prerequisites.sha512.
+vendor/gmp-6.2.1.tar.bz2
+vendor/gmp-6.2.1/
+vendor/mpfr-4.1.0.tar.bz2
+vendor/mpfr-4.1.0/
+vendor/mpc-1.2.1.tar.gz
+vendor/mpc-1.2.1/

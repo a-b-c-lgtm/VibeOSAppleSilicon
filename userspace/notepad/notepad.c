@@ -61,6 +61,7 @@
 #include "../libgui/draw.h"
 #include "../libgui/wmclient.h"
 #include "../libgui/save_dialog.h"
+#include "../libc/printf.h"      /* chapter 127 build status marker */
 
 /* chapter 108e -- WIN_W/WIN_H are now just the CREATE-time
  * defaults.  COLS/ROWS that used to be derived macros are
@@ -103,6 +104,12 @@
 #define CTRL_C   0x03
 #define CTRL_X   0x18
 #define CTRL_V   0x16
+/* Chapter 127 -- the Build button.  Ctrl-B writes the current
+ * buffer to /tmp/np_src.c, drops a one-rule Makefile at
+ * /tmp/np_build.mk, and spawns /bin/make on it.  The child's
+ * exit code is reported via set_status and also printed on
+ * serial so headless regression tests can grep for it. */
+#define CTRL_B   0x02
 
 /* ---------------- editor state ---------------- */
 
@@ -221,6 +228,13 @@ static int load_file(const char *path)
 /* O_WRONLY (1) | O_CREAT (0100=64) | O_TRUNC (01000=512) = 577. */
 #define OPEN_WRITE_TRUNC 577
 
+/* Chapter 127 forward decls -- build_buffer (defined just below)
+ * calls these; the bodies live with the render helpers further
+ * down.  Without these the implicit-decl rule would conflict
+ * with the explicit forward decls in the clipboard block. */
+static void set_status(const char *s, int frames);
+static void render(void);
+
 static int save_file(const char *path)
 {
     int fd = open(path, OPEN_WRITE_TRUNC);
@@ -242,6 +256,60 @@ static int save_file(const char *path)
     return 0;
 }
 
+/* Chapter 127 -- write the live buffer to `path` without
+ * touching g_dirty / g_path.  Used by Build so pressing
+ * Ctrl-B never makes notepad think the user's actual file
+ * has been saved. */
+static int write_buffer_to(const char *path)
+{
+    int fd = open(path, OPEN_WRITE_TRUNC);
+    if (fd < 0) return fd;
+    for (int r = 0; r < g_line_count; r++) {
+        if (g_line_len[r] > 0)
+            (void)write(fd, g_lines[r], (size_t)g_line_len[r]);
+        if (r != g_line_count - 1)
+            (void)write(fd, "\n", 1);
+    }
+    (void)fsync(fd);
+    close(fd);
+    return 0;
+}
+
+/* Chapter 127 -- the Build button.  Always builds to a fixed
+ * scratch path so the test can find the output reliably, and
+ * never modifies whatever file the user is currently editing.
+ * The Makefile we generate uses the chapter-126 grammar:
+ * one rule, one recipe line, hard-tab prefix. */
+static void build_buffer(void)
+{
+    set_status("building...", 1);
+    render();
+
+    int rc = write_buffer_to("/tmp/np_src.c");
+    if (rc < 0) { set_status("build: write src failed", 3); return; }
+
+    int fd = open("/tmp/np_build.mk", OPEN_WRITE_TRUNC);
+    if (fd < 0) { set_status("build: write mk failed", 3); return; }
+    static const char MK[] =
+        "all:\n"
+        "\t/bin/cc /tmp/np_src.c -o /tmp/np_out\n";
+    (void)write(fd, MK, sizeof(MK) - 1);
+    (void)fsync(fd);
+    close(fd);
+
+    int pid = spawn("/bin/make", "-f /tmp/np_build.mk");
+    if (pid < 0) { set_status("build: spawn failed", 3); return; }
+    int code = -1;
+    (void)waitpid(pid, &code, 0);
+
+    /* Serial marker so test_notepad_build.py can grep the boot
+     * log for the outcome without having to read the FB. */
+    printf("[notepad] build code=%d\n", code);
+
+    if (code == 0) set_status("built /tmp/np_out", 4);
+    else           set_status("build failed", 4);
+}
+
 static void shift_right(char *line, int from, int len_total)
 {
     for (int i = len_total; i > from; i--) line[i] = line[i - 1];
@@ -253,11 +321,10 @@ static void shift_left(char *line, int from, int len_total)
 }
 
 /* Forward decls -- the clipboard helpers below use insert_char,
- * newline, and set_status; the latter is defined further down
- * with the rendering helpers. */
+ * newline, and set_status; the latter is declared up near
+ * save_file because build_buffer needs it too. */
 static void insert_char(char c);
 static void newline(void);
-static void set_status(const char *s, int frames);
 
 /* ---------------- chapter 108: clipboard ---------------- */
 
@@ -467,7 +534,7 @@ static void render_status(void)
     s_append(line, "/", sizeof(line));
     utoa((unsigned long)g_line_count, num);
     s_append(line, num, sizeof(line));
-    s_append(line, "  Ctrl-S Save  Ctrl-Q Quit  ^X Cut  ^C Copy  ^V Paste", sizeof(line));
+    s_append(line, "  Ctrl-S Save  Ctrl-Q Quit  ^X Cut  ^C Copy  ^V Paste  ^B Build", sizeof(line));
     draw_text(&g_win.fb, GUTTER, y + 2, line, STATUS_FG, STATUS_BG, 0);
 
     if (g_dirty) {
@@ -727,6 +794,7 @@ int main(int argc, char **argv)
             if (c == CTRL_C) { clip_copy_line(); render(); break; }
             if (c == CTRL_X) { clip_cut_line();  render(); break; }
             if (c == CTRL_V) { clip_paste();     render(); break; }
+            if (c == CTRL_B) { build_buffer();   render(); break; }
             if (c == '\r' || c == '\n') {
                 newline(); render(); break;
             }

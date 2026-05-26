@@ -1,0 +1,39 @@
+// userspace/libc/cxx/cstring — chapter 132f
+//
+// Freestanding <cstring>.  C++ standard says <cstring> declares
+// the same things as <string.h> but in namespace std::.  We
+// include the C header and `using` the names into std.
+//
+// gcc/system.h always pulls this in, so every TU that compiles
+// gcc proper expects std::memset etc. to be visible.
+#ifndef _OSDEV_CXX_CSTRING
+#define _OSDEV_CXX_CSTRING 1
+
+#include "../string.h"
+
+namespace std {
+    using ::size_t;
+    using ::memcpy;
+    using ::memmove;
+    using ::memset;
+    using ::memcmp;
+    using ::memchr;
+    using ::strlen;
+    using ::strcmp;
+    using ::strncmp;
+    using ::strchr;
+    using ::strrchr;
+    using ::strstr;
+    using ::strpbrk;
+    using ::strspn;
+    using ::strcspn;
+    using ::strcpy;
+    using ::strncpy;
+    using ::strcat;
+    using ::strncat;
+    using ::strdup;
+    using ::strerror;
+    using ::strtok;
+}
+
+#endif

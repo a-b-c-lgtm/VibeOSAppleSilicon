@@ -122,7 +122,7 @@ S_OBJS   := $(patsubst %.S,$(BUILD)/%.o,$(filter %.S,$(S_SRCS))) \
 # object is then linked into the kernel ELF alongside the rest.
 # ----------------------------------------------------------------------
 USER_CFLAGS := -ffreestanding -nostdlib -nostartfiles \
-               -mcpu=cortex-a72 -mgeneral-regs-only \
+               -mcpu=cortex-a72 \
                -fno-stack-protector -fno-pie -fno-pic \
                -fno-asynchronous-unwind-tables \
                -Wall -Wextra -Werror -Os -g \
@@ -235,9 +235,270 @@ PRINTFTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
 PRINTFTEST_ELF  := $(BUILD)/userspace/printftest/printftest.elf
 PRINTFTEST_STRIPPED := $(BUILD)/userspace/printftest/printftest.stripped.elf
 
+# chapter-128a setjmp/longjmp test: links the aarch64 asm in
+# userspace/libc/setjmp.S plus a C driver that exercises every
+# case the spec promises (0-first, val-passes-through, 0->1).
+SETJMPTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                   $(BUILD)/userspace/libc/setjmp.o \
+                   $(BUILD)/userspace/setjmptest/setjmptest.o
+SETJMPTEST_ELF  := $(BUILD)/userspace/setjmptest/setjmptest.elf
+SETJMPTEST_STRIPPED := $(BUILD)/userspace/setjmptest/setjmptest.stripped.elf
+
+# chapter-128b raise() / abort() / expanded SIG* test (sigtest2)
+# and a companion aborttest binary that drives abort() and the
+# 128+SIGABRT exit-status convention.
+SIGTEST2_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                 $(BUILD)/userspace/sigtest2/sigtest2.o
+SIGTEST2_ELF  := $(BUILD)/userspace/sigtest2/sigtest2.elf
+SIGTEST2_STRIPPED := $(BUILD)/userspace/sigtest2/sigtest2.stripped.elf
+
+ABORTTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                  $(BUILD)/userspace/aborttest/aborttest.o
+ABORTTEST_ELF  := $(BUILD)/userspace/aborttest/aborttest.elf
+ABORTTEST_STRIPPED := $(BUILD)/userspace/aborttest/aborttest.stripped.elf
+
+# chapter-128c ctype.h / string.h / assert.h regression.
+# strtest needs cstring.o for the extern memcpy/memset/memmove
+# /memcmp/strlen symbols that string.h declares.  assertfail
+# also needs cstring.o for __assert_fail.
+# NB: CSTRING_OBJ is defined further down; we reference its
+# literal path here because Make's `:=` resolves immediately
+# and would otherwise expand to empty.
+STRTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                $(BUILD)/userspace/strtest/strtest.o \
+                $(BUILD)/userspace/libc/cstring.o
+STRTEST_ELF  := $(BUILD)/userspace/strtest/strtest.elf
+STRTEST_STRIPPED := $(BUILD)/userspace/strtest/strtest.stripped.elf
+
+ASSERTFAIL_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                   $(BUILD)/userspace/assertfail/assertfail.o \
+                   $(BUILD)/userspace/libc/cstring.o
+ASSERTFAIL_ELF  := $(BUILD)/userspace/assertfail/assertfail.elf
+ASSERTFAIL_STRIPPED := $(BUILD)/userspace/assertfail/assertfail.stripped.elf
+
+# chapter-128d POSIX <time.h> regression.
+TIMETEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                 $(BUILD)/userspace/timetest/timetest.o \
+                 $(BUILD)/userspace/libc/cstring.o
+TIMETEST_ELF  := $(BUILD)/userspace/timetest/timetest.elf
+TIMETEST_STRIPPED := $(BUILD)/userspace/timetest/timetest.stripped.elf
+
+# chapter-128e <stdlib.h> regression: qsort / bsearch / strtol /
+# strtoul / strtoll / strtoull / atol / atoll / abs+labs+llabs /
+# div+ldiv+lldiv / getopt.  Same shape as TIMETEST: crt0 + the
+# .o + the literal cstring path (CSTRING_OBJ is defined later in
+# this file but := captures the literal path immediately; see
+# makefile-pattern-rule-ordering repo memory).
+STDLIBTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                   $(BUILD)/userspace/stdlibtest/stdlibtest.o \
+                   $(BUILD)/userspace/libc/cstring.o
+STDLIBTEST_ELF  := $(BUILD)/userspace/stdlibtest/stdlibtest.elf
+STDLIBTEST_STRIPPED := $(BUILD)/userspace/stdlibtest/stdlibtest.stripped.elf
+
+# chapter-128f real <printf.h> + <scanf.h> regression: %o,
+# precision, +/space/# flags, %n, sscanf %d/%i/%u/%o/%x/%s/%c/
+# scansets/%n.
+PRINTFTEST2_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                    $(BUILD)/userspace/printftest2/printftest2.o \
+                    $(BUILD)/userspace/libc/cstring.o
+PRINTFTEST2_ELF  := $(BUILD)/userspace/printftest2/printftest2.elf
+PRINTFTEST2_STRIPPED := $(BUILD)/userspace/printftest2/printftest2.stripped.elf
+
+# chapter-129 FP/SIMD-at-EL0 regression: plain double arithmetic
+# at EL0, FP register preservation across cooperative yields, and
+# d8..d15 preservation through setjmp/longjmp.
+FPTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+               $(BUILD)/userspace/fptest/fptest.o \
+               $(BUILD)/userspace/libc/setjmp.o \
+               $(BUILD)/userspace/libc/cstring.o
+FPTEST_ELF  := $(BUILD)/userspace/fptest/fptest.elf
+FPTEST_STRIPPED := $(BUILD)/userspace/fptest/fptest.stripped.elf
+
+# chapter-130a — DoomGeneric port.
+#
+# DoomGeneric (github.com/ozkl/doomgeneric) is Chocolate Doom
+# 1.7.0 with all I/O routed through six function pointers the
+# platform port implements: DG_Init, DG_DrawFrame, DG_SleepMs,
+# DG_GetTicksMs, DG_GetKey, DG_SetWindowTitle.  Our port is
+# `userspace/doom/doomgeneric_osdev.c` (~250 lines).
+#
+# We exclude every upstream platform shim (SDL/X11/win/soso/etc)
+# and the SDL/Allegro music backends (which drag in mus2mid).
+# That leaves 83 portable .c files compiled by the
+# `$(BUILD)/vendor/doomgeneric/%.o` pattern rule below.
+#
+# Vendor sources are NOT held to our -Werror standard (the
+# upstream code has plenty of "unused but set" and similar
+# warnings; fixing them would create a maintenance burden every
+# time we re-sync from upstream).  Our own shim IS held to
+# -Werror via the default USER_CFLAGS pattern rule.
+DOOM_VENDOR_EXCLUDES := \
+    vendor/doomgeneric/src/doomgeneric_allegro.c \
+    vendor/doomgeneric/src/doomgeneric_emscripten.c \
+    vendor/doomgeneric/src/doomgeneric_linuxvt.c \
+    vendor/doomgeneric/src/doomgeneric_sdl.c \
+    vendor/doomgeneric/src/doomgeneric_soso.c \
+    vendor/doomgeneric/src/doomgeneric_sosox.c \
+    vendor/doomgeneric/src/doomgeneric_win.c \
+    vendor/doomgeneric/src/doomgeneric_xlib.c \
+    vendor/doomgeneric/src/i_sdlsound.c \
+    vendor/doomgeneric/src/i_sdlmusic.c \
+    vendor/doomgeneric/src/i_allegrosound.c \
+    vendor/doomgeneric/src/i_allegromusic.c \
+    vendor/doomgeneric/src/mus2mid.c
+
+DOOM_VENDOR_SRCS := $(filter-out $(DOOM_VENDOR_EXCLUDES), \
+    $(wildcard vendor/doomgeneric/src/*.c))
+DOOM_VENDOR_OBJS := $(patsubst vendor/doomgeneric/src/%.c, \
+    $(BUILD)/vendor/doomgeneric/%.o, $(DOOM_VENDOR_SRCS))
+
+DOOM_OBJS := $(BUILD)/userspace/crt/crt0.o \
+             $(BUILD)/userspace/doom/doomgeneric_osdev.o \
+             $(BUILD)/userspace/libc/setjmp.o \
+             $(BUILD)/userspace/libc/cstring.o \
+             $(BUILD)/userspace/libgui/wmclient.o \
+             $(DOOM_VENDOR_OBJS)
+DOOM_ELF  := $(BUILD)/userspace/doom/doom.elf
+DOOM_STRIPPED := $(BUILD)/userspace/doom/doom.stripped.elf
+
+# chapter-116a errno test: drives the new __errno_value plumbing
+# from a few representative syscalls (open / close / read / getpid).
+ERRNOTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                  $(BUILD)/userspace/errnotest/errnotest.o
+ERRNOTEST_ELF  := $(BUILD)/userspace/errnotest/errnotest.elf
+ERRNOTEST_STRIPPED := $(BUILD)/userspace/errnotest/errnotest.stripped.elf
+
+# chapter-116b stdio test: drives the new FILE * layer end-to-end
+# (fopen/fread/fwrite/fseek/ftell/fgetc/fputc/fprintf + stderr).
+STDIOTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                  $(BUILD)/userspace/stdiotest/stdiotest.o
+STDIOTEST_ELF  := $(BUILD)/userspace/stdiotest/stdiotest.elf
+STDIOTEST_STRIPPED := $(BUILD)/userspace/stdiotest/stdiotest.stripped.elf
+
+# chapter-116c env arena test: drives env.h's POSIX surface
+# (getenv -> char*, setenv with overwrite flag, unsetenv, putenv,
+# environ[] iteration, kernel write-through).
+ENVTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                $(BUILD)/userspace/envtest/envtest.o
+ENVTEST_ELF  := $(BUILD)/userspace/envtest/envtest.elf
+ENVTEST_STRIPPED := $(BUILD)/userspace/envtest/envtest.stripped.elf
+
+# chapter-117 stat test: drives SYS_STAT / SYS_FSTAT, the new
+# struct stat layout, S_ISREG / S_ISDIR macros, opendir / readdir,
+# and access() against a curated set of known files / directories.
+STATTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                 $(BUILD)/userspace/stattest/stattest.o \
+                 $(BUILD)/userspace/libc/cstring.o
+STATTEST_ELF  := $(BUILD)/userspace/stattest/stattest.elf
+STATTEST_STRIPPED := $(BUILD)/userspace/stattest/stattest.stripped.elf
+
+# chapter-118 assembler: tiny AArch64 /bin/as that consumes
+# `.s` input and produces ELF64-LSB relocatable objects.
+# Curated mnemonic subset (mov, add, sub, ldr, str, b, bl,
+# svc, ret, ...).  See userspace/as/as.c.
+AS_OBJS := $(BUILD)/userspace/crt/crt0.o \
+           $(BUILD)/userspace/as/as.o
+AS_ELF  := $(BUILD)/userspace/as/as.elf
+AS_STRIPPED := $(BUILD)/userspace/as/as.stripped.elf
+
+# chapter-119 linker + archiver: /bin/ld combines /bin/as's
+# relocatable outputs into an ET_EXEC the kernel ELF loader
+# can mmap and run, and /bin/ar wraps a list of .o files into
+# a SysV ar archive.  See userspace/ld/ld.c and
+# userspace/ar/ar.c.
+LD_OBJS := $(BUILD)/userspace/crt/crt0.o \
+           $(BUILD)/userspace/ld/ld.o
+LD_ELF  := $(BUILD)/userspace/ld/ld.elf
+LD_STRIPPED := $(BUILD)/userspace/ld/ld.stripped.elf
+AR_OBJS := $(BUILD)/userspace/crt/crt0.o \
+           $(BUILD)/userspace/ar/ar.o
+AR_ELF  := $(BUILD)/userspace/ar/ar.elf
+AR_STRIPPED := $(BUILD)/userspace/ar/ar.stripped.elf
+
+# chapter-131f real binutils as/ld: the toy chapter-118 /bin/as
+# and chapter-119 /bin/ld served as pedagogical stepping stones
+# but cannot link the full GNU binutils, gcc, doom, etc. that
+# chapters 131g+ will build in-guest.  scripts/test_guest_ld.py
+# cross-builds gas/as-new + ld/ld-new against our freestanding
+# osdev libc (cstring.o as the libc bridge); the OSFS recipe
+# below ships the stripped binaries as /bin/as and /bin/ld in
+# place of the toy versions.  The toy AS_ELF / LD_ELF rules
+# stay buildable for chapter 118/119 readers but are no longer
+# wired into the disk image.
+BINUTILS_GUEST_BUILD := $(BUILD)/binutils-build-guest-ld
+BINUTILS_AS_NEW      := $(BINUTILS_GUEST_BUILD)/gas/as-new
+BINUTILS_LD_NEW      := $(BINUTILS_GUEST_BUILD)/ld/ld-new
+BINUTILS_AS_STRIPPED := $(BUILD)/userspace/binutils/as.stripped.elf
+BINUTILS_LD_STRIPPED := $(BUILD)/userspace/binutils/ld.stripped.elf
+
+# chapter-132a: vendored gcc-14.2.0 source tree (no build yet,
+# just the patched source).  The actual fetch/patch rule lives
+# further down in the chapter-132a block alongside the binutils
+# rules; we declare the variables up here so `all` / `run` /
+# `run-graphical` can list the marker as a prereq (make expands
+# prereq lists at parse time, so the variable must be defined
+# before its first use).
+GCC_SRC    := vendor/gcc-14.2.0
+GCC_MARKER := $(GCC_SRC)/.patched-osdev
+
+# chapter-132b: GMP / MPFR / MPC symlinked in-tree under
+# $(GCC_SRC)/{gmp,mpfr,mpc}.  Same forward-reference reason as
+# $(GCC_MARKER) above.
+GCC_PREREQS_MARKER := $(GCC_SRC)/.prereqs-osdev
+
+# chapter-120 bootstrap glue: a demo that walks the new
+# __init_array / atexit / __cxa_finalize machinery added to
+# crt0.S and userspace/libc/atexit.h.  Prints six lines in a
+# specific order (see userspace/atexittest/atexittest.c).
+ATEXITTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
+                   $(BUILD)/userspace/atexittest/atexittest.o
+ATEXITTEST_ELF  := $(BUILD)/userspace/atexittest/atexittest.elf
+ATEXITTEST_STRIPPED := $(BUILD)/userspace/atexittest/atexittest.stripped.elf
+
+# chapter-121 one-chapter native C compiler: /bin/cc.  Takes
+# a curated C subset (main + printf/puts/write/return), emits
+# AArch64 asm using the bl-past-string trick to materialise
+# string literals without needing ADRP relocs that /bin/as
+# does not support, then drives /bin/as and /bin/ld to
+# produce a runnable ELF.  See userspace/cc/cc.c.
+CC_OBJS := $(BUILD)/userspace/crt/crt0.o \
+           $(BUILD)/userspace/cc/cc.o
+CC_ELF  := $(BUILD)/userspace/cc/cc.elf
+CC_STRIPPED := $(BUILD)/userspace/cc/cc.stripped.elf
+
+# chapter-132f /bin/gcc shim.  Tiny C program that prepends
+# `-B/bin/` to argv and execs /bin/xgcc.  See
+# userspace/gccw/gccw.c for the rationale.
+GCCW_OBJS := $(BUILD)/userspace/crt/crt0.o \
+             $(BUILD)/userspace/gccw/gccw.o
+GCCW_ELF  := $(BUILD)/userspace/gccw/gccw.elf
+GCCW_STRIPPED := $(BUILD)/userspace/gccw/gccw.stripped.elf
+
+# chapter-132f xgcc binary.  Built out-of-tree under
+# build/gcc-build-guest/ by scripts/test_guest_gcc.py.  Treated
+# as an external input here: if it's missing the OSFS build
+# falls back to a placeholder that prints a "run
+# scripts/test_guest_gcc.py first" message.  See chapter 132f.
+XGCC_GUEST_BIN  := $(BUILD)/gcc-build-guest/gcc/gcc/xgcc
+CC1_GUEST_BIN   := $(BUILD)/gcc-build-guest/gcc/gcc/cc1
+XGCC_GUEST_STRIPPED := $(BUILD)/userspace/gccw/xgcc.stripped.elf
+CC1_GUEST_STRIPPED  := $(BUILD)/userspace/gccw/cc1.stripped.elf
+
+# chapter-126 tiny make: parses a 16-rule Makefile, runs
+# recipe commands via spawn()+waitpid().  See userspace/make/make.c.
+MAKE_OBJS := $(BUILD)/userspace/crt/crt0.o \
+             $(BUILD)/userspace/make/make.o
+MAKE_ELF  := $(BUILD)/userspace/make/make.elf
+MAKE_STRIPPED := $(BUILD)/userspace/make/make.stripped.elf
+
 # milestone-20 ls: walks the SYS_LISTDIR namespace.
+# Includes cstring.o so dirent.h's opendir/closedir can resolve
+# the __asm__("malloc")/__asm__("free") rename trampolines
+# introduced in chapter 132f (dirent.h had to stop including
+# malloc.h to keep the gcc-tree poisoning happy).
 LS_OBJS := $(BUILD)/userspace/crt/crt0.o \
-           $(BUILD)/userspace/ls/ls.o
+           $(BUILD)/userspace/ls/ls.o \
+           $(BUILD)/userspace/libc/cstring.o
 LS_ELF  := $(BUILD)/userspace/ls/ls.elf
 LS_STRIPPED := $(BUILD)/userspace/ls/ls.stripped.elf
 
@@ -404,6 +665,23 @@ TAIL_OBJS := $(BUILD)/userspace/crt/crt0.o \
              $(BUILD)/userspace/tail/tail.o
 TAIL_ELF  := $(BUILD)/userspace/tail/tail.elf
 TAIL_STRIPPED := $(BUILD)/userspace/tail/tail.stripped.elf
+
+# Chapter 133a /bin/tar: ustar archive reader (list + extract).
+# Read-only -- archives are produced at build time by
+# scripts/mktar.py; in-guest we only ever extract.
+TAR_OBJS := $(BUILD)/userspace/crt/crt0.o \
+            $(BUILD)/userspace/tar/tar.o
+TAR_ELF  := $(BUILD)/userspace/tar/tar.elf
+TAR_STRIPPED := $(BUILD)/userspace/tar/tar.stripped.elf
+
+# chapter-132h bf: brainfuck interpreter, the "medium real program"
+# smoke for /bin/gcc.  Same crt0 + linker_user.ld + libosdevc.a as
+# every other userspace binary.  The source is also shipped on the
+# disk image (bf.c) so the in-guest /bin/gcc can rebuild it.
+BF_OBJS := $(BUILD)/userspace/crt/crt0.o \
+           $(BUILD)/userspace/bf/bf.o
+BF_ELF  := $(BUILD)/userspace/bf/bf.elf
+BF_STRIPPED := $(BUILD)/userspace/bf/bf.stripped.elf
 
 # milestone-29 sleep: SYS_SLEEP_MS demo + scriptable pause.
 SLEEP_OBJS := $(BUILD)/userspace/crt/crt0.o \
@@ -927,6 +1205,51 @@ $(BUILD)/vendor/testcerts/test_chain_ec.o: vendor/testcerts/test_chain_ec.c
 	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc \
 	    -I vendor/bearssl/samples -c $< -o $@
 
+# Chapter 130a — DoomGeneric vendor sources.
+#
+# Pattern rule mirrors the BearSSL pattern: separate from the
+# generic userspace rule because (a) third-party code can't be
+# held to -Werror, (b) DG expects -DNORMALUNIX to gate its
+# POSIX-y system calls, and (c) it #includes its own headers
+# with bare names like "doomgeneric.h" so the src dir must be
+# on the include path.
+#
+# Warnings disabled: this is a 25-year-old codebase originally
+# written for K&R/early-C89.  The disabled set covers the
+# warnings every recent gcc/clang emits for the upstream tree.
+# Keep our own port (`userspace/doom/*.c`) on the strict
+# USER_CFLAGS rule so any regression in OUR code surfaces.
+DOOM_VENDOR_CFLAGS := -ffreestanding -nostdlib -nostartfiles \
+                      -mcpu=cortex-a72 \
+                      -fno-stack-protector -fno-pie -fno-pic \
+                      -fno-asynchronous-unwind-tables \
+                      -Wall -Os -g \
+                      -Wno-unused-parameter -Wno-unused-variable \
+                      -Wno-unused-function -Wno-unused-but-set-variable \
+                      -Wno-sign-compare -Wno-missing-braces \
+                      -Wno-format -Wno-format-security \
+                      -Wno-implicit-fallthrough -Wno-misleading-indentation \
+                      -Wno-array-bounds -Wno-stringop-overflow \
+                      -Wno-stringop-truncation -Wno-discarded-qualifiers \
+                      -Wno-pointer-sign -Wno-int-conversion \
+                      -Wno-incompatible-pointer-types \
+                      -DNORMALUNIX \
+                      -DOSDEV_LIBC_NO_GLOBAL_DEFS \
+                      -I vendor/doomgeneric/src -I userspace/libc \
+                      -MMD -MP
+
+$(BUILD)/vendor/doomgeneric/%.o: vendor/doomgeneric/src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(DOOM_VENDOR_CFLAGS) -c $< -o $@
+
+# Our own Doom shim — held to strict USER_CFLAGS but needs
+# `-I userspace/libc` for vendor angle-bracket includes
+# (doomgeneric.h pulls <stdint.h>/<stdlib.h>).  Generic
+# userspace/%.o rule doesn't add it.
+$(BUILD)/userspace/doom/doomgeneric_osdev.o: userspace/doom/doomgeneric_osdev.c
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -I userspace/libc -c $< -o $@
+
 $(HELLO_ELF): $(HELLO_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(HELLO_OBJS)
@@ -982,6 +1305,113 @@ $(ECHO_ELF): $(ECHO_OBJS) userspace/linker_user.ld
 $(PRINTFTEST_ELF): $(PRINTFTEST_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(PRINTFTEST_OBJS)
+
+$(SETJMPTEST_ELF): $(SETJMPTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(SETJMPTEST_OBJS)
+
+$(SIGTEST2_ELF): $(SIGTEST2_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(SIGTEST2_OBJS)
+
+$(ABORTTEST_ELF): $(ABORTTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(ABORTTEST_OBJS)
+
+$(STRTEST_ELF): $(STRTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(STRTEST_OBJS)
+
+$(ASSERTFAIL_ELF): $(ASSERTFAIL_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(ASSERTFAIL_OBJS)
+
+$(TIMETEST_ELF): $(TIMETEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(TIMETEST_OBJS)
+
+$(STDLIBTEST_ELF): $(STDLIBTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(STDLIBTEST_OBJS)
+
+$(PRINTFTEST2_ELF): $(PRINTFTEST2_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(PRINTFTEST2_OBJS)
+
+$(FPTEST_ELF): $(FPTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(FPTEST_OBJS)
+
+# Chapter 130a — Doom link rule.  Wrap the objects in
+# --start-group / --end-group so the ld can resolve the
+# circular dependencies that DoomGeneric's modules have
+# with each other (e.g. p_setup → r_main → g_game → p_setup).
+# 83 vendor .o + our shim = ~3 MB of unstripped ELF.
+$(DOOM_ELF): $(DOOM_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ --start-group $(DOOM_OBJS) --end-group
+
+# Chapter 133e — Doom runtime archive shipped on the OSFS image.
+# Bundles the 5 non-vendor objects (crt0, doomgeneric_osdev shim,
+# setjmp, cstring, wmclient) into a single static .a so the
+# in-guest link step is one /bin/ld invocation that takes the 80
+# vendor .o files (built by /bin/make -f /bin/doom_full.mk) plus
+# this one archive.  See assets/osfs/doom_link.mk + doom_link.args.
+DOOMRT_OBJS := $(BUILD)/userspace/crt/crt0.o \
+               $(BUILD)/userspace/doom/doomgeneric_osdev.o \
+               $(BUILD)/userspace/libc/setjmp.o \
+               $(CSTRING_OBJ) \
+               $(WMCLIENT_OBJ)
+DOOMRT_LIB  := $(BUILD)/userspace/doom/libdoomrt.a
+
+$(DOOMRT_LIB): $(DOOMRT_OBJS)
+	@mkdir -p $(dir $@)
+	@rm -f $@
+	$(CROSS)ar rcs $@ $(DOOMRT_OBJS)
+
+$(ERRNOTEST_ELF): $(ERRNOTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(ERRNOTEST_OBJS)
+
+$(STDIOTEST_ELF): $(STDIOTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(STDIOTEST_OBJS)
+
+$(ENVTEST_ELF): $(ENVTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(ENVTEST_OBJS)
+
+$(STATTEST_ELF): $(STATTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(STATTEST_OBJS)
+
+$(AS_ELF): $(AS_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(AS_OBJS)
+
+$(LD_ELF): $(LD_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(LD_OBJS)
+
+$(AR_ELF): $(AR_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(AR_OBJS)
+
+$(ATEXITTEST_ELF): $(ATEXITTEST_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(ATEXITTEST_OBJS)
+
+$(CC_ELF): $(CC_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(CC_OBJS)
+
+$(GCCW_ELF): $(GCCW_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(GCCW_OBJS)
+
+$(MAKE_ELF): $(MAKE_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(MAKE_OBJS)
 
 $(LS_ELF): $(LS_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
@@ -1062,6 +1492,15 @@ $(HEAD_ELF): $(HEAD_OBJS) userspace/linker_user.ld
 $(TAIL_ELF): $(TAIL_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(TAIL_OBJS)
+
+$(TAR_ELF): $(TAR_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(TAR_OBJS)
+
+$(BF_ELF): $(BF_OBJS) userspace/linker_user.ld $(XGCC_SYS_LIBC)
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(BF_OBJS) \
+	    -L$(XGCC_SYSROOT_LIB) --start-group -losdevc --end-group
 
 $(SLEEP_ELF): $(SLEEP_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
@@ -1257,6 +1696,129 @@ $(ECHO_STRIPPED): $(ECHO_ELF)
 $(PRINTFTEST_STRIPPED): $(PRINTFTEST_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
+$(SETJMPTEST_STRIPPED): $(SETJMPTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(SIGTEST2_STRIPPED): $(SIGTEST2_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(ABORTTEST_STRIPPED): $(ABORTTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(STRTEST_STRIPPED): $(STRTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(ASSERTFAIL_STRIPPED): $(ASSERTFAIL_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(TIMETEST_STRIPPED): $(TIMETEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(STDLIBTEST_STRIPPED): $(STDLIBTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(PRINTFTEST2_STRIPPED): $(PRINTFTEST2_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(FPTEST_STRIPPED): $(FPTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(DOOM_STRIPPED): $(DOOM_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(ERRNOTEST_STRIPPED): $(ERRNOTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(STDIOTEST_STRIPPED): $(STDIOTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(ENVTEST_STRIPPED): $(ENVTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(STATTEST_STRIPPED): $(STATTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(AS_STRIPPED): $(AS_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(LD_STRIPPED): $(LD_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(AR_STRIPPED): $(AR_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+# chapter-131f: cross-build GNU binutils gas + ld for our
+# aarch64-osdev target via scripts/test_guest_ld.py.  The
+# script wipes $(BINUTILS_GUEST_BUILD) on every invocation
+# (idempotent rebuild from source), so the BINUTILS_AS_NEW
+# rule's prerequisite list is the union of inputs the script
+# actually depends on — the script itself, the libc bridge
+# .c that gets compiled into the bridge .o, and cstring.o /
+# crt0.o which are linked into both as-new and ld-new.  Any
+# change to those re-runs the (slow) binutils build.  Both
+# binaries fall out of the same script run; LD_NEW depends on
+# AS_NEW to serialise (one script invocation produces both).
+$(BINUTILS_AS_NEW): scripts/test_guest_ld.py \
+                    userspace/libc/cstring.c \
+                    userspace/libc/wchar.h \
+                    $(CSTRING_OBJ) \
+                    $(BUILD)/userspace/crt/crt0.o
+	python3 scripts/test_guest_ld.py
+	@test -f $@ || { echo "ERROR: test_guest_ld.py did not produce $@"; exit 1; }
+
+$(BINUTILS_LD_NEW): $(BINUTILS_AS_NEW)
+	@test -f $@ || { echo "ERROR: $@ missing after binutils build"; exit 1; }
+
+$(BINUTILS_AS_STRIPPED): $(BINUTILS_AS_NEW)
+	@mkdir -p $(dir $@)
+	aarch64-elf-strip --strip-all -o $@ $<
+
+$(BINUTILS_LD_STRIPPED): $(BINUTILS_LD_NEW)
+	@mkdir -p $(dir $@)
+	aarch64-elf-strip --strip-all -o $@ $<
+
+$(ATEXITTEST_STRIPPED): $(ATEXITTEST_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(CC_STRIPPED): $(CC_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(GCCW_STRIPPED): $(GCCW_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+# Strip xgcc and cc1 down by ~25 % each (debug info dominates).
+# Both inputs are produced out-of-tree by
+# scripts/test_guest_gcc.py.  The real build is wired in via the
+# $(GCC_GUEST_STAMP) rule near the bottom of this Makefile, so
+# `make build/disk.img` automatically triggers the cross-build
+# when the binaries are missing.  The if-test below is a belt-
+# and-braces guard: if the user explicitly bypasses (e.g. by
+# touching the stamp), the strip step still won't crash.
+$(XGCC_GUEST_STRIPPED): $(XGCC_GUEST_BIN)
+	@mkdir -p $(dir $@)
+	@if [ -f $(XGCC_GUEST_BIN) ]; then \
+	    aarch64-elf-strip --strip-all -o $@ $(XGCC_GUEST_BIN); \
+	else \
+	    echo "xgcc-stub: $(XGCC_GUEST_BIN) missing -- shipping placeholder"; \
+	    printf 'gcc not built; run scripts/test_guest_gcc.py\n' > $@; \
+	fi
+
+$(CC1_GUEST_STRIPPED): $(CC1_GUEST_BIN)
+	@mkdir -p $(dir $@)
+	@if [ -f $(CC1_GUEST_BIN) ]; then \
+	    aarch64-elf-strip --strip-all -o $@ $(CC1_GUEST_BIN); \
+	else \
+	    echo "cc1-stub: $(CC1_GUEST_BIN) missing -- shipping placeholder"; \
+	    printf 'cc1 not built; run scripts/test_guest_gcc.py\n' > $@; \
+	fi
+
+# (The $(XGCC_GUEST_BIN) / $(CC1_GUEST_BIN) targets themselves
+# are defined further down in this Makefile, after the variables
+# their build rule references are all in scope.)
+
+$(MAKE_STRIPPED): $(MAKE_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
 $(LS_STRIPPED): $(LS_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
@@ -1306,6 +1868,12 @@ $(HEAD_STRIPPED): $(HEAD_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(TAIL_STRIPPED): $(TAIL_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(TAR_STRIPPED): $(TAR_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(BF_STRIPPED): $(BF_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(SLEEP_STRIPPED): $(SLEEP_ELF)
@@ -1519,6 +2087,31 @@ $(WALLPAPER_BIN): $(WALLPAPER_SRC) scripts/img_to_bgra.py
 	@mkdir -p $(dir $@)
 	python3 scripts/img_to_bgra.py $< $@ $(WALLPAPER_W) $(WALLPAPER_H)
 
+# Chapter 133a: doomgeneric source tarball, shipped on /bin so
+# the in-guest /bin/tar can extract it onto /data and the
+# in-guest /bin/gcc can rebuild Doom from source.
+DOOMGENERIC_TAR := $(BUILD)/doomgeneric.tar
+DOOMGENERIC_SRCS := $(shell find vendor/doomgeneric/src -type f 2>/dev/null)
+
+$(DOOMGENERIC_TAR): scripts/mktar.py $(DOOMGENERIC_SRCS)
+	@mkdir -p $(dir $@)
+	python3 scripts/mktar.py $@ vendor/doomgeneric/src src
+
+# Chapter 133e: tarball of the host-cross-built Doom vendor .o
+# files.  Shipped at /bin/doomobjs.tar so the link-only
+# regression test (scripts/test_doom_link.py) can populate
+# /data/src/ in ~5 seconds instead of running the full 20-minute
+# in-guest compile.  Entries are prefixed `src/`, matching
+# doomgeneric.tar's layout, so `/bin/tar xf
+# /bin/doomobjs.tar -C /data` lands them at /data/src/.
+# (Name is constrained to 19 bytes by the OSFS-1 directory format,
+# so we abbreviate `doomgeneric_objs.tar` to `doomobjs.tar`.)
+DOOMGENERIC_OBJS_TAR := $(BUILD)/doomobjs.tar
+
+$(DOOMGENERIC_OBJS_TAR): scripts/mktar.py $(DOOM_VENDOR_OBJS)
+	@mkdir -p $(dir $@)
+	python3 scripts/mktar.py $@ $(BUILD)/vendor/doomgeneric src
+
 OBJS     := $(S_OBJS) $(C_OBJS) $(RAMFS_OBJS)
 
 # Disk images (definitions early so `all:` can depend on them).
@@ -1536,8 +2129,23 @@ DATA_DISK := $(BUILD)/data.img
 # ----------------------------------------------------------------------
 # Default target
 # ----------------------------------------------------------------------
+#
+# `$(GCC_MARKER)` is the chapter-132a vendored gcc source tree.  It's
+# not yet used to build any disk artefact (that lands in 132c when
+# xgcc is cross-built), but we list it here so a fresh clone running
+# `make` / `make run-graphical` automatically fetches + patches the
+# source.  Otherwise a reader following chapter 132a would have to
+# know about `bash scripts/fetch_gcc.sh` out-of-band.  The marker
+# rule is idempotent — once the .patched-osdev file exists, make
+# does nothing on subsequent invocations.
+#
+# `$(GCC_PREREQS_MARKER)` is chapter 132b's GMP/MPFR/MPC in-tree
+# symlinks.  Same auto-fetch reasoning.  Depends on $(GCC_MARKER)
+# at the rule level so the order is always extract-gcc → drop-in
+# the math libs.
+# ----------------------------------------------------------------------
 .PHONY: all
-all: $(KERNEL) $(DISK) $(DATA_DISK)
+all: $(KERNEL) $(DISK) $(DATA_DISK) $(GCC_MARKER) $(GCC_PREREQS_MARKER)
 
 $(KERNEL): $(OBJS) linker/kernel.ld
 	@mkdir -p $(dir $@)
@@ -1626,8 +2234,69 @@ QEMU_SMP ?= 2
 # OSFS-1 layout (see kernel/core/osfs.h).  The kernel mounts this
 # at /mnt at boot, and looks up /bin/<name> from it as well.
 # (DISK is defined earlier so all: can depend on it.)
-OSFS_FILES := assets/osfs/hello.txt assets/osfs/poem.txt assets/osfs/test.html assets/osfs/test.css assets/osfs/test_layout.html assets/osfs/hn.html assets/osfs/forms.html assets/osfs/onclick.html assets/osfs/icon.png assets/osfs/icon_palette.png assets/osfs/icon_gray.png assets/osfs/icon_large.png assets/osfs/img_test.html assets/osfs/intrinsic.html assets/osfs/ca.bundle $(WALLPAPER_BIN)
-OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(GETRAND_STRIPPED) $(MOUNT_STRIPPED) $(TLSTEST_STRIPPED) $(HTTPSD_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(COOKIES_STRIPPED) $(ECHOD_STRIPPED) $(ECHOFS_STRIPPED) $(HTTPD_STRIPPED) $(LOOPTEST_STRIPPED) $(SRVTEST_STRIPPED) $(CLIPBOARDD_STRIPPED) $(PROCD_STRIPPED) $(FONTD_STRIPPED) $(PROXYTEST_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PIXAPP_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(MIXTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED) $(WSD_STRIPPED) $(WMTEST_STRIPPED) $(HELLOWSD_STRIPPED) $(HANGFS_STRIPPED)
+OSFS_FILES := assets/osfs/hello.txt assets/osfs/poem.txt assets/osfs/test.html assets/osfs/test.css assets/osfs/test_layout.html assets/osfs/hn.html assets/osfs/forms.html assets/osfs/onclick.html assets/osfs/icon.png assets/osfs/icon_palette.png assets/osfs/icon_gray.png assets/osfs/icon_large.png assets/osfs/img_test.html assets/osfs/intrinsic.html assets/osfs/ca.bundle assets/osfs/osdev.ld assets/osfs/hello.bf assets/osfs/stdio_test.c assets/osfs/mk_test.mk assets/osfs/mk_helloA.c assets/osfs/mk_helloB.c assets/osfs/doom_pilot.mk assets/osfs/doom_full.mk assets/osfs/doom_link.mk assets/osfs/doom_link.args $(WALLPAPER_BIN)
+
+# Chapter 132i + 132j: the user-facing libc headers shipped on the
+# OSFS image so the in-guest /bin/gcc can resolve `#include
+# <stdio.h>` and friends.  Two sets:
+#
+#  - LIBC_TOP_HEADERS: top-level headers, copied verbatim to /bin.
+#    Chapter 132j added `unistd.h` (was excluded in 132i because it
+#    pulls in `sys/stat.h`; now that we ship sys/ this works).
+#
+#  - LIBC_SYS_HEADERS: headers shipped as literal-named entries
+#    `sys/foo.h` in the flat OSFS-1 directory.  cpp finds them via
+#    `<sys/foo.h>` because `-isystem /bin` + literal name match.
+#    They are STAGED through scripts/stage_libc_headers.py first
+#    to rewrite `"../foo.h"` -> `<foo.h>` so cpp resolves siblings
+#    through `-isystem /bin` instead of `/bin/sys/../foo.h` (which
+#    our kernel doesn't normalise).
+#
+# `termios.h`, `poll.h`, `sys/mman.h`, `sys/ioctl.h`, `sys/select.h`
+# are still missing.  Doom's xlib backend wants them; our
+# `doomgeneric_osdev.c` shim doesn't.  Add on demand.
+LIBC_TOP_HEADERS := assert.h atexit.h ctype.h dirent.h env.h errno.h \
+                    fcntl.h inttypes.h locale.h malloc.h math.h printf.h \
+                    scanf.h setjmp.h signal.h stdio.h stdlib.h string.h \
+                    strings.h syscall.h thread.h time.h unistd.h wchar.h \
+                    zlib.h
+
+LIBC_SYS_HEADERS := stat.h types.h time.h times.h wait.h param.h
+
+STAGED_LIBC_DIR := $(BUILD)/staged-libc-headers
+
+# Pattern rule: stage a sys/*.h through stage_libc_headers.py,
+# rewriting `"../foo.h"` -> `<foo.h>` so cpp finds siblings via
+# `-isystem /bin` rather than parent-relative traversal.
+$(STAGED_LIBC_DIR)/sys/%.h: userspace/libc/sys/%.h scripts/stage_libc_headers.py
+	@mkdir -p $(@D)
+	python3 scripts/stage_libc_headers.py $< $@
+
+# Legacy alias retained for any external make-graph consumers; new
+# code should reference LIBC_TOP_HEADERS.
+LIBC_HEADERS := $(LIBC_TOP_HEADERS)
+
+# Chapter 132i: GCC's own freestanding headers (stdint.h, stddef.h,
+# stdarg.h, ...).  These are built as part of the xgcc cross-build
+# and live under build/gcc-build-guest/gcc/gcc/include/.  Our libc
+# headers `#include <stdint.h>` etc., so without these on disk cpp
+# fails with "stdint.h: No such file or directory" on the first
+# `#include <stdio.h>` (chapter 132i bring-up bug).  arm_*, tgmath
+# and the heavier SIMD headers are deliberately skipped -- 16 ISO C
+# headers / ~90 KB is enough for hello-world-shaped programs.
+GCC_FREESTANDING_DIR := build/gcc-build-guest/gcc/gcc/include
+GCC_FREESTANDING_HEADERS := stdint.h stdint-gcc.h stddef.h stdarg.h \
+                            stdbool.h float.h limits.h iso646.h \
+                            stdalign.h stdnoreturn.h syslimits.h \
+                            stdatomic.h stdckdint.h stdfix.h tgmath.h \
+                            varargs.h
+# (The rule that actually populates $(GCC_FREESTANDING_DIR) is
+# the $(GCC_GUEST_STAMP) rule defined near the bottom of this
+# Makefile, alongside the rules for $(XGCC_GUEST_BIN) and
+# $(CC1_GUEST_BIN).  Placed there so all variables it depends on
+# -- GCC_XGCC, OSDEV_CC, GCC_PREREQS_MARKER -- are in scope at
+# parse time.)
+OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(GETRAND_STRIPPED) $(MOUNT_STRIPPED) $(TLSTEST_STRIPPED) $(HTTPSD_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(COOKIES_STRIPPED) $(ECHOD_STRIPPED) $(ECHOFS_STRIPPED) $(HTTPD_STRIPPED) $(LOOPTEST_STRIPPED) $(SRVTEST_STRIPPED) $(CLIPBOARDD_STRIPPED) $(PROCD_STRIPPED) $(FONTD_STRIPPED) $(PROXYTEST_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PIXAPP_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(MIXTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED) $(WSD_STRIPPED) $(WMTEST_STRIPPED) $(HELLOWSD_STRIPPED) $(HANGFS_STRIPPED) $(ERRNOTEST_STRIPPED) $(STDIOTEST_STRIPPED) $(ENVTEST_STRIPPED) $(STATTEST_STRIPPED) $(BINUTILS_AS_STRIPPED) $(BINUTILS_LD_STRIPPED) $(AR_STRIPPED) $(ATEXITTEST_STRIPPED) $(CC_STRIPPED) $(MAKE_STRIPPED) $(SETJMPTEST_STRIPPED) $(SIGTEST2_STRIPPED) $(ABORTTEST_STRIPPED) $(STRTEST_STRIPPED) $(ASSERTFAIL_STRIPPED) $(TIMETEST_STRIPPED) $(STDLIBTEST_STRIPPED) $(PRINTFTEST2_STRIPPED) $(FPTEST_STRIPPED) $(DOOM_STRIPPED) $(GCCW_STRIPPED) $(XGCC_GUEST_STRIPPED) $(CC1_GUEST_STRIPPED) $(BF_STRIPPED) $(TAR_STRIPPED)
 
 # Bake the chapter-97 test PNG (16x16 RGBA with a known pixel
 # pattern) at build time.  See scripts/make_test_png.py for the
@@ -1682,10 +2351,24 @@ assets/osfs/ca.bundle: scripts/mkcabundle.py \
 	    --pem vendor/bearssl/samples/cert-root-ec.pem \
 	    --pem vendor/testcerts/public-roots.pem
 
-$(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
+$(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES) \
+         $(BUILD)/userspace/crt/crt0.o userspace/linker_user.ld \
+         $(XGCC_SYS_LIBC) \
+         $(DOOMGENERIC_TAR) \
+         $(DOOMGENERIC_OBJS_TAR) \
+         $(DOOMRT_LIB) \
+         $(addprefix userspace/libc/,$(LIBC_TOP_HEADERS)) \
+         $(addprefix $(STAGED_LIBC_DIR)/sys/,$(LIBC_SYS_HEADERS)) \
+         $(addprefix $(GCC_FREESTANDING_DIR)/,$(GCC_FREESTANDING_HEADERS))
 	@mkdir -p $(BUILD)
 	python3 scripts/mkosfs.py $(DISK) \
+	    $(foreach h,$(LIBC_TOP_HEADERS),$(h)=userspace/libc/$(h)) \
+	    $(foreach h,$(LIBC_SYS_HEADERS),sys/$(h)=$(STAGED_LIBC_DIR)/sys/$(h)) \
+	    $(foreach h,$(GCC_FREESTANDING_HEADERS),$(h)=$(GCC_FREESTANDING_DIR)/$(h)) \
 	    hello.txt=assets/osfs/hello.txt \
+	    hello.bf=assets/osfs/hello.bf \
+	    stdio_test.c=assets/osfs/stdio_test.c \
+	    sys_stat_test.c=assets/osfs/sys_stat_test.c \
 	    poem.txt=assets/osfs/poem.txt \
 	    test.html=assets/osfs/test.html \
 	    test.css=assets/osfs/test.css \
@@ -1700,6 +2383,7 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    img_test.html=assets/osfs/img_test.html \
 	    intrinsic.html=assets/osfs/intrinsic.html \
 	    ca.bundle=assets/osfs/ca.bundle \
+	    osdev.ld=assets/osfs/osdev.ld \
 	    init=$(INIT_STRIPPED) \
 	    sh=$(SH_STRIPPED) \
 	    cat=$(CAT_STRIPPED) \
@@ -1713,6 +2397,32 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    threadtest3=$(THREADTEST3_STRIPPED) \
 	    echo=$(ECHO_STRIPPED) \
 	    printftest=$(PRINTFTEST_STRIPPED) \
+	    setjmptest=$(SETJMPTEST_STRIPPED) \
+	    sigtest2=$(SIGTEST2_STRIPPED) \
+	    aborttest=$(ABORTTEST_STRIPPED) \
+	    strtest=$(STRTEST_STRIPPED) \
+	    assertfail=$(ASSERTFAIL_STRIPPED) \
+	    timetest=$(TIMETEST_STRIPPED) \
+	    stdlibtest=$(STDLIBTEST_STRIPPED) \
+	    printftest2=$(PRINTFTEST2_STRIPPED) \
+	    fptest=$(FPTEST_STRIPPED) \
+	    doom=$(DOOM_STRIPPED) \
+	    errnotest=$(ERRNOTEST_STRIPPED) \
+	    stdiotest=$(STDIOTEST_STRIPPED) \
+	    envtest=$(ENVTEST_STRIPPED) \
+	    stattest=$(STATTEST_STRIPPED) \
+	    as=$(BINUTILS_AS_STRIPPED) \
+	    ld=$(BINUTILS_LD_STRIPPED) \
+	    ar=$(AR_STRIPPED) \
+	    atexittest=$(ATEXITTEST_STRIPPED) \
+	    cc=$(CC_STRIPPED) \
+	    make=$(MAKE_STRIPPED) \
+	    gcc=$(GCCW_STRIPPED) \
+	    xgcc=$(XGCC_GUEST_STRIPPED) \
+	    cc1=$(CC1_GUEST_STRIPPED) \
+	    crt0.o=$(BUILD)/userspace/crt/crt0.o \
+	    linker_user.ld=userspace/linker_user.ld \
+	    libosdevc.a=$(XGCC_SYS_LIBC) \
 	    ls=$(LS_STRIPPED) \
 	    uptime=$(UPTIME_STRIPPED) \
 	    ps=$(PS_STRIPPED) \
@@ -1731,6 +2441,19 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 	    wc=$(WC_STRIPPED) \
 	    head=$(HEAD_STRIPPED) \
 	    tail=$(TAIL_STRIPPED) \
+	    bf=$(BF_STRIPPED) \
+	    bf.c=userspace/bf/bf.c \
+	    tar=$(TAR_STRIPPED) \
+	    doomgeneric.tar=$(DOOMGENERIC_TAR) \
+	    doomobjs.tar=$(DOOMGENERIC_OBJS_TAR) \
+	    mk_test.mk=assets/osfs/mk_test.mk \
+	    mk_helloA.c=assets/osfs/mk_helloA.c \
+	    mk_helloB.c=assets/osfs/mk_helloB.c \
+	    doom_pilot.mk=assets/osfs/doom_pilot.mk \
+	    doom_full.mk=assets/osfs/doom_full.mk \
+	    doom_link.mk=assets/osfs/doom_link.mk \
+	    doom_link.args=assets/osfs/doom_link.args \
+	    libdoomrt.a=$(DOOMRT_LIB) \
 	    sleep=$(SLEEP_STRIPPED) \
 	    sync=$(SYNC_STRIPPED) \
 	    pipetest=$(PIPETEST_STRIPPED) \
@@ -1774,9 +2497,20 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES)
 # A `make clean` always wipes it; chapter 81 explicitly tests against
 # the freshly-formatted state.  Chapter 84 will switch this to a
 # preserve-across-clean policy once notepad/sh-history live here.
-$(DATA_DISK): scripts/mkosfs2.py
+#
+# Chapter 130b — if assets/wads/doom1.wad is present, seed it into the
+# OSFS-2 root so `doom` (which looks at /data/doom1.wad by default)
+# can launch a full title-screen game without the user having to type
+# `-iwad <path>`.  The file is .gitignored (4 MiB shareware binary)
+# and considered an optional asset — without it the OSFS-2 image is
+# still formatted, but doom will exit with "Game mode indeterminate".
+DOOM_WAD := assets/wads/doom1.wad
+DOOM_WAD_SEED := $(wildcard $(DOOM_WAD))
+
+$(DATA_DISK): scripts/mkosfs2.py $(DOOM_WAD_SEED)
 	@mkdir -p $(BUILD)
-	python3 scripts/mkosfs2.py $(DATA_DISK)
+	python3 scripts/mkosfs2.py $(DATA_DISK) \
+	    $(if $(DOOM_WAD_SEED),doom1.wad=$(DOOM_WAD_SEED))
 
 QEMU_BLK := -drive if=none,file=$(DISK),format=raw,id=hd0 \
             -device virtio-blk-device,drive=hd0 \
@@ -1830,7 +2564,7 @@ QEMU_RNG ?= -object rng-random,id=rng0,filename=/dev/urandom \
 QEMU_VIRTIO_OPTS := -global virtio-mmio.force-legacy=off
 
 .PHONY: run
-run: $(KERNEL) $(DISK) $(DATA_DISK)
+run: $(KERNEL) $(DISK) $(DATA_DISK) $(GCC_MARKER) $(GCC_PREREQS_MARKER)
 	@echo "Running under HVF (-m $(QEMU_MEM), -smp $(QEMU_SMP)) — Ctrl-A X to quit."
 	$(QEMU) -M virt,gic-version=3 -cpu host -accel hvf \
 	        -m $(QEMU_MEM) -smp $(QEMU_SMP) -nographic -serial mon:stdio \
@@ -1860,7 +2594,7 @@ run-graphical: QEMU_AUDIO_BACKEND := coreaudio
 run-graphical: QEMU_SND := -audiodev $(QEMU_AUDIO_BACKEND),id=audio0 -device virtio-sound-device,audiodev=audio0
 run-graphical: QEMU_NETDEV := user,id=n0,hostfwd=tcp::$(HTTPD_HOST_PORT)-:$(HTTPD_GUEST_PORT)
 run-graphical: QEMU_NET    := -netdev $(QEMU_NETDEV) -device virtio-net-device,netdev=n0
-run-graphical: $(KERNEL) $(DISK) $(DATA_DISK)
+run-graphical: $(KERNEL) $(DISK) $(DATA_DISK) $(GCC_MARKER) $(GCC_PREREQS_MARKER)
 	@echo "Running graphical under HVF, $(FB_RES) virtio-gpu scanout, -smp $(QEMU_SMP)."
 	@echo "Close the QEMU window or press Ctrl-A X in the terminal to quit."
 	@echo "Inside guest:  httpd $(HTTPD_GUEST_PORT) &"
@@ -1922,8 +2656,426 @@ disasm: $(KERNEL)
 	$(OBJDUMP) -d -M no-aliases $(KERNEL) | sed -n '1,80p'
 
 # ----------------------------------------------------------------------
+# Chapter 131a: aarch64-osdev cross binutils.
+#
+# Source lives in vendor/binutils-2.44/, patched to know about the
+# `aarch64-osdev` triple (cpu=aarch64, vendor=unknown, os=osdev).
+# Both the source tree and the configure+build directory are
+# .gitignore'd; scripts/fetch_binutils.sh re-creates the source
+# from a sha256-pinned tarball.
+#
+# Why a new triple?  See book/chapters/.../131a-binutils-target.md.
+# Short answer: when we later ship `aarch64-osdev-gcc` we want its
+# default search paths and predefined macros (__osdev__) to be
+# distinct from the host's aarch64-elf cross.
+#
+# Built artefacts land in build/toolchain/bin/ as:
+#   aarch64-osdev-as, aarch64-osdev-ld, aarch64-osdev-ar, etc.
+#
+# `make clean` deliberately does NOT wipe the toolchain — it takes
+# ~50 s on Apple Silicon to rebuild and isn't part of the kernel
+# build loop.  Use `make clean-binutils` if you really want to nuke it.
+# ----------------------------------------------------------------------
+BINUTILS_SRC     := vendor/binutils-2.44
+BINUTILS_MARKER  := $(BINUTILS_SRC)/.patched-osdev
+BINUTILS_BUILD   := $(BUILD)/binutils-build
+TOOLCHAIN_PREFIX := $(abspath $(BUILD)/toolchain)
+BINUTILS_AS      := $(TOOLCHAIN_PREFIX)/bin/aarch64-osdev-as
+BINUTILS_LD      := $(TOOLCHAIN_PREFIX)/bin/aarch64-osdev-ld
+
+$(BINUTILS_MARKER):
+	bash scripts/fetch_binutils.sh
+
+$(BINUTILS_BUILD)/Makefile: $(BINUTILS_MARKER)
+	mkdir -p $(BINUTILS_BUILD)
+	cd $(BINUTILS_BUILD) && ../../$(BINUTILS_SRC)/configure \
+	    --target=aarch64-osdev \
+	    --prefix=$(TOOLCHAIN_PREFIX) \
+	    --program-prefix=aarch64-osdev- \
+	    --disable-nls --disable-gdb --disable-werror \
+	    --disable-multilib --with-system-zlib
+
+$(BINUTILS_AS) $(BINUTILS_LD): $(BINUTILS_BUILD)/Makefile
+	$(MAKE) -C $(BINUTILS_BUILD) -j$(shell sysctl -n hw.ncpu) MAKEINFO=true
+	$(MAKE) -C $(BINUTILS_BUILD) MAKEINFO=true \
+	    install-binutils install-gas install-ld
+
+.PHONY: binutils-osdev
+binutils-osdev: $(BINUTILS_AS) $(BINUTILS_LD)
+	@echo "binutils-osdev: installed $(BINUTILS_AS)"
+	@echo "binutils-osdev: installed $(BINUTILS_LD)"
+
+.PHONY: clean-binutils
+clean-binutils:
+	rm -rf $(BINUTILS_BUILD) $(TOOLCHAIN_PREFIX)
+
+# ----------------------------------------------------------------------
+# Chapter 132a: aarch64-osdev gcc source tree (fetch + patch only).
+#
+# This chapter ONLY teaches the gcc-14.2.0 source tree about the
+# new `aarch64-osdev` triple — it does not build xgcc yet (that's
+# chapter 132b, which also needs GMP/MPFR/MPC and a sibling build
+# directory).  The patched source tree lives in vendor/gcc-14.2.0/
+# alongside vendor/binutils-2.44/.  Both the tarball and the
+# extracted tree are .gitignore'd; scripts/fetch_gcc.sh re-creates
+# the source from a sha256-pinned tarball and applies our patch
+# (vendor/gcc-aarch64-osdev.patch, committed).
+#
+# Use `make gcc-osdev-src` to fetch + patch on demand.  The smoke
+# test scripts/test_gcc_target.py asserts the patch survived round
+# trip and that config.sub canonicalises aarch64-osdev correctly.
+#
+# GCC_SRC / GCC_MARKER themselves are declared early in this
+# Makefile (near the BINUTILS_* vars) so the default `all` target
+# can list $(GCC_MARKER) as a prereq.
+# ----------------------------------------------------------------------
+
+$(GCC_MARKER):
+	bash scripts/fetch_gcc.sh
+
+.PHONY: gcc-osdev-src
+gcc-osdev-src: $(GCC_MARKER)
+	@echo "gcc-osdev-src: patched source ready at $(GCC_SRC)"
+
+.PHONY: clean-gcc-src
+clean-gcc-src:
+	rm -rf $(GCC_SRC)
+
+# ----------------------------------------------------------------------
+# Chapter 132b: GMP / MPFR / MPC vendored as in-tree symlinks.
+#
+# GCC 14 needs all three at link time for arbitrary-precision
+# arithmetic (constant folding, `__builtin_…` math, the
+# overflow-in-integer-constant diagnostic).  GCC's own
+# `contrib/download_prerequisites` script handles the same job;
+# we don't run it because (a) we want sha256-pinned downloads
+# captured in scripts/fetch_gcc_prereqs.sh, not a script that
+# pulls whatever's at the upstream URL today, and (b) we want
+# the downloads to be controllable from the same Makefile loop
+# as everything else.
+#
+# The script downloads each tarball into vendor/, extracts it
+# alongside gcc-14.2.0, and creates relative symlinks
+# vendor/gcc-14.2.0/{gmp,mpfr,mpc} pointing at the extracted
+# dirs.  When xgcc's configure (chapter 132c) sees those
+# subdirs it switches into "in-tree" build mode and builds the
+# math libs as part of `make all-gcc` itself.
+#
+# Variable $(GCC_PREREQS_MARKER) is declared early (near
+# $(GCC_MARKER)) so the default `all` target can use it as a
+# prereq.
+# ----------------------------------------------------------------------
+$(GCC_PREREQS_MARKER): $(GCC_MARKER)
+	bash scripts/fetch_gcc_prereqs.sh
+
+.PHONY: gcc-osdev-prereqs
+gcc-osdev-prereqs: $(GCC_PREREQS_MARKER)
+	@echo "gcc-osdev-prereqs: gmp/mpfr/mpc symlinked into $(GCC_SRC)"
+
+.PHONY: clean-gcc-prereqs
+clean-gcc-prereqs:
+	rm -f $(GCC_PREREQS_MARKER)
+	rm -f $(GCC_SRC)/gmp $(GCC_SRC)/mpfr $(GCC_SRC)/mpc
+	rm -rf vendor/gmp-6.2.1 vendor/mpfr-4.1.0 vendor/mpc-1.2.1
+
+# ----------------------------------------------------------------------
+# Chapter 132c: cross-build aarch64-osdev-gcc.
+#
+# This is the actual compiler-build step.  We configure the patched
+# gcc-14.2.0 source tree (chapter 132a) with our triple, point it at
+# the binutils toolchain prefix (chapter 131a) so it picks up our
+# aarch64-osdev-as / aarch64-osdev-ld, and run `make all-gcc` to
+# produce a stage-1 host-built cross compiler.  We deliberately stop
+# at `all-gcc` rather than going all the way to `make all` — the
+# target libraries (libgcc, libstdc++, libatomic) need target headers
+# and a working crt0 in places gcc's configure expects to find them,
+# which is chapter 132d's job.  For now `aarch64-osdev-gcc -v` and
+# `-dumpmachine` working is the whole contract.
+#
+# Configure flags worth calling out:
+#   --enable-languages=c           we only need C right now; C++ is for
+#                                   a later chapter when we want to
+#                                   build C++ apps in-guest.
+#   --disable-bootstrap            skip the 3-stage rebuild, just use
+#                                   the host compiler once.  Cuts build
+#                                   time by ~3x.  Fine for a cross.
+#   --disable-multilib             only build aarch64; no 32-bit, no
+#                                   different ABIs.
+#   --disable-nls --disable-shared standard cross-toolchain hygiene.
+#   --without-headers              tell gcc we don't have target libc
+#                                   headers yet.  Combined with
+#                                   --with-newlib it makes libgcc's
+#                                   configure happy enough to generate
+#                                   a Makefile (we don't actually build
+#                                   libgcc this chapter).
+#   --enable-checking=release      no assertions inside gcc itself.
+#                                   ~20% faster build, same correctness
+#                                   for our use case.
+#
+# Build dir lives at $(GCC_BUILD_HOST), separate from the source tree
+# so we can `make clean-xgcc` without disturbing the patched source.
+# Bulk of the disk hit is here (~2.5 GiB of intermediate objects after
+# a fresh build).
+# ----------------------------------------------------------------------
+GCC_BUILD_HOST := $(BUILD)/gcc-build-host
+GCC_XGCC       := $(TOOLCHAIN_PREFIX)/bin/aarch64-osdev-gcc
+
+$(GCC_BUILD_HOST)/Makefile: $(GCC_PREREQS_MARKER) $(BINUTILS_AS) $(BINUTILS_LD)
+	mkdir -p $(GCC_BUILD_HOST)
+	cd $(GCC_BUILD_HOST) && \
+	    PATH="$(TOOLCHAIN_PREFIX)/bin:$$PATH" \
+	    ../../$(GCC_SRC)/configure \
+	        --target=aarch64-osdev \
+	        --prefix=$(TOOLCHAIN_PREFIX) \
+	        --program-prefix=aarch64-osdev- \
+	        --with-sysroot=$(TOOLCHAIN_PREFIX)/aarch64-osdev \
+	        --enable-languages=c \
+	        --disable-bootstrap \
+	        --disable-multilib \
+	        --disable-nls --disable-shared \
+	        --without-headers --with-newlib \
+	        --disable-libssp --disable-libquadmath \
+	        --enable-checking=release \
+	        --with-system-zlib
+
+$(GCC_XGCC): $(GCC_BUILD_HOST)/Makefile
+	@echo "xgcc: building (this takes ~5-10 minutes; log at $(GCC_BUILD_HOST)/.build.log)"
+	PATH="$(TOOLCHAIN_PREFIX)/bin:$$PATH" \
+	    $(MAKE) -C $(GCC_BUILD_HOST) -j$(shell sysctl -n hw.ncpu) all-gcc MAKEINFO=true \
+	    > $(GCC_BUILD_HOST)/.build.log 2>&1
+	$(MAKE) -C $(GCC_BUILD_HOST) MAKEINFO=true install-gcc \
+	    >> $(GCC_BUILD_HOST)/.build.log 2>&1
+	@test -x $@ || (echo "xgcc: build claimed success but $@ missing"; tail -40 $(GCC_BUILD_HOST)/.build.log; exit 1)
+	@echo "xgcc: installed $@"
+
+.PHONY: gcc-osdev
+gcc-osdev: $(GCC_XGCC)
+	@$(GCC_XGCC) -dumpmachine
+	@$(GCC_XGCC) -dumpversion
+
+.PHONY: clean-xgcc
+clean-xgcc:
+	rm -rf $(GCC_BUILD_HOST)
+	rm -f $(GCC_XGCC)
+	rm -rf $(TOOLCHAIN_PREFIX)/libexec/gcc/aarch64-osdev
+	rm -rf $(TOOLCHAIN_PREFIX)/lib/gcc/aarch64-osdev
+	rm -rf $(TOOLCHAIN_PREFIX)/aarch64-osdev
+
+# ----------------------------------------------------------------------
+# Chapter 132d: xgcc sysroot install.
+#
+# The real `aarch64-osdev-gcc` looks up `crt0.o` via STARTFILE_SPEC
+# and `linker_user.ld` via LINK_SPEC (defined in
+# vendor/gcc-14.2.0/gcc/config/aarch64/aarch64-osdev.h).  Both names
+# resolve through gcc's standard cross-compiler search path, which
+# includes $(TOOLCHAIN_PREFIX)/aarch64-osdev/lib/ — so we just copy
+# the inputs there.  Libc headers go in aarch64-osdev/include/ which
+# gcc adds to the default `-isystem` chain for cross builds.
+#
+# Same layout will be mirrored under /aarch64-osdev/{lib,include}/
+# inside the guest when chapter 132e ships xgcc as /bin/gcc, so a
+# single set of specs works on both host and target.
+# ----------------------------------------------------------------------
+XGCC_SYSROOT     := $(TOOLCHAIN_PREFIX)/aarch64-osdev
+XGCC_SYSROOT_LIB := $(XGCC_SYSROOT)/lib
+XGCC_SYSROOT_INC := $(XGCC_SYSROOT)/include
+XGCC_SYSROOT_BIN := $(XGCC_SYSROOT)/bin
+
+XGCC_SYS_CRT0    := $(XGCC_SYSROOT_LIB)/crt0.o
+XGCC_SYS_LDS     := $(XGCC_SYSROOT_LIB)/linker_user.ld
+XGCC_SYS_INC_MARKER := $(XGCC_SYSROOT_INC)/.osdev-libc-stamp
+XGCC_SYS_BIN_MARKER := $(XGCC_SYSROOT_BIN)/.osdev-tools-stamp
+XGCC_SYS_LIBC    := $(XGCC_SYSROOT_LIB)/libosdevc.a
+
+$(XGCC_SYS_CRT0): $(BUILD)/userspace/crt/crt0.o | $(GCC_XGCC)
+	@mkdir -p $(XGCC_SYSROOT_LIB)
+	cp $< $@
+
+$(XGCC_SYS_LDS): userspace/linker_user.ld | $(GCC_XGCC)
+	@mkdir -p $(XGCC_SYSROOT_LIB)
+	cp $< $@
+
+# Glob libc headers at rule-eval time so adding/removing one is
+# picked up next make.  The stamp file keeps make from re-copying
+# on every invocation; touching any .h invalidates it.
+$(XGCC_SYS_INC_MARKER): $(wildcard userspace/libc/*.h) | $(GCC_XGCC)
+	@mkdir -p $(XGCC_SYSROOT_INC)
+	cp userspace/libc/*.h $(XGCC_SYSROOT_INC)/
+	@touch $@
+
+# xgcc's tool search adds $prefix/aarch64-osdev/bin/ but looks for
+# unprefixed names (as, ld, ar, ...) there.  Our binutils install
+# lands as aarch64-osdev-as et al. in $prefix/bin/.  Symlink the
+# unprefixed names into the target bin dir so gcc finds them
+# without -B.  Same layout cross-binutils makes by default when
+# building libbfd/libopcodes target-side; we don't, so we synth.
+$(XGCC_SYS_BIN_MARKER): $(BINUTILS_AS) $(BINUTILS_LD) | $(GCC_XGCC)
+	@mkdir -p $(XGCC_SYSROOT_BIN)
+	@for tool in as ld ar nm objcopy objdump ranlib strip; do \
+	    if [ -x $(TOOLCHAIN_PREFIX)/bin/aarch64-osdev-$$tool ]; then \
+	        ln -sf ../../bin/aarch64-osdev-$$tool \
+	            $(XGCC_SYSROOT_BIN)/$$tool; \
+	    fi; \
+	done
+	@touch $@
+
+# Chapter 132e: bundle libc extern wrappers (memcpy / memset /
+# memmove / malloc / strlen / strerror / ... — all the symbols
+# cstring.c defines non-static) into a sysroot archive so xgcc
+# autoconf link tests (gmp, mpfr, mpc, gcc itself) resolve them.
+# Plain .o linking pulls every symbol; an archive lets ld pick
+# only the ones each conftest references.  Built with our own
+# binutils ar to keep the object format compatible with the
+# aarch64-osdev linker.
+$(XGCC_SYS_LIBC): $(BUILD)/userspace/libc/cstring.o \
+                  $(BUILD)/userspace/libc/cxxabi.o | $(GCC_XGCC)
+	@mkdir -p $(XGCC_SYSROOT_LIB)
+	$(TOOLCHAIN_PREFIX)/bin/aarch64-osdev-ar rcs $@ \
+	    $(BUILD)/userspace/libc/cstring.o \
+	    $(BUILD)/userspace/libc/cxxabi.o
+
+.PHONY: xgcc-sysroot
+xgcc-sysroot: $(XGCC_SYS_CRT0) $(XGCC_SYS_LDS) $(XGCC_SYS_INC_MARKER) \
+              $(XGCC_SYS_BIN_MARKER) $(XGCC_SYS_LIBC)
+	@echo "xgcc-sysroot: $(XGCC_SYSROOT_LIB)/{crt0.o,linker_user.ld,libosdevc.a} + $(XGCC_SYSROOT_INC)/*.h + $(XGCC_SYSROOT_BIN)/{as,ld,...} installed"
+
+# Make `gcc-osdev` install the sysroot too, so `make gcc-osdev`
+# leaves you with a self-contained compiler that can build hello.c
+# end-to-end without the chapter-131b wrapper.
+gcc-osdev: xgcc-sysroot
+
+# ----------------------------------------------------------------------
+# Chapter 131b: aarch64-osdev-cc target compiler wrapper.
+#
+# Bridges the gap until chapter 132 lands a real aarch64-osdev-gcc.
+# Wraps the host's aarch64-elf-gcc with three overrides:
+#   - -B points at our chapter 131a toolchain bin/, with `as` and
+#     `ld` symlinked to aarch64-osdev-as / aarch64-osdev-ld so gcc
+#     dispatches to our binutils, not its bundled aarch64-elf ones.
+#   - -nostdlibinc kills aarch64-elf-gcc's bundled newlib system
+#     headers.
+#   - -isystem points header lookup at our libc (chapters 116-128).
+#
+# Why it's a generated file:  the wrapper needs an absolute path to
+# the OSDEV_ROOT so it works no matter where in the workspace make
+# is invoked from.  The template at scripts/aarch64-osdev-cc.in
+# carries `@OSDEV_ROOT@` which `sed` substitutes at install time.
+# ----------------------------------------------------------------------
+OSDEV_CC          := $(TOOLCHAIN_PREFIX)/bin/aarch64-osdev-cc
+OSDEV_CC_TEMPLATE := scripts/aarch64-osdev-cc.in
+OSDEV_AS_SYMLINK  := $(TOOLCHAIN_PREFIX)/bin/as
+OSDEV_LD_SYMLINK  := $(TOOLCHAIN_PREFIX)/bin/ld
+
+$(OSDEV_CC): $(OSDEV_CC_TEMPLATE) | $(BINUTILS_AS)
+	sed 's|@OSDEV_ROOT@|$(abspath .)|g' $(OSDEV_CC_TEMPLATE) > $@.tmp
+	chmod +x $@.tmp
+	mv $@.tmp $@
+
+# Symlinks live next to the prefixed binaries.  GCC's -B prefix
+# lookup tries unprefixed `as` and `ld` first; that's what these
+# satisfy.  We use the prefixed versions as the symlink targets so
+# `aarch64-osdev-as` and `aarch64-osdev-ld` remain the canonical
+# names for direct invocation.
+$(OSDEV_AS_SYMLINK): $(BINUTILS_AS)
+	ln -sf aarch64-osdev-as $@
+
+$(OSDEV_LD_SYMLINK): $(BINUTILS_LD)
+	ln -sf aarch64-osdev-ld $@
+
+.PHONY: aarch64-osdev-cc-install
+aarch64-osdev-cc-install: $(OSDEV_CC) $(OSDEV_AS_SYMLINK) $(OSDEV_LD_SYMLINK)
+	@echo "aarch64-osdev-cc-install: installed $(OSDEV_CC)"
+	@echo "aarch64-osdev-cc-install:   as -> $$(readlink $(OSDEV_AS_SYMLINK))"
+	@echo "aarch64-osdev-cc-install:   ld -> $$(readlink $(OSDEV_LD_SYMLINK))"
+
+# ----------------------------------------------------------------------
+# Guest GCC cross-build (chapter 132c-132i)
+#
+# The build/gcc-build-guest/ tree contains three things we ship
+# onto /bin in the OSFS image:
+#
+#   * xgcc                              -> /bin/gcc
+#   * cc1                               -> /bin/cc1
+#   * gcc/gcc/include/{stdint,stddef,..} -> /bin/{stdint,stddef,..}
+#
+# All three are produced by `make all-gcc` inside the cross-build
+# tree.  scripts/test_guest_gcc.py drives that build (Phases 1-4
+# from chapters 132c-132h), so we route the make-side dependency
+# through a single stamp file and let the script do the work.
+#
+# KEEP=1 is critical: without it the script wipes its build tree
+# every run, turning every `make build/disk.img` into a multi-hour
+# rebuild loop.  With it, an unchanged tree is a near-no-op (the
+# script still walks its phases but each one finds its outputs
+# already present and skips ahead).
+#
+# `make clean` preserves $(BUILD)/gcc-build-guest/ (parity with
+# binutils-build, see the clean: rule below), so this stamp rule
+# normally fires exactly once on a fresh checkout; subsequent
+# `make clean run-graphical` cycles re-use the existing tree.
+#
+# Placement: this block lives here, not next to GCC_FREESTANDING_*
+# at line ~2290, because make expands $(...) in prerequisite
+# lists at PARSE time (chapter `makefile-pattern-rule-ordering`
+# in repo memory), so the rule must come after every variable it
+# references (GCC_XGCC, OSDEV_CC, GCC_PREREQS_MARKER) is defined.
+# ----------------------------------------------------------------------
+GCC_GUEST_BUILD := $(BUILD)/gcc-build-guest
+GCC_GUEST_STAMP := $(GCC_GUEST_BUILD)/.osdev-built-stamp
+
+$(GCC_GUEST_STAMP): $(GCC_XGCC) $(OSDEV_CC) $(GCC_PREREQS_MARKER) \
+                    $(BUILD)/userspace/crt/crt0.o
+	@# If a pre-existing $(GCC_GUEST_BUILD) tree has no real xgcc
+	@# inside it (typical after a Makefile change wrote placeholder
+	@# stub headers into gcc/gcc/include/), it's not a usable
+	@# resumable build -- wipe so test_guest_gcc.py KEEP=1 starts
+	@# clean.  We check XGCC presence rather than directory
+	@# existence so a real partial build (e.g. interrupted Phase 4)
+	@# still gets resumed.
+	@if [ -d $(GCC_GUEST_BUILD) ] && [ ! -f $(XGCC_GUEST_BIN) ]; then \
+	    echo "gcc-build-guest: pre-existing tree has no xgcc; wiping for clean build"; \
+	    rm -rf $(GCC_GUEST_BUILD); \
+	fi
+	@echo "gcc-build-guest: cross-building xgcc + cc1 + freestanding headers"
+	@echo "gcc-build-guest:   (first run is ~hours; subsequent runs are incremental)"
+	KEEP=1 python3 scripts/test_guest_gcc.py
+	@test -f $(XGCC_GUEST_BIN) || \
+	    (echo "gcc-build-guest: $(XGCC_GUEST_BIN) missing after build"; exit 1)
+	@test -f $(CC1_GUEST_BIN) || \
+	    (echo "gcc-build-guest: $(CC1_GUEST_BIN) missing after build"; exit 1)
+	@test -f $(GCC_FREESTANDING_DIR)/stdint.h || \
+	    (echo "gcc-build-guest: $(GCC_FREESTANDING_DIR)/stdint.h missing after build"; exit 1)
+	@touch $@
+
+# All three sets of outputs are produced by the stamp rule above;
+# empty recipes here tell make "this file is produced as a side
+# effect of $(GCC_GUEST_STAMP)'s recipe -- don't try to remake it
+# individually".
+$(XGCC_GUEST_BIN): $(GCC_GUEST_STAMP) ;
+$(CC1_GUEST_BIN):  $(GCC_GUEST_STAMP) ;
+$(GCC_FREESTANDING_DIR)/%.h: $(GCC_GUEST_STAMP) ;
+
+.PHONY: gcc-build-guest
+gcc-build-guest: $(GCC_GUEST_STAMP)
+	@echo "gcc-build-guest: $(GCC_GUEST_BUILD) up to date"
+
+# ----------------------------------------------------------------------
 # Clean
+#
+# Wipes the kernel/userspace/ramfs build outputs but preserves the
+# host cross toolchain (build/toolchain/) and the binutils build
+# directory (build/binutils-build/) — both are expensive to rebuild
+# and aren't part of the inner kernel-iteration loop.  Use
+# `make clean-binutils` to nuke those explicitly.
+#
+# Also preserved: the xgcc cross-build (build/gcc-build-guest/),
+# produced by scripts/test_guest_gcc.py.  Same rationale — multi-
+# hour rebuild, supplies xgcc + cc1 + freestanding headers shipped
+# onto /bin (chapter 132i).  Use `rm -rf build/gcc-build-guest` to
+# nuke it explicitly.
 # ----------------------------------------------------------------------
 .PHONY: clean
 clean:
-	rm -rf $(BUILD)
+	@find $(BUILD) -mindepth 1 -maxdepth 1 \
+	    ! -name toolchain ! -name binutils-build ! -name gcc-build-guest \
+	    -exec rm -rf {} + 2>/dev/null || true

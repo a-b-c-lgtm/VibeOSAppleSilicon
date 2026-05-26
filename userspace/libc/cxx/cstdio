@@ -1,0 +1,37 @@
+// userspace/libc/cxx/cstdio — chapter 132f
+//
+// Freestanding <cstdio>.  C++ wraps <stdio.h> in namespace std.
+// GMP's gmp.h includes <cstdio> when used from C++.
+#ifndef _OSDEV_CXX_CSTDIO
+#define _OSDEV_CXX_CSTDIO 1
+
+#include "../stdio.h"
+
+namespace std {
+    using ::FILE;
+    using ::size_t;
+    using ::fopen;
+    using ::fclose;
+    using ::fread;
+    using ::fwrite;
+    using ::fseek;
+    using ::ftell;
+    using ::fflush;
+    using ::feof;
+    using ::ferror;
+    using ::fgetc;
+    using ::fgets;
+    using ::fputc;
+    using ::fputs;
+    using ::printf;
+    using ::fprintf;
+    using ::sprintf;
+    using ::snprintf;
+    using ::vprintf;
+    using ::vfprintf;
+    using ::vsprintf;
+    using ::vsnprintf;
+    /* stdin / stdout / stderr are macros in our stdio.h; no using needed. */
+}
+
+#endif

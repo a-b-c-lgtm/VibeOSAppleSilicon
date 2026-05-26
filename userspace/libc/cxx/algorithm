@@ -1,0 +1,266 @@
+// userspace/libc/cxx/algorithm — chapter 132f
+//
+// Freestanding <algorithm>.  Just the few algorithms gcc proper
+// actually uses in its host-side bookkeeping code.  Real
+// libstdc++ has ~100 generic algorithms; this stub covers the
+// dozen or so that come up in build/host TUs.
+#ifndef _OSDEV_CXX_ALGORITHM
+#define _OSDEV_CXX_ALGORITHM 1
+
+#include "utility"
+
+namespace std {
+
+template <class _T> constexpr const _T &min(const _T &a, const _T &b) { return (a < b) ? a : b; }
+template <class _T> constexpr const _T &max(const _T &a, const _T &b) { return (a < b) ? b : a; }
+template <class _T, class _C> constexpr const _T &min(const _T &a, const _T &b, _C cmp) { return cmp(a, b) ? a : b; }
+template <class _T, class _C> constexpr const _T &max(const _T &a, const _T &b, _C cmp) { return cmp(a, b) ? b : a; }
+
+template <class _It, class _T>
+inline _It find(_It first, _It last, const _T &v) {
+    for (; first != last; ++first) if (*first == v) return first;
+    return last;
+}
+
+template <class _It, class _P>
+inline _It find_if(_It first, _It last, _P pred) {
+    for (; first != last; ++first) if (pred(*first)) return first;
+    return last;
+}
+
+template <class _It, class _T>
+inline unsigned long count(_It first, _It last, const _T &v) {
+    unsigned long n = 0;
+    for (; first != last; ++first) if (*first == v) ++n;
+    return n;
+}
+
+template <class _It, class _P>
+inline unsigned long count_if(_It first, _It last, _P pred) {
+    unsigned long n = 0;
+    for (; first != last; ++first) if (pred(*first)) ++n;
+    return n;
+}
+
+template <class _It1, class _It2>
+inline _It2 copy(_It1 first, _It1 last, _It2 out) {
+    for (; first != last; ++first, ++out) *out = *first;
+    return out;
+}
+
+template <class _It, class _T>
+inline void fill(_It first, _It last, const _T &v) {
+    for (; first != last; ++first) *first = v;
+}
+
+// std::swap is canonically defined in <utility>; algorithm
+// pulls it in via that include rather than re-defining.
+
+template <class _It>
+inline void reverse(_It first, _It last) {
+    while (first != last && first != --last) {
+        auto tmp = std::move(*first);
+        *first = std::move(*last);
+        *last  = std::move(tmp);
+        ++first;
+    }
+}
+
+template <class _It1, class _It2>
+inline _It2 reverse_copy(_It1 first, _It1 last, _It2 out) {
+    while (first != last) { --last; *out = *last; ++out; }
+    return out;
+}
+
+// Simple insertion sort — O(n^2) but compiles small and
+// correct.  gcc's host code doesn't care about asymptotic
+// performance for the data sizes it sorts here.
+template <class _It, class _Cmp>
+inline void sort(_It first, _It last, _Cmp cmp) {
+    for (_It i = first; i != last; ++i) {
+        for (_It j = i; j != first; ) {
+            _It k = j; --k;
+            if (cmp(*j, *k)) {
+                auto tmp = std::move(*j);
+                *j = std::move(*k);
+                *k = std::move(tmp);
+                j = k;
+            } else break;
+        }
+    }
+}
+template <class _It>
+inline void sort(_It first, _It last) {
+    sort(first, last, [](const auto &a, const auto &b) { return a < b; });
+}
+
+template <class _It1, class _It2>
+inline bool equal(_It1 first1, _It1 last1, _It2 first2) {
+    for (; first1 != last1; ++first1, ++first2) {
+        if (!(*first1 == *first2)) return false;
+    }
+    return true;
+}
+
+template <class _It1, class _It2>
+inline bool lexicographical_compare(_It1 f1, _It1 l1, _It2 f2, _It2 l2) {
+    for (; f1 != l1 && f2 != l2; ++f1, ++f2) {
+        if (*f1 < *f2) return true;
+        if (*f2 < *f1) return false;
+    }
+    return f1 == l1 && f2 != l2;
+}
+
+template <class _It, class _T, class _Cmp>
+inline _It lower_bound(_It first, _It last, const _T &v, _Cmp cmp) {
+    while (first != last) {
+        _It mid = first;
+        auto step = (last - first) / 2;
+        mid += step;
+        if (cmp(*mid, v)) { first = mid; ++first; }
+        else              { last = mid; }
+    }
+    return first;
+}
+
+template <class _It, class _T>
+inline _It lower_bound(_It first, _It last, const _T &v) {
+    while (first != last) {
+        _It mid = first;
+        auto step = (last - first) / 2;
+        mid += step;
+        if (*mid < v)     { first = mid; ++first; }
+        else              { last = mid; }
+    }
+    return first;
+}
+
+template <class _It, class _T, class _Cmp>
+inline _It upper_bound(_It first, _It last, const _T &v, _Cmp cmp) {
+    while (first != last) {
+        _It mid = first;
+        auto step = (last - first) / 2;
+        mid += step;
+        if (!cmp(v, *mid)) { first = mid; ++first; }
+        else               { last = mid; }
+    }
+    return first;
+}
+
+template <class _It, class _T>
+inline _It upper_bound(_It first, _It last, const _T &v) {
+    while (first != last) {
+        _It mid = first;
+        auto step = (last - first) / 2;
+        mid += step;
+        if (!(v < *mid))  { first = mid; ++first; }
+        else              { last = mid; }
+    }
+    return first;
+}
+
+template <class _It, class _T, class _Cmp>
+inline bool binary_search(_It first, _It last, const _T &v, _Cmp cmp) {
+    _It it = lower_bound(first, last, v, cmp);
+    return it != last && !cmp(v, *it);
+}
+
+template <class _It, class _T>
+inline bool binary_search(_It first, _It last, const _T &v) {
+    _It it = lower_bound(first, last, v);
+    return it != last && !(v < *it);
+}
+
+template <class _It>
+inline auto distance(_It first, _It last) -> decltype(last - first) {
+    return last - first;
+}
+
+template <class _It>
+inline _It min_element(_It first, _It last) {
+    if (first == last) return last;
+    _It best = first;
+    ++first;
+    for (; first != last; ++first) if (*first < *best) best = first;
+    return best;
+}
+
+template <class _It, class _Cmp>
+inline _It min_element(_It first, _It last, _Cmp cmp) {
+    if (first == last) return last;
+    _It best = first;
+    ++first;
+    for (; first != last; ++first) if (cmp(*first, *best)) best = first;
+    return best;
+}
+
+template <class _It>
+inline _It max_element(_It first, _It last) {
+    if (first == last) return last;
+    _It best = first;
+    ++first;
+    for (; first != last; ++first) if (*best < *first) best = first;
+    return best;
+}
+
+template <class _It, class _Cmp>
+inline _It max_element(_It first, _It last, _Cmp cmp) {
+    if (first == last) return last;
+    _It best = first;
+    ++first;
+    for (; first != last; ++first) if (cmp(*best, *first)) best = first;
+    return best;
+}
+
+// std::remove / std::remove_if — relocate "kept" elements to the
+// front of [first, last), returning the new end.  Standard idiom:
+//   v.erase(std::remove(v.begin(), v.end(), x), v.end());
+template <class _It, class _T>
+inline _It remove(_It first, _It last, const _T &v) {
+    _It out = first;
+    for (; first != last; ++first) {
+        if (!(*first == v)) {
+            if (out != first) *out = *first;
+            ++out;
+        }
+    }
+    return out;
+}
+template <class _It, class _Pred>
+inline _It remove_if(_It first, _It last, _Pred pred) {
+    _It out = first;
+    for (; first != last; ++first) {
+        if (!pred(*first)) {
+            if (out != first) *out = *first;
+            ++out;
+        }
+    }
+    return out;
+}
+
+// std::count / std::count_if
+template <class _It, class _T>
+inline long count(_It first, _It last, const _T &v) {
+    long n = 0;
+    for (; first != last; ++first) if (*first == v) ++n;
+    return n;
+}
+template <class _It, class _Pred>
+inline long count_if(_It first, _It last, _Pred pred) {
+    long n = 0;
+    for (; first != last; ++first) if (pred(*first)) ++n;
+    return n;
+}
+
+// std::fill_n
+template <class _It, class _N, class _T>
+inline _It fill_n(_It first, _N n, const _T &v) {
+    while (n-- > 0) { *first = v; ++first; }
+    return first;
+}
+
+#define _OSDEV_HAVE_SWAP_IN_UTILITY 1  // signals to system.h
+
+}  // namespace std
+
+#endif

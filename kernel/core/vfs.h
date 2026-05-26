@@ -70,6 +70,13 @@
 #define ETIMEDOUT_VFS 110 /* userfs request exceeded its deadline */
 #endif
 
+/* Chapter 116b — returned by vfs_lseek when the fd kind is not
+ * seekable (pipes, sockets, ttys, the kernel console).  Matches
+ * POSIX value 29 ("illegal seek"). */
+#ifndef ESPIPE
+#define ESPIPE      29
+#endif
+
 /* Forward decl — defined in thread.h, but kept opaque here. */
 struct thread;
 
@@ -374,6 +381,57 @@ int vfs_open(const char *name, int flags);
  * a negative errno. */
 int vfs_open_into(struct thread *t, int fd, const char *name, int flags);
 
+/* Chapter 117 -- POSIX-shaped file metadata.  Returned by
+ * vfs_stat_path / vfs_fstat (kernel) and sys_stat / sys_fstat
+ * (the user surface).  Kept deliberately small: GCC / TCC /
+ * make only need mode + size today; mtime is wired through to
+ * the OSFS-2 inode for future `ls -lt` use but every other
+ * filesystem reports 0 (acceptable for the read-only paths).
+ *
+ * `mode` is laid out the POSIX way:
+ *   - High 4 bits encode the file kind (S_IFREG / S_IFDIR /
+ *     S_IFCHR / S_IFIFO / S_IFSOCK).
+ *   - Low 12 bits are the permission triplets (rwx user / group /
+ *     other).  We don't enforce these yet -- there's no notion
+ *     of users or groups -- but populating them lets `ls -l`
+ *     render the familiar "-rw-r--r--" string from day one.
+ *
+ * Layout must match userspace/libc/sys/stat.h::struct stat
+ * byte-for-byte.  Do not reorder.  The 4-byte _pad keeps `size`
+ * 8-byte aligned.  Chapter 131d appended st_dev / st_ino;
+ * chapter 131e renamed st_mtime_ms -> st_mtime (POSIX seconds;
+ * still always 0) and appended st_uid / st_gid (always 0). */
+struct kstat {
+    uint32_t st_mode;
+    uint32_t _pad;
+    uint64_t st_size;
+    uint64_t st_mtime;
+    uint64_t st_dev;
+    uint64_t st_ino;
+    uint32_t st_uid;
+    uint32_t st_gid;
+};
+
+/* File-kind bits (high nibble of st_mode). */
+#define S_IFMT_K    0xF000u
+#define S_IFREG_K   0x8000u
+#define S_IFDIR_K   0x4000u
+#define S_IFCHR_K   0x2000u
+#define S_IFIFO_K   0x1000u
+#define S_IFSOCK_K  0xC000u
+
+/* Stat by path.  Walks the mount table, dispatches to the
+ * resolved filesystem.  Returns 0 / -errno; on success fills
+ * *out.  -ENOENT for a path that doesn't exist, -EFAULT if
+ * either pointer is bad. */
+long vfs_stat_path(const char *path, struct kstat *out);
+
+/* Stat by fd.  Reads metadata directly from the fd_entry --
+ * cheaper than re-walking the path and avoids races where the
+ * file is unlinked between open and stat. */
+long vfs_fstat(int fd, struct kstat *out);
+
+
 /* Allocate a fresh fd in the current thread that points at the
  * TCP connection identified by `cid`.  Used by sys_socket
  * (which creates a fresh cid via tcp_connect / tcp_listen) to
@@ -416,6 +474,14 @@ long vfs_read(int fd, void *buf, size_t len);
 /* Close `fd`.  Returns 0 or a negative errno.  Closing fd 0/1/2
  * is a no-op success (POSIX-style). */
 int vfs_close(int fd);
+
+/* Chapter 116b — POSIX lseek.  Re-position `fd`'s read/write
+ * cursor.  `whence` is 0/1/2 for SEEK_SET/SEEK_CUR/SEEK_END.
+ * Returns the new absolute offset on success, or a negative
+ * errno (-EBADF, -ESPIPE on un-seekable kinds, -EINVAL for a
+ * bad whence or a negative resulting offset, -ENOSYS for
+ * SEEK_END on filesystems that don't expose size yet). */
+long vfs_lseek(int fd, int64_t off, int whence);
 
 /* Look up a ramfs file by path.  On success stores a pointer to
  * the file's backing bytes in *data and the byte count in *size,

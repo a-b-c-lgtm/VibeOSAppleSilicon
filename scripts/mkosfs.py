@@ -30,16 +30,29 @@ import sys
 from pathlib import Path
 
 SECTOR = 512
-TOTAL_SECTORS = 32768     # 16 MiB image (room for binaries + a
-                          # 1920x1080 wallpaper.bgra ~= 8.3 MB
-                          # with header; bump higher if you add
-                          # more large data files)
+TOTAL_SECTORS = 524288    # 256 MiB image.  Chapter 131f swapped
+                          # the toy 12 KiB /bin/as + 7 KiB /bin/ld
+                          # for the real GNU binutils gas-new
+                          # (~3.3 MiB) + ld-new (~2.9 MiB), and
+                          # together with the 8.3 MiB
+                          # wallpaper.bgra that pushed the
+                          # previous 16 MiB image over the line.
+                          # Chapter 132f bumped 32 -> 256 MiB to make
+                          # room for /bin/gcc (3 MiB xgcc driver) +
+                          # /bin/cc1 (43 MiB stripped, the C frontend
+                          # + middle/back-end + libbackend.a code).
+                          # lto1 and lto-dump (~52 MiB each stripped)
+                          # are NOT shipped — they're only useful when
+                          # building gcc itself with -flto, which we
+                          # don't do in-guest.
 DIRENT = struct.Struct("<20sIII")
-DIR_SECTORS = 8           # eight sectors of dirents -> 128 files
+DIR_SECTORS = 16          # sixteen sectors of dirents -> 256 files
                           # (was 2 / 32 pre-M60, 4 / 64 through ch106a,
-                          # bumped again in chapter 106b for proxytest)
-FIRST_DATA_SECTOR = 9     # superblock = 0, directory = 1..8, data = 9..
-MAX_FILES = (SECTOR * DIR_SECTORS) // DIRENT.size  # 128
+                          # bumped in chapter 106b for proxytest, then
+                          # again in chapter 132i so the libc headers
+                          # could ship on /bin for in-guest gcc)
+FIRST_DATA_SECTOR = 17    # superblock = 0, directory = 1..16, data = 17..
+MAX_FILES = (SECTOR * DIR_SECTORS) // DIRENT.size  # 256
 
 def main():
     if len(sys.argv) < 3:

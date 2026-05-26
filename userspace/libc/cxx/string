@@ -1,0 +1,404 @@
+// userspace/libc/cxx/string — chapter 132f
+//
+// Freestanding <string>.  Just enough of std::string for gcc
+// proper's attribs.cc / c-decl.cc to compile.  Supported:
+//
+//   - default + copy + move construction
+//   - construction from const char* / (count, char)
+//   - assignment + concat (+=, append, push_back)
+//   - c_str(), data(), size(), length(), empty()
+//   - operator[]
+//   - operator+ (string + string, string + char*)
+//   - comparison (== !=)
+//
+// Storage is heap-allocated via ::malloc / ::free (from
+// our C runtime).  No SSO, no allocator template parameter
+// awareness — std::allocator is treated as opaque.  This is
+// good enough to satisfy the parts of gcc 14.2 that touch
+// std::string for attribute pretty-printing and parm-array
+// spec building.
+//
+// Streams, find/rfind, substr, replace etc. are **not**
+// implemented yet — add them when a TU surfaces the gap.
+#ifndef _OSDEV_CXX_STRING
+#define _OSDEV_CXX_STRING 1
+
+#include "../malloc.h"
+#include "../string.h"
+#include "iosfwd"
+#include "bits/_alloc.h"
+
+namespace std {
+
+template <>
+class basic_string<char, char_traits<char>, allocator<char>> {
+public:
+    typedef char       value_type;
+    typedef size_t     size_type;
+    typedef char *     iterator;
+    typedef const char*const_iterator;
+    static const size_type npos = (size_type)-1;
+
+private:
+    char   *_data;
+    size_t  _len;
+    size_t  _cap;
+
+    void _ensure(size_t want) {
+        if (want + 1 <= _cap) return;
+        size_t ncap = _cap ? _cap * 2 : 16;
+        while (ncap < want + 1) ncap *= 2;
+        char *nd = (char *)::malloc(ncap);
+        if (_data) {
+            for (size_t i = 0; i < _len; ++i) nd[i] = _data[i];
+            ::free(_data);
+        }
+        nd[_len] = '\0';
+        _data = nd;
+        _cap = ncap;
+    }
+
+public:
+    basic_string() : _data(nullptr), _len(0), _cap(0) {
+        _ensure(0);
+    }
+    basic_string(const char *s) : _data(nullptr), _len(0), _cap(0) {
+        size_t n = 0;
+        while (s && s[n]) ++n;
+        _ensure(n);
+        for (size_t i = 0; i < n; ++i) _data[i] = s[i];
+        _len = n;
+        _data[_len] = '\0';
+    }
+    basic_string(const char *s, size_t n) : _data(nullptr), _len(0), _cap(0) {
+        _ensure(n);
+        for (size_t i = 0; i < n; ++i) _data[i] = s[i];
+        _len = n;
+        _data[_len] = '\0';
+    }
+    basic_string(size_t n, char c) : _data(nullptr), _len(0), _cap(0) {
+        _ensure(n);
+        for (size_t i = 0; i < n; ++i) _data[i] = c;
+        _len = n;
+        _data[_len] = '\0';
+    }
+    basic_string(const basic_string &o) : _data(nullptr), _len(0), _cap(0) {
+        _ensure(o._len);
+        for (size_t i = 0; i < o._len; ++i) _data[i] = o._data[i];
+        _len = o._len;
+        _data[_len] = '\0';
+    }
+    basic_string(basic_string &&o) noexcept
+        : _data(o._data), _len(o._len), _cap(o._cap) {
+        o._data = nullptr; o._len = 0; o._cap = 0;
+    }
+    ~basic_string() { if (_data) ::free(_data); }
+
+    basic_string &operator=(const basic_string &o) {
+        if (this == &o) return *this;
+        _len = 0;
+        _ensure(o._len);
+        for (size_t i = 0; i < o._len; ++i) _data[i] = o._data[i];
+        _len = o._len;
+        _data[_len] = '\0';
+        return *this;
+    }
+    basic_string &operator=(basic_string &&o) noexcept {
+        if (this == &o) return *this;
+        if (_data) ::free(_data);
+        _data = o._data; _len = o._len; _cap = o._cap;
+        o._data = nullptr; o._len = 0; o._cap = 0;
+        return *this;
+    }
+    basic_string &operator=(const char *s) {
+        _len = 0;
+        size_t n = 0;
+        while (s && s[n]) ++n;
+        _ensure(n);
+        for (size_t i = 0; i < n; ++i) _data[i] = s[i];
+        _len = n;
+        _data[_len] = '\0';
+        return *this;
+    }
+    basic_string &operator=(char c) {
+        _ensure(1);
+        _data[0] = c;
+        _len = 1;
+        _data[_len] = '\0';
+        return *this;
+    }
+
+    /* resize(n) — truncate or grow.  When growing, fills new bytes
+     * with '\0'.  resize(n, c) fills with c. */
+    void resize(size_t n) { resize(n, '\0'); }
+    void resize(size_t n, char c) {
+        if (n <= _len) {
+            _len = n;
+            if (_data) _data[_len] = '\0';
+            return;
+        }
+        _ensure(n);
+        for (size_t i = _len; i < n; ++i) _data[i] = c;
+        _len = n;
+        _data[_len] = '\0';
+    }
+    void reserve(size_t n) { _ensure(n); }
+
+    const char *c_str() const noexcept { return _data ? _data : ""; }
+    const char *data()  const noexcept { return c_str(); }
+    char       *data()        noexcept { return _data; }
+    size_t      size()   const noexcept { return _len; }
+    size_t      length() const noexcept { return _len; }
+    bool        empty()  const noexcept { return _len == 0; }
+    size_t      capacity() const noexcept { return _cap ? _cap - 1 : 0; }
+
+    char       &operator[](size_t i)        { return _data[i]; }
+    const char &operator[](size_t i)  const { return _data[i]; }
+
+    void clear() noexcept { _len = 0; if (_data) _data[0] = '\0'; }
+
+    void push_back(char c) {
+        _ensure(_len + 1);
+        _data[_len++] = c;
+        _data[_len] = '\0';
+    }
+
+    basic_string &append(const char *s, size_t n) {
+        _ensure(_len + n);
+        for (size_t i = 0; i < n; ++i) _data[_len + i] = s[i];
+        _len += n;
+        _data[_len] = '\0';
+        return *this;
+    }
+    basic_string &append(const char *s) {
+        size_t n = 0;
+        while (s && s[n]) ++n;
+        return append(s, n);
+    }
+    basic_string &append(const basic_string &o) {
+        return append(o._data, o._len);
+    }
+    basic_string &append(size_t n, char c) {
+        _ensure(_len + n);
+        for (size_t i = 0; i < n; ++i) _data[_len + i] = c;
+        _len += n;
+        _data[_len] = '\0';
+        return *this;
+    }
+
+    basic_string &operator+=(const basic_string &o) { return append(o); }
+    basic_string &operator+=(const char *s)         { return append(s); }
+    basic_string &operator+=(char c)                { push_back(c); return *this; }
+
+    /* insert(pos, s) — insert C-string at byte position pos.
+     * Only the (size_t, const char*) form is implemented; gcc
+     * proper's c-decl.cc and attribs.cc only use this form. */
+    basic_string &insert(size_t pos, const char *s) {
+        size_t n = 0; while (s && s[n]) ++n;
+        if (pos > _len) pos = _len;
+        _ensure(_len + n);
+        for (size_t i = _len; i-- > pos; ) _data[i + n] = _data[i];
+        for (size_t i = 0; i < n; ++i) _data[pos + i] = s[i];
+        _len += n;
+        _data[_len] = '\0';
+        return *this;
+    }
+    basic_string &insert(size_t pos, const basic_string &o) {
+        if (pos > _len) pos = _len;
+        _ensure(_len + o._len);
+        for (size_t i = _len; i-- > pos; ) _data[i + o._len] = _data[i];
+        for (size_t i = 0; i < o._len; ++i) _data[pos + i] = o._data[i];
+        _len += o._len;
+        _data[_len] = '\0';
+        return *this;
+    }
+    basic_string &insert(size_t pos, size_t cnt, char c) {
+        if (pos > _len) pos = _len;
+        _ensure(_len + cnt);
+        for (size_t i = _len; i-- > pos; ) _data[i + cnt] = _data[i];
+        for (size_t i = 0; i < cnt; ++i) _data[pos + i] = c;
+        _len += cnt;
+        _data[_len] = '\0';
+        return *this;
+    }
+
+    iterator       begin()        { return _data; }
+    iterator       end()          { return _data + _len; }
+    const_iterator begin()  const { return _data; }
+    const_iterator end()    const { return _data + _len; }
+    const_iterator cbegin() const { return _data; }
+    const_iterator cend()   const { return _data + _len; }
+
+    // ── search ──────────────────────────────────────────────
+    size_type find(char c, size_type pos = 0) const {
+        for (size_type i = pos; i < _len; ++i) if (_data[i] == c) return i;
+        return npos;
+    }
+    size_type find(const char *s, size_type pos = 0) const {
+        if (!s) return npos;
+        size_type slen = 0; while (s[slen]) ++slen;
+        if (slen == 0) return pos <= _len ? pos : npos;
+        if (slen > _len) return npos;
+        for (size_type i = pos; i + slen <= _len; ++i) {
+            size_type j = 0;
+            while (j < slen && _data[i + j] == s[j]) ++j;
+            if (j == slen) return i;
+        }
+        return npos;
+    }
+    size_type find(const basic_string &o, size_type pos = 0) const {
+        return find(o._data ? o._data : "", pos);
+    }
+    size_type rfind(char c, size_type pos = npos) const {
+        if (_len == 0) return npos;
+        size_type start = (pos >= _len) ? _len - 1 : pos;
+        for (size_type i = start + 1; i-- > 0; ) {
+            if (_data[i] == c) return i;
+        }
+        return npos;
+    }
+    size_type rfind(const char *s, size_type pos = npos) const {
+        if (!s) return npos;
+        size_type slen = 0; while (s[slen]) ++slen;
+        if (slen == 0) return _len < pos ? _len : pos;
+        if (slen > _len) return npos;
+        size_type start = (pos > _len - slen) ? _len - slen : pos;
+        for (size_type i = start + 1; i-- > 0; ) {
+            size_type j = 0;
+            while (j < slen && _data[i + j] == s[j]) ++j;
+            if (j == slen) return i;
+        }
+        return npos;
+    }
+    size_type rfind(const basic_string &o, size_type pos = npos) const {
+        return rfind(o._data ? o._data : "", pos);
+    }
+    size_type find_first_of(const char *s, size_type pos = 0) const {
+        if (!s) return npos;
+        for (size_type i = pos; i < _len; ++i) {
+            for (const char *q = s; *q; ++q) if (_data[i] == *q) return i;
+        }
+        return npos;
+    }
+    size_type find_first_of(char c, size_type pos = 0) const { return find(c, pos); }
+    size_type find_first_of(const basic_string &o, size_type pos = 0) const {
+        return find_first_of(o._data ? o._data : "", pos);
+    }
+    size_type find_last_of(const char *s, size_type pos = npos) const {
+        if (!s || _len == 0) return npos;
+        size_type start = (pos >= _len) ? _len - 1 : pos;
+        for (size_type i = start + 1; i-- > 0; ) {
+            for (const char *q = s; *q; ++q) if (_data[i] == *q) return i;
+        }
+        return npos;
+    }
+    size_type find_last_of(char c, size_type pos = npos) const { return rfind(c, pos); }
+    size_type find_first_not_of(const char *s, size_type pos = 0) const {
+        if (!s) return npos;
+        for (size_type i = pos; i < _len; ++i) {
+            int found = 0;
+            for (const char *q = s; *q; ++q) if (_data[i] == *q) { found = 1; break; }
+            if (!found) return i;
+        }
+        return npos;
+    }
+    size_type find_last_not_of(const char *s, size_type pos = npos) const {
+        if (!s || _len == 0) return npos;
+        size_type start = (pos >= _len) ? _len - 1 : pos;
+        for (size_type i = start + 1; i-- > 0; ) {
+            int found = 0;
+            for (const char *q = s; *q; ++q) if (_data[i] == *q) { found = 1; break; }
+            if (!found) return i;
+        }
+        return npos;
+    }
+
+    basic_string substr(size_type pos = 0, size_type cnt = npos) const {
+        if (pos > _len) pos = _len;
+        size_type avail = _len - pos;
+        if (cnt > avail) cnt = avail;
+        return basic_string(_data + pos, cnt);
+    }
+
+    int compare(const basic_string &o) const {
+        size_t n = _len < o._len ? _len : o._len;
+        for (size_t i = 0; i < n; ++i) {
+            if (_data[i] != o._data[i]) {
+                return (unsigned char)_data[i] < (unsigned char)o._data[i] ? -1 : 1;
+            }
+        }
+        if (_len == o._len) return 0;
+        return _len < o._len ? -1 : 1;
+    }
+    int compare(const char *s) const {
+        size_t slen = 0; while (s && s[slen]) ++slen;
+        size_t n = _len < slen ? _len : slen;
+        for (size_t i = 0; i < n; ++i) {
+            if (_data[i] != s[i]) {
+                return (unsigned char)_data[i] < (unsigned char)s[i] ? -1 : 1;
+            }
+        }
+        if (_len == slen) return 0;
+        return _len < slen ? -1 : 1;
+    }
+    int compare(size_t pos, size_t cnt, const basic_string &o) const {
+        if (pos > _len) pos = _len;
+        size_t mylen = (cnt < _len - pos) ? cnt : (_len - pos);
+        size_t n = mylen < o._len ? mylen : o._len;
+        for (size_t i = 0; i < n; ++i) {
+            if (_data[pos + i] != o._data[i]) {
+                return (unsigned char)_data[pos + i] < (unsigned char)o._data[i] ? -1 : 1;
+            }
+        }
+        if (mylen == o._len) return 0;
+        return mylen < o._len ? -1 : 1;
+    }
+    int compare(size_t pos, size_t cnt, const char *s) const {
+        if (pos > _len) pos = _len;
+        size_t mylen = (cnt < _len - pos) ? cnt : (_len - pos);
+        size_t slen = 0; while (s && s[slen]) ++slen;
+        size_t n = mylen < slen ? mylen : slen;
+        for (size_t i = 0; i < n; ++i) {
+            if (_data[pos + i] != s[i]) {
+                return (unsigned char)_data[pos + i] < (unsigned char)s[i] ? -1 : 1;
+            }
+        }
+        if (mylen == slen) return 0;
+        return mylen < slen ? -1 : 1;
+    }
+    int compare(size_t pos, size_t cnt, const char *s, size_t slen) const {
+        if (pos > _len) pos = _len;
+        size_t mylen = (cnt < _len - pos) ? cnt : (_len - pos);
+        size_t n = mylen < slen ? mylen : slen;
+        for (size_t i = 0; i < n; ++i) {
+            if (_data[pos + i] != s[i]) {
+                return (unsigned char)_data[pos + i] < (unsigned char)s[i] ? -1 : 1;
+            }
+        }
+        if (mylen == slen) return 0;
+        return mylen < slen ? -1 : 1;
+    }
+};
+
+typedef basic_string<char, char_traits<char>, allocator<char>> string;
+
+inline bool operator==(const string &a, const string &b) { return a.compare(b) == 0; }
+inline bool operator!=(const string &a, const string &b) { return a.compare(b) != 0; }
+inline bool operator< (const string &a, const string &b) { return a.compare(b) <  0; }
+inline bool operator<=(const string &a, const string &b) { return a.compare(b) <= 0; }
+inline bool operator> (const string &a, const string &b) { return a.compare(b) >  0; }
+inline bool operator>=(const string &a, const string &b) { return a.compare(b) >= 0; }
+
+inline string operator+(const string &a, const string &b) {
+    string r(a); r += b; return r;
+}
+inline string operator+(const string &a, const char *b) {
+    string r(a); r += b; return r;
+}
+inline string operator+(const char *a, const string &b) {
+    string r(a); r += b; return r;
+}
+
+} // namespace std
+
+#endif

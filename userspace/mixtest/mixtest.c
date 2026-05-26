@@ -33,6 +33,7 @@
  */
 
 #include "../libc/syscall.h"
+#include "../libc/errno.h"
 #include "../libc/printf.h"
 
 /* errno code mirror (matches kernel/core/wm.c).  We don't have
@@ -102,26 +103,26 @@ static void test_mapped_returns_ebusy(void)
     *(uint32_t *)fb.pixels = 0xFF445566u;
 
     rc = gui_fill_rect(w, 0, 0, 120, 80, 0xFF00FF00u);
-    if (rc != -EBUSY_RC) {
-        fail("gui_fill_rect on mapped should be -EBUSY", rc);
+    if (rc != -1 || errno != EBUSY_RC) {
+        fail("gui_fill_rect on mapped should be EBUSY", rc);
         gui_destroy_window(w); return;
     }
 
     rc = gui_draw_text(w, 8, 16, "hi", 0xFFFFFFFFu, 0xFF000000u, 0);
-    if (rc != -EBUSY_RC) {
-        fail("gui_draw_text on mapped should be -EBUSY", rc);
+    if (rc != -1 || errno != EBUSY_RC) {
+        fail("gui_draw_text on mapped should be EBUSY", rc);
         gui_destroy_window(w); return;
     }
 
     uint32_t one_px = 0xFF112233u;
     rc = gui_present(w, 0, 0, 1, 1, (const uint8_t *)&one_px);
-    if (rc != -EBUSY_RC) {
-        fail("gui_present on mapped should be -EBUSY", rc);
+    if (rc != -1 || errno != EBUSY_RC) {
+        fail("gui_present on mapped should be EBUSY", rc);
         gui_destroy_window(w); return;
     }
 
     gui_destroy_window(w);
-    ok("mapped window refuses kernel draw syscalls with -EBUSY");
+    ok("mapped window refuses kernel draw syscalls with EBUSY");
 }
 
 int main(int argc, char **argv)

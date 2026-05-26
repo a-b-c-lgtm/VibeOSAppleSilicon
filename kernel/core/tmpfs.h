@@ -50,7 +50,7 @@ long tmpfs_read(int idx, uint64_t offset, void *buf, size_t len);
 /* Append `len` bytes from `buf` to file `idx`.  Returns bytes
  * written (always == len on success), or a negative errno on
  * OOM / size cap. */
-long tmpfs_write(int idx, const void *buf, size_t len);
+long tmpfs_write(int idx, uint32_t offset, const void *buf, size_t len);
 
 /* Iterate: get the idx-th file's name (NUL-terminated, copied
  * into `out`) and size (in `*size_out`).  Returns the length of

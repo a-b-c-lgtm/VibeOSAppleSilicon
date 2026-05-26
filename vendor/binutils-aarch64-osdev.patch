@@ -1,0 +1,153 @@
+# Patch: register the `aarch64-osdev` target triple in binutils-2.44.
+#
+# Six changes, all minimal:
+#
+#   1. config.sub  — accept `osdev*` as a valid OS name.  Without
+#      this, `configure --target=aarch64-osdev` fails at the
+#      canonicalisation step (`OS 'osdev' not recognized`).
+#      Inserts alphabetically into the OS list.
+#   2. bfd/config.bfd  — add `aarch64-*-osdev*` as its own case
+#      that uses the same vector selection as `aarch64-*-elf`
+#      (little-endian ELF64 with the usual selvecs).
+#   3. gas/configure.tgt  — add `aarch64*-*-osdev*` as its own
+#      case (fmt=elf; no OS-specific GAS extensions).
+#   4. ld/configure.tgt  — add `aarch64-*-osdev*` as its own
+#      case using the `aarch64elf` emulation (same script the
+#      existing aarch64-elf path uses).
+#   5. libiberty/getopt.c  — `#define OSDEV_LIBC_NO_GETOPT` at
+#      the top of the TU.  Our userspace/libc/stdlib.h declares
+#      optarg / optind / optopt / opterr as `static` storage
+#      whenever this guard is NOT defined; libiberty's getopt.c
+#      needs them as plain `extern`-style tentative defs (so
+#      libiberty/getopt1.c's _getopt_internal call can resolve).
+#      Defining OSDEV_LIBC_NO_GETOPT in just this TU lets our
+#      libc and libiberty co-exist: getopt.c provides the strong
+#      external optarg / optind / optopt / opterr + getopt +
+#      _getopt_internal that getopt1.c (getopt_long) and any ld
+#      driver TU need; every OTHER vendor TU keeps the static
+#      stdlib.h copies (harmless — never linked across TUs).
+#      Chapter 131e: replaced the earlier 131d ELIDE_CODE approach
+#      which suppressed the whole file and left _getopt_internal
+#      undefined, breaking ld's link.
+#   6. libiberty/lrealpath.c  — append an explicit return path at
+#      the bottom of `lrealpath()` for the case where none of the
+#      upstream backends (realpath / canonicalize_file_name /
+#      PATH_MAX bounded buf / Windows) is compiled in.  In a
+#      freestanding cross-build all four arms are #if'd out, so
+#      control falls off the end of a non-void function — UB.
+#      On aarch64 this returns whatever x0 happens to hold, which
+#      is the input `filename` pointer; callers in ld/bfd then
+#      free() it, corrupting argv and producing a "file format
+#      not recognized" error two levels up.
+#      The replacement calls `extern void *malloc` (resolves to
+#      the same static-inline copy lrealpath.o was compiled with)
+#      and does a manual byte copy rather than going through
+#      strdup, which would resolve to cstring.c's global export
+#      whose private free-list never gets initialised in this TU.
+#      Chapter 131f.
+#
+# Apply with `patch -p1 -d vendor/binutils-2.44 <
+# vendor/binutils-aarch64-osdev.patch` from the workspace root.
+#
+# Re-application is harmless: the Makefile rule that drives this
+# uses a marker file (`vendor/binutils-2.44/.patched-osdev`) to
+# avoid double-patching.
+
+--- a/config.sub
++++ b/config.sub
+@@ -2077,6 +2077,7 @@
+ 	| os68k* \
+ 	| os9* \
+ 	| ose* \
++	| osdev* \
+ 	| osf* \
+ 	| oskit* \
+ 	| osx* \
+--- a/bfd/config.bfd
++++ b/bfd/config.bfd
+@@ -247,6 +247,11 @@
+     targ_selvecs="aarch64_elf64_be_vec aarch64_elf32_le_vec aarch64_elf32_be_vec arm_elf32_le_vec arm_elf32_be_vec aarch64_pei_le_vec aarch64_pe_le_vec"
+     want64=true
+     ;;
++  aarch64-*-osdev*)
++    targ_defvec=aarch64_elf64_le_vec
++    targ_selvecs="aarch64_elf64_be_vec aarch64_elf32_le_vec aarch64_elf32_be_vec arm_elf32_le_vec arm_elf32_be_vec"
++    want64=true
++    ;;
+   aarch64-*-pe* | aarch64-*-mingw*)
+     targ_defvec=aarch64_pe_le_vec
+     targ_selvecs="aarch64_pe_le_vec aarch64_pei_le_vec aarch64_elf64_le_vec aarch64_elf64_be_vec aarch64_elf32_le_vec aarch64_elf32_be_vec arm_elf32_le_vec arm_elf32_be_vec pdb_vec"
+--- a/gas/configure.tgt
++++ b/gas/configure.tgt
+@@ -130,6 +130,7 @@
+   aarch64*-*-fuchsia*)			fmt=elf;;
+   aarch64*-*-haiku*)			fmt=elf em=haiku ;;
+   aarch64*-*-genode*)			fmt=elf;;
++  aarch64*-*-osdev*)			fmt=elf;;
+   aarch64*-*-linux*)			fmt=elf em=linux
+     case ${cpu}-${os} in
+       aarch64*-linux-gnu_ilp32)		arch=aarch64:32 ;;
+--- a/ld/configure.tgt
++++ b/ld/configure.tgt
+@@ -91,6 +91,10 @@
+ aarch64-*-cloudabi*)	targ_emul=aarch64cloudabi
+ 			targ_extra_emuls=aarch64cloudabib
+ 			;;
++aarch64-*-osdev*)	targ_emul=aarch64elf
++			targ_extra_emuls="aarch64elf32 aarch64elf32b aarch64elfb armelf armelfb"
++			targ_extra_libpath="aarch64elf"
++			;;
+ aarch64-*-freebsd*)	targ_emul=aarch64fbsd
+ 			targ_extra_emuls="aarch64fbsdb aarch64elf"
+ 			;;
+--- a/libiberty/getopt.c
++++ b/libiberty/getopt.c
+@@ -52,6 +52,11 @@
+ # endif
+ #endif
+ 
++/* osdev libc (chapter 131e): suppress userspace/libc/stdlib.h's
++   static optarg/optind/optopt/opterr/getopt in this one TU so
++   libiberty's externs link cleanly with getopt1.c's
++   _getopt_internal call.  */
++#define OSDEV_LIBC_NO_GETOPT
+ #ifndef ELIDE_CODE
+ 
+ 
+--- a/libiberty/lrealpath.c
++++ b/libiberty/lrealpath.c
+@@ -303,4 +303,33 @@
+     return res;
+   }
+ #endif // _WIN32
++
++  /* osdev (chapter 131f): no realpath / canonicalize_file_name /
++     PATH_MAX, no Windows — all four arms above are #if'd out for
++     our freestanding cross-build, so control falls off the end.
++     Falling off a non-void function is UB; on AArch64 it returns
++     whatever x0 happens to hold, which is the input `filename`
++     pointer.  Callers in ld/bfd treat the result as malloc'd
++     memory and free() it, corrupting whatever the input pointed
++     at.
++
++     Also: strdup() resolves to userspace/libc/cstring.c's global
++     export, which uses cstring.c's own private free-list head.
++     That head has never been touched in this process, and its
++     first sbrk() backed bump path happens to mis-interact with
++     the static-inline malloc.h copies that every libiberty TU
++     gets — so strdup() reliably returns NULL here even though
++     the heap is fine.  Bypass strdup and call malloc directly
++     (which resolves to lrealpath.o's local static-inline copy,
++     same heap shape as every other libiberty TU). */
++  if (!filename) return (char *)0;
++  {
++    extern size_t strlen (const char *);
++    extern void *malloc (size_t);
++    size_t n = strlen (filename) + 1;
++    char *r = (char *) malloc (n);
++    if (!r) return (char *)0;
++    for (size_t i = 0; i < n; i++) r[i] = filename[i];
++    return r;
++  }
+ }
+

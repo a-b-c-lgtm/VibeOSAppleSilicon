@@ -135,6 +135,28 @@ static uint32_t         g_next_z      = 1;
 static uint32_t         g_next_cascade = 0;
 static int32_t          g_focus_id    = -1;
 
+/* Per-key held-state for the currently focused window: 1 if the
+ * key has been delivered as GUI_EVENT_KEY but no matching
+ * GUI_EVENT_KEY_UP has been delivered yet.  Indexed by GUI key
+ * code, so ASCII 0..255 share the table with the GUI_KEY_*
+ * extended codes (0x101..0x108).  Used for two things:
+ *
+ *   1. Drop spurious / duplicate releases — wm_keyboard_release
+ *      returns immediately if g_keys_held[key] is 0, so a release
+ *      that arrives after focus has already moved doesn't show up
+ *      as a phantom UP in the new focus's ring.
+ *   2. Synthesise releases on focus change so the OLD focused
+ *      window sees a clean UP for every key still down.  Without
+ *      this, an app like Doom that maintains gamekeydown[] would
+ *      have a stuck "walking forward" key the moment the user
+ *      alt-tabbed or clicked another window mid-walk.
+ *
+ * The table is cleared whenever focus shifts, so it always
+ * reflects the held state for the *current* g_focus_id and nothing
+ * else.  Size 0x110 covers ASCII + the GUI_KEY_* range with a
+ * little headroom; deliver_key range-checks before indexing. */
+static uint8_t          g_keys_held[0x110];
+
 /* ---- mouse / pointer state (milestone 41) ---- */
 static int32_t  g_pointer_x  = -1;          /* -1 = uninitialised */
 static int32_t  g_pointer_y  = -1;
@@ -248,6 +270,7 @@ static int ring_coalesce_resize(struct gui_event_ring *r,
 /* Forward-decl: build a GUI_EVENT_KEY and push it into the focused
  * window's ring.  `key` is either a printable byte (0..255) or one
  * of the GUI_KEY_* extended codes. */
+static struct wm_window *win_by_id(int32_t id);
 static int deliver_key(struct wm_window *w, uint32_t key)
 {
     struct gui_event ev = (struct gui_event){
@@ -257,7 +280,49 @@ static int deliver_key(struct wm_window *w, uint32_t key)
         .arg1 = 0, .arg2 = 0, .arg3 = 0,
     };
     ring_push(&w->events, &ev);
+    /* Track held-state so wm_keyboard_release can pair UP with
+     * DOWN, and so the focus-change synthesiser can flush stuck
+     * keys to the old window.  Auto-repeat (virtio_input delivers
+     * KEY_VAL_REPEAT as another deliver_key call) just keeps the
+     * bit set; it was already 1. */
+    if (key < (uint32_t)(sizeof g_keys_held))
+        g_keys_held[key] = 1;
     return 1;
+}
+
+/* Push a GUI_EVENT_KEY_UP for every key currently marked held to
+ * `w`'s event ring, then clear the held-state table.  Used by
+ * set_focus() so the OLD focused window sees a release for every
+ * key it ever saw a press for before focus moves away.  If `w` is
+ * NULL (the old focus was already destroyed), just clear the
+ * table — there's nothing to release to. */
+static void synthesize_releases_to(struct wm_window *w)
+{
+    for (uint32_t k = 0; k < (uint32_t)(sizeof g_keys_held); k++) {
+        if (!g_keys_held[k]) continue;
+        g_keys_held[k] = 0;
+        if (w) {
+            struct gui_event ev = (struct gui_event){
+                .type = GUI_EVENT_KEY_UP,
+                .window_id = w->id,
+                .arg0 = k,
+                .arg1 = 0, .arg2 = 0, .arg3 = 0,
+            };
+            ring_push(&w->events, &ev);
+        }
+    }
+}
+
+/* All focus-id transitions funnel through here so a single place is
+ * responsible for flushing stuck keys to the previously-focused
+ * window.  No-op when new_id == g_focus_id (so repeated raises of
+ * the same window don't generate spurious UPs). */
+static void set_focus(int32_t new_id)
+{
+    if (new_id == g_focus_id) return;
+    if (g_focus_id >= 0)
+        synthesize_releases_to(win_by_id(g_focus_id));
+    g_focus_id = new_id;
 }
 
 /* ---- color helpers ---- */
@@ -476,6 +541,25 @@ void wm_flush_pending_keys(void)
      * bare ESC, matching what GNU readline does on a CSI timeout. */
     (void)prev_state;
     deliver_key(w, 0x1B);
+}
+
+int wm_keyboard_release(uint32_t key)
+{
+    if (g_focus_id < 0) return 0;
+    if (key < (uint32_t)(sizeof g_keys_held)) {
+        if (!g_keys_held[key]) return 0;   /* drop spurious release */
+        g_keys_held[key] = 0;
+    }
+    struct wm_window *w = win_by_id(g_focus_id);
+    if (!w) return 0;
+    struct gui_event ev = (struct gui_event){
+        .type = GUI_EVENT_KEY_UP,
+        .window_id = w->id,
+        .arg0 = key,
+        .arg1 = 0, .arg2 = 0, .arg3 = 0,
+    };
+    ring_push(&w->events, &ev);
+    return 1;
 }
 
 /* ---- pointer input ---- */
@@ -794,7 +878,7 @@ void wm_pointer_button(uint32_t button, int down)
         if (!(w->flags & GUI_WIN_FLAG_ALWAYS_ON_TOP)) {
             w->z = ++g_next_z;
         }
-        g_focus_id = w->id;
+        set_focus(w->id);
 
         switch (zone) {
         case 'C': {
@@ -979,7 +1063,7 @@ long wm_create_window_ex(uint64_t pid, uint32_t w, uint32_t h,
      * launched.  Same logic for pin-to-bottom (the wallpaper). */
     if (!(flags & (GUI_WIN_FLAG_ALWAYS_ON_TOP |
                    GUI_WIN_FLAG_PIN_TO_BOTTOM))) {
-        g_focus_id = id;
+        set_focus(id);
     }
     compose_all();
     serial_puts("[wm] window created id=");
@@ -1022,7 +1106,14 @@ long wm_destroy_window(uint64_t pid, int32_t id)
     kfree(w->pixels);
     w->pixels = NULL;
     w->in_use = 0;
-    if (g_focus_id  == id) g_focus_id  = topmost_id();
+    /* The window we're destroying is gone, so synthesising releases
+     * to it would just push into a dead ring.  Clear the held-keys
+     * table directly so the next focused window starts clean. */
+    if (g_focus_id == id) {
+        for (uint32_t k = 0; k < (uint32_t)(sizeof g_keys_held); k++)
+            g_keys_held[k] = 0;
+        g_focus_id = topmost_id();
+    }
     if (g_drag_id   == id) g_drag_id   = -1;
     if (g_resize_id == id) g_resize_id = -1;
     compose_all();
@@ -1059,8 +1150,11 @@ void wm_destroy_owner(uint64_t pid)
         }
     }
     if (!any) return;
-    if (g_focus_id >= 0 && !win_by_id(g_focus_id))
+    if (g_focus_id >= 0 && !win_by_id(g_focus_id)) {
+        for (uint32_t k = 0; k < (uint32_t)(sizeof g_keys_held); k++)
+            g_keys_held[k] = 0;
         g_focus_id = topmost_id();
+    }
     compose_all();
 }
 
@@ -1279,7 +1373,7 @@ long wm_raise_window(uint64_t pid, int32_t id)
     if (!(w->flags & GUI_WIN_FLAG_ALWAYS_ON_TOP)) {
         w->z = ++g_next_z;
     }
-    g_focus_id = w->id;
+    set_focus(w->id);
     compose_all();
     return 0;
 }
@@ -1317,7 +1411,7 @@ long wm_set_minimized(uint64_t pid, int32_t id, int on)
                     best_z = o->z;
                 }
             }
-            g_focus_id = (best >= 0) ? g_wins[best].id : -1;
+            set_focus((best >= 0) ? g_wins[best].id : -1);
         }
     } else {
         if (!w->minimized) return 0;    /* idempotent */
@@ -1328,7 +1422,7 @@ long wm_set_minimized(uint64_t pid, int32_t id, int on)
         if (!(w->flags & GUI_WIN_FLAG_ALWAYS_ON_TOP)) {
             w->z = ++g_next_z;
         }
-        g_focus_id = w->id;
+        set_focus(w->id);
     }
     compose_all();
     return 0;

@@ -375,7 +375,7 @@ struct exception_frame;
  * Allocates a thread struct + 16 KiB kernel stack, copies all
  * inheritable state (cwd, env, args, fd table) from `parent`,
  * sets parent_id = parent->id, attaches `child_as`, and lays
- * out an initial 288-byte cswitch_to-style exception frame at
+ * out an initial 816-byte cswitch_to-style exception frame at
  * the top of the new kernel stack such that:
  *
  *   - On first cswitch_to into the child, the frame restores

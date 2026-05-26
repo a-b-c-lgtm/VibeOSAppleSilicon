@@ -33,6 +33,10 @@
 #include <stdint.h>
 #include "syscall.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef void (*sig_handler_t)(int signo);
 
 /* Default disposition: terminate with exit code 128 + signum. */
@@ -92,5 +96,54 @@ struct sigframe {
     uint32_t pad;
     uint64_t pad2;     /* round to 288 — must match kernel sigframe_k */
 };
+
+/* ── Chapter 128b — raise() / abort() ────────────────────────
+ *
+ * Two small C99 conveniences built on top of the existing
+ * kill() + getpid() syscalls.  Real upstream code (Doom's
+ * I_Quit, BearSSL's selftests, every libc-using test harness)
+ * calls these by name; without them every port has to write a
+ * three-line shim.  With them, the port just compiles.
+ */
+
+/* raise(sig) -> int
+ *
+ * Send `sig` to the calling thread.  Returns 0 on success or
+ * -1 on error (mirrors C99 7.14.2.1).  Implemented as a
+ * straight-through kill(getpid(), sig); the kernel does the
+ * actual queueing and delivery on the next syscall return.
+ */
+static inline int raise(int sig)
+{
+    return (kill(getpid(), sig) == 0) ? 0 : -1;
+}
+
+/* abort(void) -> __attribute__((noreturn))
+ *
+ * Raise SIGABRT against the calling thread, then -- in case the
+ * caller had SIGABRT ignored or caught with a returning handler
+ * -- restore SIG_DFL and raise SIGABRT again, then call exit().
+ * C99 7.20.4.1 requires abort() never to return; this three-
+ * step dance is the standard implementation idiom (also used
+ * by glibc, musl, and BSD libc).
+ *
+ * The exit() at the end is the belt-and-braces backstop: even
+ * if SIG_DFL somehow doesn't terminate (it does — kernel
+ * default action is "exit with 128+sig"), we still leave with
+ * 128 + SIGABRT so a waiting parent's waitpid() sees something
+ * sensible.
+ */
+__attribute__((noreturn))
+static inline void abort(void)
+{
+    raise(SIGABRT);
+    sigaction(SIGABRT, SIG_DFL);
+    raise(SIGABRT);
+    exit(128 + SIGABRT);
+}
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* USERSPACE_LIBC_SIGNAL_H */

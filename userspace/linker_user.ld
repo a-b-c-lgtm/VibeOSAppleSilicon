@@ -30,9 +30,36 @@ SECTIONS
         *(.rodata .rodata.*)
     } :load
 
+    /* chapter 120: C-style global constructors / destructors.
+     * Anything tagged __attribute__((constructor)) lands in
+     * .init_array; crt0's `_user_start` walks the array
+     * between argv setup and `bl main`.  __attribute__((destructor))
+     * lands in .fini_array; __cxa_finalize() walks it on exit. */
+    .init_array : ALIGN(8) {
+        PROVIDE_HIDDEN(__init_array_start = .);
+        KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+        KEEP(*(.init_array .ctors))
+        PROVIDE_HIDDEN(__init_array_end = .);
+    } :load
+
+    .fini_array : ALIGN(8) {
+        PROVIDE_HIDDEN(__fini_array_start = .);
+        KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
+        KEEP(*(.fini_array .dtors))
+        PROVIDE_HIDDEN(__fini_array_end = .);
+    } :load
+
     .data : ALIGN(8) {
         *(.data .data.*)
     } :load
+
+    /* chapter 120: the linker generates .got / .got.plt / .rela.got
+     * internally when a weak undefined-or-defined symbol appears
+     * via a CALL26 reloc (our __cxa_finalize default in crt0).
+     * Place them inside the loadable image so --orphan-handling=error
+     * is satisfied; in practice they are usually empty. */
+    .got       : ALIGN(8) { *(.got) }                :load
+    .got.plt   : ALIGN(8) { *(.got.plt) }            :load
 
     /* .bss / COMMON go in their own NOBITS segment so static
      * arrays (e.g. paint's 600x400 canvas) don't bloat the on-
@@ -74,6 +101,7 @@ SECTIONS
         *(.rela.text*)
         *(.rela.data*)
         *(.rela.dyn)
+        *(.rela.got)
         *(.note .note.*)
         *(.comment)
         *(.eh_frame .eh_frame.*)

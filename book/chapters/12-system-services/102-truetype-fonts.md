@@ -519,10 +519,8 @@ them; it only causes trouble in string literals that flow into
 `gui_draw_text` or `printf` to a GUI terminal.
 
 The fix is mechanical: use `--` or `-` instead of `\u2014`,
-straight `"..."` instead of curly `"..."`. The note in
-[/memories/repo/chapter-102-ttf-ascii-only.md](../../../memories/repo/chapter-102-ttf-ascii-only.md)
-records the rule and lists where it bit us so future contributors
-don't reintroduce non-ASCII in rendered strings.
+straight `"..."` instead of curly `"..."`. The rule: keep
+rendered strings ASCII-only until real Unicode support lands.
 
 If/when we want real Unicode in rendered text the work is fairly
 contained: decode UTF-8 in `cmap_lookup`'s caller, walk all
@@ -533,9 +531,9 @@ chapter; for now, ASCII-only.
 
 ## Files changed
 
-* [kernel/device/ttf.h](../../../kernel/device/ttf.h) -- public
+* [userspace/fontd/ttf.h](../../../userspace/fontd/ttf.h) -- public
   `ttf_init_default`, `ttf_get_glyph` declarations.
-* [kernel/device/ttf.c](../../../kernel/device/ttf.c) -- the
+* [userspace/fontd/ttf.c](../../../userspace/fontd/ttf.c) -- the
   parser, flattener, rasteriser, cache; 888 lines.
 * [kernel/device/font.h](../../../kernel/device/font.h) --
   `enum bitmap_font_kind`, `struct glyph_info`, the kind-aware

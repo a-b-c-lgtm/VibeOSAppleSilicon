@@ -1,11 +1,25 @@
-# Chapter 128 — PLAN: Real GCC on the OS, and a playable Doom
+# Chapter 128 — Real GCC on the OS, and a playable Doom
 
-> **Status: PLAN ONLY.** This chapter is the design contract
-> for Part XVIII. Implementation lands in chapters 128a–133f.
-> The plan is written first because Part XVIII makes several
-> load-bearing version and sequencing choices that are
-> expensive to undo, and the reader (and the author) should be
-> able to redirect early.
+> **Milestone in this chapter:** section overview for Part XVIII
+> — the load-bearing version and sequencing decisions for the
+> whole arc, before any implementation lands.
+> **Code referenced (delivered across the section):**
+> - [userspace/libc/](../../../userspace/libc/) (the libc growth
+>   in chapters 128a–128f and 129)
+> - [vendor/binutils-2.44/](../../../vendor/binutils-2.44/) (real
+>   binutils, chapters 131a–131f)
+> - [vendor/gcc-14.2.0/](../../../vendor/gcc-14.2.0/) (real GCC,
+>   chapters 132a–132j)
+> - [vendor/doomgeneric/](../../../vendor/doomgeneric/) and
+>   [userspace/doom/](../../../userspace/doom/) (chapters 130a–c,
+>   133c–g)
+>
+> **At the end of this chapter** you will know the user-facing
+> demo Part XVIII is built around, the cross-build-and-ship
+> strategy chosen over self-bootstrapping, and the dependency
+> chain that determines the order chapters 128a through 133g
+> appear in. **No code lands in this chapter** — the
+> implementation work begins in chapter 128a.
 
 ## The goal
 
@@ -210,7 +224,7 @@ fires. Smoke test ([`scripts/test_doom_plays.py`](../../../scripts/test_doom_pla
 boots the OS, drives input, screenshots the title screen,
 asserts a known-pixel signature on the title-screen demon.
 
-> **Shipped**: chapter 130c landed with the WAD-load + render
+> **Done**: chapter 130c landed with the WAD-load + render
 > half automated (the `nonblack_pct` title-region check) and
 > the menu/input/motion half kept as a documented manual
 > smoke procedure. QMP-injected key events don't satisfy the
@@ -233,7 +247,7 @@ least one piece of real software.
 `ld/emulparams/aarch64osdev.sh`). Cross-build
 `aarch64-osdev-as` and `aarch64-osdev-ld` on the host.
 
-> **Shipped**: see
+> **Done**: see
 > [131a — Binutils with an `aarch64-osdev` target](131a-binutils-target.md).
 > Implementation note: no `ld/emulparams/aarch64osdev.sh`
 > was needed — reused the existing `aarch64elf` emulation
@@ -252,7 +266,7 @@ libc doesn't provide (the long tail). Iterate: run, observe
 missing symbol, add to libc, repeat. This chapter (and the
 two that follow) is the bulk of the real work in Phase 2.
 
-> **Shipped (re-scoped).** The original 131b framing —
+> **Done (re-scoped).** The original 131b framing —
 > "cross-build binutils as for the guest, iterate on
 > libc gaps" — depends on having a target compiler that
 > can be handed to binutils's autoconf with
@@ -407,7 +421,7 @@ two that follow) is the bulk of the real work in Phase 2.
 > fields rippling into a couple of libiberty TU sizes).
 > See `131e-binutils-ld-in-guest.md`.
 
-**131f. Replace `/bin/as` and `/bin/ld`** *(shipped, alongside 131e)* —
+**131f. Replace `/bin/as` and `/bin/ld`** *(done, alongside 131e)* —
 the OSFS entries `/bin/as` and `/bin/ld` now point at
 `build/userspace/binutils/{as,ld}.stripped.elf` (the
 binutils 2.44 `as-new`/`ld-new` built by 131e, stripped to
@@ -459,7 +473,7 @@ binutils did.
 > escape-hatch flags).  See chapters 132e, 132f, and 132g
 > for full details.
 
-**132e. GMP/MPFR/MPC for the guest sysroot** *(shipped)* —
+**132e. GMP/MPFR/MPC for the guest sysroot** *(done)* —
 cross-build the three math libraries under
 `--host=aarch64-osdev` so guest-side gcc has its
 arithmetic-precision link inputs.  Three vendor patches
@@ -467,7 +481,7 @@ arithmetic-precision link inputs.  Three vendor patches
 patch-apply loop in `scripts/fetch_gcc_prereqs.sh`.  Phase
 2 (xgcc/cc1/cpp guest cross-build) follows.
 
-**132f. `/bin/gcc` works on the OS** *(shipped)* —
+**132f. `/bin/gcc` works on the OS** *(done)* —
 the first end-to-end use of guest-side `/bin/gcc`: a
 trivial `hello.c` compiled, assembled, linked, and run
 inside the OS, with `exit(42)` coming back through the
@@ -478,7 +492,7 @@ a 16 KiB stack frame in `_env_init`; a stale-cc1 rebuild
 gotcha; and the sysroot-include red herring) — see the
 chapter for the inline-svc bisection technique.
 
-**132g. `gcc hello.c -o hello` with default specs** *(shipped)*
+**132g. `gcc hello.c -o hello` with default specs** *(done)*
 — `int main(void) { return 7; }` compiled, linked, and run
 inside the OS using the bare command `/bin/gcc /tmp/hello2.c
 -o /tmp/hello2` (no `-nostdlib -nostdinc -e _start` escape
@@ -492,7 +506,7 @@ the `gencheck.o` rebuild gotcha that nearly ate the
 chapter.
 
 **132h. `/bin/gcc` builds a medium-sized real program**
-*(shipped)* — `userspace/bf/bf.c` (~210 LOC, brainfuck
+*(done)* — `userspace/bf/bf.c` (~210 LOC, brainfuck
 interpreter) is shipped on the OSFS image alongside the
 host-built `/bin/bf` binary.  The in-guest GCC compiles
 `bf.c` with the bare command `/bin/gcc /bin/bf.c -o
@@ -510,7 +524,7 @@ for the header-shipping discussion and the host/guest
 link-line symmetry technique.
 
 **132i. `#include <stdio.h>` works in the guest**
-*(shipped)* — OSFS-1's directory cap doubled (128 -> 256;
+*(done)* — OSFS-1's directory cap doubled (128 -> 256;
 9 new directory sectors).  24 user-facing libc headers
 from `userspace/libc/*.h` are shipped onto `/bin`, plus
 16 of GCC's own freestanding headers (`stdint.h`,
@@ -534,7 +548,7 @@ breaks on `<>`" trap, and the GCC-freestanding-headers
 discovery.
 
 **132j. `sys/` headers without a hierarchical FS**
-*(shipped)* — kept OSFS-1's flat directory and shipped
+*(done)* — kept OSFS-1's flat directory and shipped
 seven new dirents literally named `sys/stat.h`,
 `sys/types.h`, `sys/time.h`, `sys/times.h`, `sys/wait.h`,
 `sys/param.h`, and `unistd.h`.  The kernel's path
@@ -551,7 +565,7 @@ future `OSFS-2`.
 
 ### Sub-part C: the rest of the build chain
 
-**133a. `/bin/tar`** *(shipped)* — read-mode ustar reader
+**133a. `/bin/tar`** *(done)* — read-mode ustar reader
 (`tar tf` + `tar xf [-C dir]`), ~380 LoC in
 `userspace/tar/tar.c`. Gzip was skipped entirely: the
 tarball is produced at build time by `scripts/mktar.py`
@@ -568,7 +582,7 @@ write-up in
 [133a — `/bin/tar` (ustar reader)](133a-tar.md).
 
 **133b. `/bin/make` audit against Doom's real Makefile**
-*(shipped)* — chapter 126's 351-LoC `/bin/make` handled
+*(done)* — chapter 126's 351-LoC `/bin/make` handled
 only `target: deps + recipe`. 133b expands it to ~720 LoC,
 adding `VAR = value`, `$(VAR)` / `${VAR}` / `$$`
 expansion, the automatic vars `$@` / `$<` / `$^`,
@@ -585,7 +599,7 @@ write-up in
 
 ### Sub-part D: end-to-end
 
-**133c. Rebuild Doom in-guest, pilot** *(shipped)* —
+**133c. Rebuild Doom in-guest, pilot** *(done)* —
 proves the full toolchain chain
 (`/bin/tar` → `/bin/make` → `/bin/gcc` → `/bin/cc1` /
 `/bin/as` / `/bin/xgcc`) compiles real upstream
@@ -603,7 +617,7 @@ chapter) and one tooling gap (`/bin/ls` only honours
 `argv[1]` — worked around in the test). Full write-up in
 [133c — in-guest Doom rebuild pilot](133c-doom-pilot.md).
 
-**133d. Rebuild Doom in-guest, full** *(shipped)* —
+**133d. Rebuild Doom in-guest, full** *(done)* —
 scaled OBJS from 3 to the canonical **77 files** (all of
 `vendor/doomgeneric/src/*.c` minus `doomgeneric_xlib.c`
 and the other host-backend variants). `/bin/make
@@ -623,7 +637,7 @@ prefix in failure assertions. Full write-up in
 [133d — in-guest Doom rebuild, full vendor compile](133d-full-doom-compile.md).
 Still .o-only — link comes in 133e.
 
-**133e. Link `doomgeneric.elf` in-guest** *(shipped)* —
+**133e. Link `doomgeneric.elf` in-guest** *(done)* —
 bundled the osdev runtime (`crt0.o`, `doomgeneric_osdev.o`,
 `setjmp.o`, `cstring.o`, `wmclient.o`) into
 `/bin/libdoomrt.a` (198 KB) instead of shipping
@@ -660,7 +674,7 @@ bare four-column output instead. The nine-script in-guest
 toolchain sweep is now 79/0. Full write-up in
 [133e — in-guest Doom link](133e-link-doomgeneric-in-guest.md).
 
-**133f. Rebuilt Doom plays** *(shipped — closes Part XVIII)* —
+**133f. Rebuilt Doom plays** *(done — closes Part XVIII)* —
 the in-guest-linked `/data/doomgeneric.elf` (chapter 133e)
 runs and renders Doom's title screen on the wm framebuffer
 on first attempt; the test passes without needing any
@@ -713,8 +727,7 @@ implementation + debugging + writeup each.
 The two biggest unknowns:
 
 1. **FP-at-EL0 (chapter 129)** has subtle interactions
-   with the context switch (the SP_EL0 handling note in
-   `/memories/repo/aarch64-sp-el0-context-switch.md`, the
+   with the context switch (SP_EL0 handling, the
    IRQ-window discipline, SMP). Could blow up into 3
    sub-chapters.
 2. **The libc-gap long tail (chapters 131b, 132d)** is

@@ -1,10 +1,18 @@
 # Chapter 73 — fork on AArch64: the address-space copy
 
-**Status:** Implemented (milestone 65 / 2025-Q4).
-
-This chapter implements `fork()` as an eager full-copy of the
-parent's address space. It is deliberately the slow,
-unambiguous version; chapter 75 retrofits copy-on-write.
+> **Milestone in this chapter:** 65 — `fork()` lands.
+> **Code referenced:**
+> - [kernel/arch/address_space.c](../../../kernel/arch/address_space.c)
+>   (`address_space_clone`)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_FORK` dispatch)
+>
+> **At the end of this chapter** you will have a `fork()` syscall
+> that returns 0 in the child and the child pid in the parent, an
+> address-space cloner that eagerly memcpy's every populated user
+> page, and a `fork_test` user program that prints from both halves.
+> The implementation is deliberately the slow, unambiguous version;
+> chapter 75 retrofits copy-on-write.
 
 ## What this chapter adds
 
@@ -86,20 +94,26 @@ trap-frame layouts coexist in the kernel:
 - `cswitch_to` in [kernel/arch/context_switch.s](../../../kernel/arch/context_switch.s)
   uses **288 bytes** with SP_EL0 at offset 272.
 
+(Chapter 129 later grows the `cswitch_to` frame to 816 bytes
+to save FP/SIMD registers q0..q31 + fpsr/fpcr. The fork logic
+described here still copies only the 288-byte GPR portion --
+the FP/SIMD slots are initialised by `cswitch_to`'s
+first-run path, not the fork copy.)
+
 `sys_fork` runs from the SVC path (272-byte frame), but the
 child's first scheduled run goes through `cswitch_to`
-(expects 288 bytes). So we manually build the 288-byte
-variant on the child's kstack: copy gpr[0..30] from the
-parent frame, force `gpr[0] = 0` (the child's return value),
-then write ELR_EL1, SPSR_EL1, and SP_EL0 at offsets 256, 264,
-272.
+(expects 288 bytes). So `sys_fork` manually builds the
+288-byte variant on the child's kstack: copy gpr[0..30] from
+the parent frame, force `gpr[0] = 0` (the child's return
+value), then write ELR_EL1, SPSR_EL1, and SP_EL0 at offsets
+256, 264, 272.
 
 ### The SP_EL0 snapshot must precede kmalloc
 
-We captured SP_EL0 with an inline `mrs` early in `sys_fork`,
+SP_EL0 is captured with an inline `mrs` early in `sys_fork`,
 *before* any kmalloc. Reason: kmalloc can yield under heap
-pressure, and we want the user-stack pointer the parent had
-at the SVC instant — not whatever value SP_EL0 holds after a
+pressure, and the user-stack pointer we want is the parent's
+at the SVC instant -- not whatever value SP_EL0 holds after a
 kernel-side context switch round-trip. Reading the value
 last would still work in this single-CPU/no-preempt build
 (SP_EL0 is restored when the parent thread resumes), but the

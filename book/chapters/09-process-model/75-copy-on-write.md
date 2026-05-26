@@ -1,9 +1,18 @@
 # Chapter 75 — Copy-on-write: making fork cheap
 
-**Status:** Implemented. Eager-copy fork from chapter 73
-replaced with a lazy share-on-fork / copy-on-write path; all
-chapter-73-78 regression suites still pass and a new
-`scripts/test_cow.py` covers the new behaviour.
+> **Milestone in this chapter:** replace the chapter-73 eager-copy
+> fork with a lazy share-on-fork / copy-on-write path.
+> **Code referenced:**
+> - [kernel/arch/address_space.c](../../../kernel/arch/address_space.c)
+>   (page-table write-protect and COW fault handler)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`sys_fork`)
+> - [scripts/test_cow.py](../../../scripts/test_cow.py)
+>
+> **At the end of this chapter** you will have a fork that
+> shares physical pages between parent and child until one
+> writes, with every chapter-73–78 regression suite still
+> green and a new `test_cow.py` covering the new behaviour.
 
 Eager-copy fork (chapter 73) costs O(allocated pages) per
 fork. With a 1 MiB heap and a typical shell that forks once

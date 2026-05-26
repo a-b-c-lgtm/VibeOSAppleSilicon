@@ -38,7 +38,7 @@ that satisfies the chapter-122 cross-toolchain contract)
 is a separate, multi-chapter undertaking that Part XVII
 does not take on.
 
-## What shipped
+## What this chapter adds
 
 | File | Lines | Role |
 | --- | --- | --- |

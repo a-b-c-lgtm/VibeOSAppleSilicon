@@ -339,11 +339,11 @@ kind, name)` records consulted by the report function — so the
 fault handler can name *every* intentional guard
 (stack/heap/library/TLS) with a single registration call. The
 SW bit by itself only says "I'm a guard"; a table would say
-"I'm the stack guard for thread `notepad`." We didn't ship
-that yet because we only have one guard. When we have three,
-it'll be worth the bookkeeping.
+"I'm the stack guard for thread `notepad`." This chapter
+doesn't add that table yet because we only have one guard.
+When we have three, it'll be worth the bookkeeping.
 
-## Why we didn't ship "bump on overflow"
+## Why this chapter doesn't add "bump on overflow"
 
 A tempting feature is *automatic stack growth*: detect a guard
 fault, allocate a new page, install it where the guard used to

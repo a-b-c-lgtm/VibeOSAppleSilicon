@@ -1,21 +1,29 @@
-# Chapter 115 — PLAN: A C compiler that runs on the OS
+# Chapter 115 — A C compiler that runs on the OS
 
-> **Status: PLAN (now superseded by the chapters that
-> follow).** This chapter laid out the strategy for the
-> whole of Part XVII before any of the implementation
-> work landed. The plan it describes is the one the
-> book actually executed; the chapters that follow
-> document what was built.
+> **Milestone in this chapter:** strategy overview for Part XVII.
+> **Code referenced (delivered across the section):**
+> - [userspace/cc/cc.c](../../../userspace/cc/cc.c)
+> - [userspace/as/as.c](../../../userspace/as/as.c)
+> - [userspace/ld/ld.c](../../../userspace/ld/ld.c),
+>   [userspace/ar/ar.c](../../../userspace/ar/ar.c)
+> - [userspace/libc/](../../../userspace/libc/) (POSIX-ish growth)
+>
+> **At the end of this chapter** you will understand the four moving
+> pieces (libc, assembler, linker, compiler), the order in which the
+> rest of Part XVII builds them, and why the section ships a tiny
+> from-scratch compiler instead of porting GCC. **No code lands in
+> this chapter.** The actual implementations land in chapters 116
+> through 127, and a real GCC follows in Part XVIII.
 
 ## Why this section exists
 
-The book has built every binary in the disk image with a
-macOS-hosted aarch64 cross-toolchain (`aarch64-elf-gcc`,
-`aarch64-elf-as`, `aarch64-elf-ld`, plus our own libc).
-That works, and it is how the book has gotten this far,
-but it leaves a gap between two halves of an operating
-system that an early-1970s Unix would have closed years
-ago: **a program written and run on the OS itself.**
+Every binary on the disk image so far has been built with a
+macOS-hosted aarch64 cross toolchain (`aarch64-elf-gcc`,
+`aarch64-elf-as`, `aarch64-elf-ld`, plus the in-tree libc). That
+works, and it is how the book has gotten this far, but it leaves a
+gap between two halves of an operating system that an early-1970s
+Unix would have closed years ago: **a program written and run on
+the OS itself.**
 
 Today the workflow for adding a feature is:
 
@@ -24,16 +32,15 @@ Today the workflow for adding a feature is:
 3. Boot QEMU, watch.
 4. Repeat.
 
-The OS is a passenger in its own development. This
-section makes the OS a participant: source files live
-in `/data/src/`, a compiler lives in `/bin/cc`, and the
-loop is `vi hello.c; cc hello.c -o /tmp/hello; /tmp/hello`
-— inside the running guest, with no host involvement.
+The OS is a passenger in its own development. This section makes
+the OS a participant: source files live in `/data/src/`, a compiler
+lives in `/bin/cc`, and the loop is
+`vi hello.c; cc hello.c -o /tmp/hello; /tmp/hello` — inside the
+running guest, with no host involvement.
 
 ## What "native compiler" actually means here
 
-There are four moving pieces. The book builds them in
-this order:
+Four moving pieces. The book builds them in this order:
 
 | Piece | Today              | After Part XVII             |
 |-------|--------------------|------------------------------|
@@ -42,22 +49,19 @@ this order:
 | ld    | host `aarch64-elf-ld` | `/bin/ld` + `/bin/ar` (subset) |
 | cc    | host `aarch64-elf-gcc`| `/bin/cc` (~1000 LOC, tiny subset of C) |
 
-A C compiler is the deepest of those, and the only one
-that lights up the workflow. The other three are
-prerequisites — even our small compiler has to call out
-to an assembler and a linker.
+A C compiler is the deepest of those, and the only one that lights
+up the workflow. The other three are prerequisites — even a small
+compiler has to call out to an assembler and a linker.
 
 ## The choice: build a tiny compiler, not port a big one
 
-There are two well-trodden roads into "the OS hosts a
-compiler":
+There are two well-trodden roads into "the OS hosts a compiler":
 
-1. **Port a real compiler.** GCC is ~1.5 MLOC, builds
-   for hours even cross, and pulls in C++ for its host
-   build above gcc-4.7. TinyCC is ~25 KLOC with its own
-   built-in assembler and linker. Either port is months
-   of work mostly spent in libc gap-filling and configure
-   archaeology.
+1. **Port a real compiler.** GCC is ~1.5 MLOC, builds for hours
+   even cross, and pulls in C++ for its host build above gcc-4.7.
+   TinyCC is ~25 KLOC with its own built-in assembler and linker.
+   Either port is months of work mostly spent in libc gap-filling
+   and configure archaeology.
 2. **Write the smallest compiler that closes the loop.**
    A pedagogical tool: enough C to demonstrate that
    `/bin/as` + `/bin/ld` + a libc actually compose, and

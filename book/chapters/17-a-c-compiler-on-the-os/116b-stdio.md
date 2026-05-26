@@ -1,9 +1,22 @@
 # Chapter 116b — `FILE *`, fopen, fread, fwrite, fseek, fprintf
 
-**Status:** Shipped. The buffered stdio layer that everything from
-chapter 117 onward assumes is now in place. Substep of
-[Chapter 116](116-libc-stdio-and-env.md); follows
-[Chapter 116a](116a-errno.md).
+> **Milestone in this chapter:** add the buffered stdio layer
+> every libc consumer from chapter 117 onward assumes is in
+> place.
+> **Code referenced:**
+> - [userspace/libc/stdio.h](../../../userspace/libc/stdio.h)
+>   (header-only `FILE *` layer)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_LSEEK = 101`)
+>
+> **At the end of this chapter** you will have `FILE`,
+> `fopen`, `fdopen`, `fclose`, `fread`, `fwrite`, `fgetc`,
+> `fputc`, `fgets`, `fputs`, `ungetc`, `fflush`, `fseek`,
+> `ftell`, `rewind`, `feof`, `ferror`, `clearerr`, `fileno`,
+> `fprintf`, `vfprintf`, `setvbuf`, and the `stdin` /
+> `stdout` / `stderr` triple. Substep of
+> [Chapter 116](116-libc-stdio-and-env.md); follows
+> [Chapter 116a](116a-errno.md).
 
 ## What this chapter ships
 
@@ -64,10 +77,10 @@ after the fact and frees the old buffer.
 ## SYS_LSEEK and the kernel side
 
 Before this chapter the only way to "seek" was to close-and-reopen
-a file. The toolchain wants real seeks — ELF object emission
+a file. The toolchain wants real seeks -- ELF object emission
 patches forward references after the section is written, and any future
 compiler port's
-own input-file reading needs `ungetc` (which I implement above the
+own input-file reading needs `ungetc` (implemented above the
 fd layer) plus `fseek` for `#line` directives.
 
 The new syscall is straightforward:
@@ -87,9 +100,9 @@ Switch on `fd_entry.kind`:
 - **`FD_CONSOLE`, `FD_PIPE_*`, `FD_SOCKET*`, `FD_PTY_*`,
   `FD_SRV_*`** — return `-ESPIPE` per POSIX.
 
-I added `#define ESPIPE 29` to `kernel/core/vfs.h` alongside the
-other Linux-numbered errnos; it was previously absent because no
-code path had needed it.
+This chapter adds `#define ESPIPE 29` to `kernel/core/vfs.h`
+alongside the other Linux-numbered errnos; it was previously
+absent because no code path had needed it.
 
 ## How `fprintf` reuses the existing formatter
 
@@ -124,8 +137,8 @@ never been atomic. Apps needing larger atomic writes should call
    `.bss` slot inherited by every thread in the same address
    space. Two threads racing in stdio will clobber each other's
    errno. Fixing this needs the chapter-91 TPIDR_EL0 dance to
-   move `__errno_value` into the TLS area, which I'll do in 116d
-   when the convention flip happens anyway.
+   move `__errno_value` into the TLS area, which chapter 116d
+   does when the convention flip happens anyway.
 
 2. **printf retargeting.** `printf` still writes straight to fd 1
    via the legacy `printf.h` path; `fprintf(stdout, ...)` goes

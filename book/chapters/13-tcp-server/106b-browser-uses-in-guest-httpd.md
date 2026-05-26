@@ -1,6 +1,17 @@
-# Chapter 106b -- Browser uses the in-guest httpd as its proxy
+# Chapter 106b — Browser uses the in-guest httpd as its proxy
 
-**Status:** Done. Milestone 97.
+> **Milestone in this chapter:** 97 — retarget the browser's
+> proxy address from the SLIRP gateway to the in-guest httpd.
+> **Code referenced:**
+> - [userspace/browser/](../../../userspace/browser/) (proxy
+>   address constants)
+> - [userspace/httpd/](../../../userspace/httpd/)
+>
+> **At the end of this chapter** you will have the browser
+> reaching its TLS bridge through `127.0.0.1/8080` instead of
+> `10.0.2.2/8080`, decoupling it from QEMU's network topology.
+> Prerequisites: chapter 106 (loopback) and chapter 106a
+> (httpd TLS bridge).
 
 This is a small chapter with a big architectural payoff.
 Before chapter 106b the browser knew that "the proxy" lives

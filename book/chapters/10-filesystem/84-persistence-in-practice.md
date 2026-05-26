@@ -149,8 +149,8 @@ static void editor_repaint_under(void *ud) {
 
 **The callback must paint into the back-buffer but must NOT
 call `gui_flush`.**  This is documented in `save_dialog.h` and
-is the source of a subtle per-keystroke-flicker bug we hit
-building this chapter.  Each frame did:
+is the source of a subtle per-keystroke-flicker bug encountered
+while building this chapter.  Each frame did:
 
 1. Dialog calls `render_under(ud)` → notepad's `render()`
    runs and **flushes**.  At this instant the back-buffer

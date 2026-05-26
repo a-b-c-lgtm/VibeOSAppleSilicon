@@ -40,13 +40,13 @@ where the obvious fix doubles the cost of every resize.
 
 ## What this chapter adds
 
-- **An intrinsic-size hook in layout** ([userspace/libc/layout.h](userspace/libc/layout.h)):
+- **An intrinsic-size hook in layout** ([userspace/libc/layout.h](../../../userspace/libc/layout.h)):
   the layout engine now calls a function pointer the browser
   installs before each pass, asking "do you already have the
   pixels for this `src`?" When the answer is yes, the `<img>`
   box is sized to the image's real dimensions; only on cache
   miss does it fall back to the 16×16 placeholder.
-- **A two-pass load in the browser** ([userspace/browser/browser.c](userspace/browser/browser.c)):
+- **A two-pass load in the browser** ([userspace/browser/browser.c](../../../userspace/browser/browser.c)):
   initial load runs layout once *without* the hook (cache is
   empty), decodes the images, then runs layout a second time
   *with* the hook (cache is hot). The second pass picks up the
@@ -66,7 +66,7 @@ where the obvious fix doubles the cost of every resize.
   PNG. Big enough that a 16×16 placeholder would show only the
   top-left quadrant, making "did the hook fire?" a binary
   pixel-count check.
-- **A new regression test** [scripts/test_browser_intrinsic_size.py](scripts/test_browser_intrinsic_size.py):
+- **A new regression test** [scripts/test_browser_intrinsic_size.py](../../../scripts/test_browser_intrinsic_size.py):
   loads a tiny HTML page whose `<img>` tag has *no* width or
   height attribute, then asserts the framebuffer contains the
   full 32×32 = 1024 pixels of each pure colour (red, green,
@@ -95,7 +95,7 @@ After this chapter the regression sweep is **54 / 54 PASS**.
 ## The bug: 16×16 placeholders for every `<img>`
 
 The layout code at the heart of the bug was a couple of lines in
-[userspace/libc/layout.h](userspace/libc/layout.h)'s `<img>`
+[userspace/libc/layout.h](../../../userspace/libc/layout.h)'s `<img>`
 handler:
 
 ```c
@@ -123,7 +123,7 @@ fetch HTML → parse → build CSS cascade → layout → decode images → pain
                                                                   | rectangle
 ```
 
-The blitter ([userspace/browser/render.c](userspace/browser/render.c)'s
+The blitter ([userspace/browser/browser.c](../../../userspace/browser/browser.c)'s
 `LAY_PAINT_IMAGE` case) faithfully crops the source pixels to
 the destination box. A 400×400 image painted into a 16×16 box
 shows the top-left 16×16 corner. For a four-quadrant test
@@ -275,8 +275,8 @@ across every layout call site.
 This is where the chapter took a left turn into much more
 interesting territory.
 
-After parts 1 and 2 the initial load was correct. But the first
-time I resized the window, every image collapsed back to 16×16.
+After parts 1 and 2 the initial load is correct. But on the
+first resize, every image collapses back to 16x16.
 
 The cause was the **parser thread** from chapter 94. It runs
 layout on CPU 1 in response to resize events:
@@ -337,8 +337,8 @@ cache. The parser doesn't run that step (image cache mutation
 must stay on the GUI thread), so the published paint buffer
 encoded every `<img>` as a placeholder rectangle.
 
-The first fix I tried was to re-run attach + paint-collect on
-the GUI thread after each parser swap:
+The first fix attempted was to re-run attach + paint-collect
+on the GUI thread after each parser swap:
 
 ```c
 /* in parser_absorb_completion, after the swap: */
@@ -469,7 +469,7 @@ pixels and 0 pure-green / pure-blue / pure-white pixels.
 Post-fix: the image renders at its true 64×64. Each quadrant
 contributes 1024 pixels of pure colour.
 
-The test [scripts/test_browser_intrinsic_size.py](scripts/test_browser_intrinsic_size.py)
+The test [scripts/test_browser_intrinsic_size.py](../../../scripts/test_browser_intrinsic_size.py)
 boots graphically, navigates to the page, screendumps the
 framebuffer, counts pure pixels of each colour, and asserts
 each count is at least 600:
@@ -493,7 +493,7 @@ name too long (> 19 bytes): img_intrinsic_test.html
 ```
 
 The osfs filename field is 19 bytes (the rest of the 24-byte
-slot holds size and flags). I'd internalised this limit for
+slot holds size and flags). The limit was internalised for
 binaries but not for HTML assets. Renamed to `intrinsic.html`
 (14 bytes) and moved on.
 

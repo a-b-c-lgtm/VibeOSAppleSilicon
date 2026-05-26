@@ -220,10 +220,8 @@ not `https`, and is unaffected by 112d.
    fails at the `cc -c browser.c` step. Fix: a pattern-
    specific rule for `$(BUILD)/userspace/browser/browser.o`
    that adds `-I vendor/bearssl-shim -I vendor/bearssl/inc`,
-   placed *after* the generic rule (per
-   `/memories/repo/makefile-pattern-rule-ordering.md` —
-   Make's "most specific wins" tiebreaker requires this
-   order).
+   placed *after* the generic rule (per Make's "most
+   specific wins" tiebreaker, which requires this order).
 2. **`tls_socket_t` is ~42 KB.** The user stack is 16 KiB, so
    the per-fetch object has to live on the heap. `br_conn_open`
    `malloc`s it on entry and `br_conn_close` `free`s it on

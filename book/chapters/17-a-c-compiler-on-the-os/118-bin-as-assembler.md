@@ -1,8 +1,18 @@
 # Chapter 118 — An AArch64 assembler: /bin/as
 
-**Status:** Shipped. The first toolchain stage that runs inside
-our OS. Code lives in `userspace/as/as.c` (~770 lines) plus
-the header-only `userspace/libc/elf_write.h` (~210 lines).
+> **Milestone in this chapter:** ship the first toolchain stage
+> that runs inside the OS — a small AArch64 assembler at
+> `/bin/as`.
+> **Code referenced:**
+> - [userspace/as/as.c](../../../userspace/as/as.c) (~770 LoC)
+> - [userspace/libc/elf_write.h](../../../userspace/libc/elf_write.h)
+>   (~210 LoC, header-only)
+>
+> **At the end of this chapter** you will have a `/bin/as`
+> that turns an `.s` file into a relocatable `.o`, the first
+> link in the chapter-122 `cc → as → ld` pipeline. Builds on
+> chapter 117 (stat / fcntl / dirent) and chapter 116b
+> (stdio).
 
 ## Why this chapter exists
 
@@ -35,7 +45,7 @@ This chapter delivers exactly that. It does not implement
 macros, conditional assembly, expressions beyond `+ -` of two
 ints, or floating-point.
 
-## What shipped
+## What this chapter adds
 
 | Component | File | Lines | Role |
 |---|---|---|---|
@@ -177,8 +187,7 @@ passed.
 This is now a written-down convention for the future
 toolchain code: **any per-function array indexed by one of
 the global `MAX_*` constants belongs in `.bss` at file
-scope, not on the user stack**. See
-`/memories/repo/chapter-118-as.md`.
+scope, not on the user stack**.
 
 ### The freestanding `memset` trap (again)
 
@@ -186,8 +195,8 @@ GCC at `-Os` lowered every `ew_shdr64_t s = {0};` (and
 that's *ten* of them in `write_elf`) into a `memset` call.
 Freestanding userspace has no libc `memset`, so the link
 failed with ten `relocation truncated to fit:
-R_AARCH64_CALL26 against undefined symbol 'memset'`. We've
-hit this trap before (`/memories/freestanding-c-memset-trap.md`)
+R_AARCH64_CALL26 against undefined symbol 'memset'`.
+This is the same freestanding-C `{ 0 }` initialiser trap,
 so the fix was rote — add a tiny `memset` and `memcpy` in
 the same TU. Both are five lines each.
 

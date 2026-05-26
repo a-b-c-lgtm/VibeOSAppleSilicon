@@ -1,9 +1,18 @@
 # Chapter 120 — Bootstrap glue: crt0, atexit, libgcc stubs
 
-**Status:** Shipped. The runtime our future in-guest
-compilers will assume. Three small files plus a crt0
-rewrite, all proven by a 6-line demo whose six lines of
-output must come out in the correct order.
+> **Milestone in this chapter:** ship the runtime every in-guest
+> compiler will assume — a real `crt0`, an `atexit` table, and
+> the tiny libgcc stubs (`__udivti3` and friends).
+> **Code referenced:**
+> - [userspace/crt/crt0.S](../../../userspace/crt/crt0.S)
+> - [userspace/libc/atexit.h](../../../userspace/libc/atexit.h)
+> - The libgcc stub TU
+>
+> **At the end of this chapter** you will have a `crt0.o` that
+> runs constructors, calls `main`, runs the `atexit` chain on
+> the way out, and exits cleanly — proven by a 6-line demo
+> whose six lines of output must come out in the correct
+> order. Builds on chapter 119 (`/bin/ld`).
 
 ## Why this chapter exists
 
@@ -39,7 +48,7 @@ shows up 80 chapters from now.
 This chapter writes the four pieces and proves they're
 correct end-to-end with `userspace/atexittest/`.
 
-## What shipped
+## What this chapter adds
 
 | Component | File | Role |
 |---|---|---|

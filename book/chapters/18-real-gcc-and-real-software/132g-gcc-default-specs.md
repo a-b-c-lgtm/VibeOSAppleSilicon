@@ -1,14 +1,22 @@
 # Chapter 132g — `gcc hello.c -o hello` (no escape-hatch flags)
 
-> **Status:** shipped (Phase 3 of guest-gcc bring-up).
-> The in-guest `/bin/gcc` now compiles a plain C source file
-> with no `-nostdlib -nostdinc -e _start` workaround, links
-> it against the on-disk `crt0.o` + `libosdevc.a`, and the
-> resulting program runs and returns its `main()` value through
-> `exit`. `scripts/test_gcc_hello.py` now runs **PASS 10 / FAIL 0**.
-> **Prereq:** chapter 132f (xgcc runs in the guest end-to-end).
-> **Opens:** chapter 133a (port `make`); chapter 133b (port the
-> first real upstream program — `sl`, `bf`, or `cmatrix`).
+> **Milestone in this chapter:** make the in-guest `/bin/gcc`
+> compile a plain C source with no `-nostdlib -nostdinc -e
+> _start` workaround, linking via the on-disk `crt0.o` and
+> `libosdevc.a`.
+> **Code referenced:**
+> - [vendor/gcc-14.2.0/gcc/config/aarch64/aarch64-osdev.h](../../../vendor/gcc-14.2.0/gcc/config/aarch64/aarch64-osdev.h)
+>   (`LINK_SPEC` gains `-L /bin`)
+> - [scripts/test_gcc_hello.py](../../../scripts/test_gcc_hello.py)
+>   (now exercises bare `/bin/gcc /tmp/hello2.c -o /tmp/hello2`)
+> - [scripts/_dbg_gcc_libc_probe.py](../../../scripts/_dbg_gcc_libc_probe.py)
+>
+> **At the end of this chapter** you will have the in-guest
+> gcc compiling, linking, and running a program with `exit=7`
+> using nothing more than `/bin/gcc /tmp/hello2.c -o
+> /tmp/hello2`, and `test_gcc_hello.py` at **PASS 10 / FAIL
+> 0**. Prerequisite: chapter 132f (xgcc runs in the guest
+> end-to-end).
 
 ---
 
@@ -29,9 +37,8 @@
    diagnostic (kept per debug-scripts policy) for
    "is the libc on disk, is xgcc invoking it, does ld see
    it?"
-5. Record the `-B` vs `-L` distinction at
-   `/memories/repo/gcc-B-prefix-does-not-imply-L.md` so
-   the next LINK_SPEC edit doesn't repeat the lesson.
+5. Remember the `-B` vs `-L` distinction so the next
+   LINK_SPEC edit doesn't repeat the lesson.
 
 ---
 
@@ -71,7 +78,7 @@ ate the chapter.
 
 ---
 
-## What shipped, by the byte
+## What this chapter adds, by the byte
 
 ```
 $ ls -la build/disk.img build/kernel.elf
@@ -326,9 +333,9 @@ make -j4 CC_FOR_BUILD=clang CXX_FOR_BUILD='clang++' \
 ls -la xgcc   # expect ~2.7 MB
 ```
 
-This is now memo-ed at
-`/memories/repo/gcc-B-prefix-does-not-imply-L.md` so the next
-LINK_SPEC edit doesn't repeat the lesson.
+This is worth remembering for any future LINK_SPEC edit:
+`-B` only adjusts where the driver *finds* programs, not
+where `ld` *searches* for libraries.
 
 ---
 
@@ -433,10 +440,10 @@ Deliberately NOT done in this chapter:
   freestanding-required headers) live. The libc headers
   are also pulled in by the `-D__OSDEV_LIBC__` define
   (CPP_SPEC) plus per-header inclusion of `osdev/libc.h`,
-  not by the include path. (See
-  `/memories/repo/toolchain-include-is-stale-copy-not-symlink.md`
-  for why the header tree shipped on disk needs careful
-  management.)
+  not by the include path. The header tree shipped on
+  disk needs careful management — the
+  `userspace/libc/include/` tree is the source of truth
+  and must be staged onto OSFS-1 rather than copied.
 
 - **Wire up `-lm`.** There's no separate `libm.a` — math
   symbols (`sqrt`, `pow`, `floor`, ...) are in the same
@@ -514,17 +521,15 @@ builds" rule:
 
 ## Things to remember
 
-- `/memories/repo/gcc-B-prefix-does-not-imply-L.md` — full
-  writeup of the `-B` vs `-L` distinction, the three fix
-  options (LINK_SPEC, `-L` on user command line,
-  `LIBRARY_PATH` env var), and the rebuild incantation that
-  avoids the `gencheck.o` cliff.
+- The `-B` vs `-L` distinction: `-B` only adjusts where the
+  driver finds *programs*, not where `ld` searches for
+  libraries. Three fix options exist (LINK_SPEC, `-L` on
+  the user command line, `LIBRARY_PATH` env var); this
+  chapter uses LINK_SPEC. Rebuilding xgcc after the spec
+  change requires the `gencheck.o` workaround above.
 
-No other memory updates: chapter 132f already covered the
-deeper lessons (lrealpath, exec limits, inline-svc probes,
-stack discipline, header staleness). 132g is a one-trick
-chapter, but the trick is the one that turns the toolchain
-from "runs" into "useful."
+132g is a one-trick chapter, but the trick is the one that
+turns the toolchain from "runs" into "useful."
 
 ---
 

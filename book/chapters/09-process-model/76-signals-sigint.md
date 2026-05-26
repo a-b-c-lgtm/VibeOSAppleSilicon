@@ -1,7 +1,18 @@
 # Chapter 76 — Signals, starting with SIGINT
 
-**Status:** Implemented (pre-M65; the plumbing landed alongside
-the M58 raw-tty work).
+> **Milestone in this chapter:** wire up the signal-delivery
+> path the kernel uses to interrupt a running program. The
+> plumbing landed alongside the milestone-58 raw-tty work.
+> **Code referenced:**
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (signal delivery; signal-pending check at trap return)
+> - [userspace/sh/](../../../userspace/sh/) (Ctrl-C from the
+>   shell sends SIGINT to the foreground process)
+>
+> **At the end of this chapter** you will have a kernel that
+> can interrupt a running EL0 program with SIGINT, a shell
+> that sends SIGINT on Ctrl-C, and the default-terminate
+> behaviour for uncaught signals.
 
 The kernel currently has no way to *interrupt* a running
 program. Ctrl-C in the shell prints `^C` and that is it. A

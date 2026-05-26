@@ -1,19 +1,24 @@
 # Chapter 132f — `gcc hello.c` works on the OS
 
-> **Status:** shipped (Phase 2 of guest-gcc bring-up).
-> The cross-built `xgcc` binary from chapter 132c now runs
-> **inside the guest**, drives the cc1 / as / ld pipeline,
-> and produces an executable ELF that the OS can run.
-> `scripts/test_gcc_hello.py` boots, stages a six-line
-> hello-world, walks the ladder `--version → -E → -S → -c
-> → link → run`, and ends with **PASS 8 / FAIL 0**.
-> **Prereq:** chapters 131e (in-guest `ld`), 131f (real
-> `/bin/as` + `/bin/ld`), 132c (cross-built `xgcc`),
-> 132d (real specs file), 132e (gmp/mpfr/mpc in the
-> guest sysroot).
-> **Opens:** chapter 133a (port `make`, then larger
-> programs); the doom build now has a real toolchain
-> sitting on `/bin/`.
+> **Milestone in this chapter:** run the cross-built xgcc
+> *inside* the guest and drive a full `--version → -E → -S
+> → -c → link → run` ladder for a six-line hello-world.
+> **Code referenced:**
+> - [vendor/gcc-14.2.0/libiberty/lrealpath.c](../../../vendor/gcc-14.2.0/libiberty/lrealpath.c)
+>   (the `strdup(filename)` fall-through patch)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`MAX_EXEC_ARGV` 16→64, `MAX_EXEC_ARG_LEN` 96→256)
+> - [kernel/core/elf.c](../../../kernel/core/elf.c)
+>   (`MAX_USER_ARGV` 16→64)
+> - [scripts/test_gcc_hello.py](../../../scripts/test_gcc_hello.py)
+>
+> **At the end of this chapter** you will have the cc1 / as /
+> ld pipeline running inside the guest, an executable ELF
+> produced from a hello-world, and `test_gcc_hello.py` PASS
+> 8 / FAIL 0. Prerequisites: chapters 131e (in-guest `ld`),
+> 131f (real `/bin/as` + `/bin/ld`), 132c (cross-built xgcc),
+> 132d (real specs file), 132e (gmp / mpfr / mpc in the guest
+> sysroot).
 
 ---
 
@@ -71,7 +76,7 @@ bug stays fixed.
 
 ---
 
-## What shipped, by the byte
+## What this chapter adds, by the byte
 
 ```
 $ ls -la build/disk.img build/kernel.elf
@@ -260,8 +265,6 @@ args of average 20 chars each, total is around 600 B —
 plenty of room. The layout will need re-thinking once argv
 exceeds ~3 KiB, but that's a long way off.
 
-See `/memories/repo/kernel-exec-limits-too-small-for-cc1.md`.
-
 ### Pitfall — cc1 sees `-o ""` for one invocation
 
 **Symptom:** after bumping the kernel limits, cc1 actually
@@ -346,10 +349,7 @@ static void _env_init (void) {
 }
 ```
 
-This defensive change shipped alongside its own memory
-rule:
-
-- `/memories/repo/userspace-libc-no-large-stack-buffers.md`
+The rule: **no >256 B stack buffers in userspace libc**.
 
 ### Pitfall — toolchain-include is a copy, not a symlink
 
@@ -366,9 +366,9 @@ uses `-isystem $ROOT/userspace/libc` directly. The sysroot
 copy is never consulted by the compile.
 
 **Fix:** the env.h fix was being seen by the compile;
-only the eyeball was reading the wrong file. Recorded as:
-
-- `/memories/repo/toolchain-include-is-stale-copy-not-symlink.md`
+only the eyeball was reading the wrong file. The rule:
+**the sysroot include tree is a stale copy**; edit and
+read `userspace/libc/*.h` directly.
 
 ---
 
@@ -444,9 +444,10 @@ Why inline-svc and not `fprintf`? Three reasons:
 3. The inline assembly is 4 instructions; no libc state,
    no buffers, no allocator. Nothing else to go wrong.
 
-This pattern is now memo-ed at:
-
-- `/memories/repo/inline-svc-diagnostic-pattern.md`
+This pattern — a hand-rolled SVC probe to print a single
+literal when no other diagnostic is trustworthy — is worth
+keeping in the toolbox for any future deep-vendor-tree
+debug.
 
 All the probes were removed once the bug was fixed. The
 final `xgcc` ships clean.
@@ -547,17 +548,20 @@ builds" rule:
 
 ## Things to remember
 
-- `/memories/repo/chapter-132f-libiberty-lrealpath-stub-frees-argv.md`
-  (the lrealpath bug; written during triage)
-- `/memories/repo/kernel-exec-limits-too-small-for-cc1.md`
-- `/memories/repo/inline-svc-diagnostic-pattern.md`
-- `/memories/repo/userspace-libc-no-large-stack-buffers.md`
-- `/memories/repo/toolchain-include-is-stale-copy-not-symlink.md`
+- The lrealpath stub frees argv: any libiberty function
+  named `*realpath*` that you stub out must `strdup` its
+  input rather than return it unchanged.
+- Kernel exec limits start out tuned for hello-world
+  binaries; cc1 needs ARGV/ENV/STACK ceilings raised.
+- The inline-svc-on-`x8=#1` probe is the trustworthy
+  diagnostic when stdio itself is suspect.
+- No >256 B stack buffers in userspace libc.
+- `build/toolchain/.../include/` is a stale snapshot;
+  the live headers live at `userspace/libc/`.
 
-The first one was written during the bug hunt; the other
-four codify lessons that came out of the same hunt and will
-save time the next time a vendor tree gets opened under
-the OSdev freestanding libc.
+All five lessons came out of the same hunt and will save
+time the next time a vendor tree gets opened under the
+OSdev freestanding libc.
 
 ---
 

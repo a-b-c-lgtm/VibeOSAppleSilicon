@@ -128,18 +128,18 @@ instruction* (more precisely, before any function-call sequence
 that needs to push a return address).
 
 The boot stub in [kernel/arch/boot.s](../../../kernel/arch/boot.s)
-does three things:
+does three things for milestone 0:
 
 1. Saves the DTB pointer that QEMU left in `x0` into a callee-saved
    register (`x19`) so the BSS-clear loop below can clobber `x0`
    freely.
-2. Loads the address of `stack_top` (the high end of our reserved
+2. Loads the address of `stack_top` (the high end of the reserved
    stack region) and copies it into `sp`. AArch64 SP must be
-   16-byte aligned at any "public" boundary; we get this for free
+   16-byte aligned at any "public" boundary; you get this for free
    because the linker script aligns the stack region to 16 bytes
    and reserves a multiple-of-16 size.
 3. Walks `bss_start` to `bss_end` storing zeros, because QEMU does
-   not pre-zero memory before loading our ELF and any uninitialised
+   not pre-zero memory before loading the ELF and any uninitialised
    global must read as zero per the C standard.
 
 Then it calls `kernel_main(dtb_phys)`. If `kernel_main` ever
@@ -149,7 +149,14 @@ infinite `wfe` loop after printing the banner — but defending
 against an early return is cheap and keeps the boot path safe
 during later refactors.
 
-The full file is short enough to read straight through:
+> **Note:** the version of `boot.s` shipped in the repository today
+> has grown two extra steps — it installs the EL1 exception vector
+> table (chapter 5) and enables the MMU (chapter 6) before calling
+> `kernel_main`. The three-step form below is the milestone-0
+> kernel you write in this chapter; the file in the repo is what
+> you'll have *after* finishing Part II.
+
+The milestone-0 stub is short enough to read straight through:
 
 ```nasm
 .section .text.boot, "ax"
@@ -189,17 +196,19 @@ emits and what we follow in hand-written assembly.
 
 ## The kernel C entry
 
-[kernel/core/main.c](../../../kernel/core/main.c) is even simpler:
+[kernel/core/main.c](../../../kernel/core/main.c) is even simpler
+for milestone 0:
 
 ```c
 void kernel_main(uint64_t dtb_phys) {
     (void)dtb_phys;       /* MMU off: do NOT format-print this yet. */
 
     serial_init();
-    serial_puts("\n=====================================\n");
+    serial_puts("\n============================================================\n");
     serial_puts("osdev aarch64 — milestone 0 (boot + PL011)\n");
-    serial_puts("=====================================\n");
+    serial_puts("============================================================\n");
     serial_puts("kernel_main reached — boot path is alive\n");
+    serial_puts("MMU off; deferring DTB hex-dump to milestone 1\n");
     serial_puts("entering wfe halt loop (Ctrl-A X to quit QEMU)\n");
 
     for (;;) {
@@ -207,6 +216,12 @@ void kernel_main(uint64_t dtb_phys) {
     }
 }
 ```
+
+> **Note:** the `main.c` in the repository today prints a much
+> later banner because it has grown driver init, scheduler bring-up,
+> and a userspace launcher across the rest of the book. The form
+> above is what you write at milestone 0; you'll grow it chapter
+> by chapter.
 
 The use of `wfe` ("wait for event") is deliberate. On HVF, `wfe`
 yields the vCPU back to the host scheduler, so the QEMU process
@@ -280,9 +295,9 @@ LDFLAGS  := -T linker/kernel.ld -nostdlib --orphan-handling=error
 `--orphan-handling=error` makes the link fail loudly if any input
 section is not explicitly named by the script. Without it, the
 linker silently appends unknown sections after the last named
-output, which (in a previous chapter of the author's life)
-produced kernels that booted fine on TCG, crashed mysteriously on
-real hardware, and resisted bisection for a week.
+output — a class of bug that produces kernels that boot fine on
+TCG, crash mysteriously on real hardware, and resist bisection
+for days.
 
 ## Build and run
 

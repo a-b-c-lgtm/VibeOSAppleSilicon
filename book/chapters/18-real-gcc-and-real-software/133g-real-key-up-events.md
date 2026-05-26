@@ -1,15 +1,23 @@
 # Chapter 133g — Real key-up events
 
-> **Status:** shipped — section-18 postscript. The
-> `HOLD_RELEASE_MS = 250` timed-release shim introduced in
-> chapter 130b is deleted. `scripts/test_doom_plays.py` is
-> green; Doom movement keys now stop the same tick the user
-> releases them rather than coasting for a quarter second.
-> **Prereq:** chapter 30 (virtio-input keyboard), chapter
-> 108d (kernel WM focus model), chapter 130b (the
-> stopgap whose retirement this chapter is about).
-> **Closes:** the deferred input-system extension named in
-> the chapter-130c "what 130c is not" list.
+> **Milestone in this chapter:** retire the 250 ms timed-release
+> input shim from chapter 130b and replace it with real key-up
+> events from `virtio_input`.
+> **Code referenced:**
+> - [kernel/device/virtio_input.c](../../../kernel/device/virtio_input.c)
+>   (parallel 32-slot release ring)
+> - [userspace/doom/doomgeneric_osdev.c](../../../userspace/doom/doomgeneric_osdev.c)
+>   (delete `HOLD_RELEASE_MS`)
+> - [scripts/test_doom_plays.py](../../../scripts/test_doom_plays.py)
+>
+> **At the end of this chapter** you will have Doom's movement
+> keys stop the same tick the user releases them rather than
+> coasting for a quarter second, real `GUI_EVENT_KEY_UP`
+> events plumbed through `virtio_input.c`, and the
+> chapter-130b timer shim deleted. Prerequisites: chapter 30
+> (virtio-input keyboard), chapter 108d (kernel WM focus
+> model), chapter 130b (the stopgap whose retirement this
+> chapter is about).
 
 ---
 
@@ -314,13 +322,6 @@ Per the standing apps-must-use-features rule:
   the render-side regression. It happens to be the
   cheapest way to confirm this chapter didn't break
   what already worked.
-- **`/memories/repo/press-only-input-breaks-per-tick-game-loops.md`**
-  flips to `STATUS: FIXED`. The note keeps the original
-  trap description as historical context so a future
-  agent diagnosing a *new* press-only-input bug
-  recognises the pattern, but the recommendation now
-  points at the wm + virtio_input plumbing rather than
-  the shim-side workaround.
 - **Future game ports get a real release event.** Any
   port of a tick-polled engine (Heretic, Hexen, a 2D
   platformer, anything SDL-shaped) consumes

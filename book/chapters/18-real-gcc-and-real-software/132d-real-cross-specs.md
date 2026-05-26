@@ -1,21 +1,21 @@
 # Chapter 132d — Real cross-compiler specs: retiring the wrapper
 
-> **Status:** shipped. `aarch64-osdev-gcc hello.c -o hello`
-> now produces a static aarch64 ELF — no `-B`, no `-isystem`,
-> no `-T`, no `crt0.o` on the command line.  Everything the
-> link needs is baked into `gcc/config/aarch64/aarch64-osdev.h`
-> and resolved through gcc's standard sysroot (populated by
-> `make xgcc-sysroot`).  The chapter-131b `aarch64-osdev-cc`
-> shell wrapper is no longer required for any path — kept as
-> a reference artefact, but no caller invokes it.  Host smoke
-> `scripts/test_xgcc_compile.py` PASS; regression sweep
-> 61/61 still green.
-> **Prereq:** chapters 131a (binutils-osdev), 131b (wrapper),
-> 132a–c (gcc target + prereqs + cross-build).
-> **Opens:** chapter 132e — ship `aarch64-osdev-gcc` into the
-> guest as `/bin/gcc`, mirror the sysroot under
-> `/aarch64-osdev/{lib,include,bin}/`, end the chapter 128
-> Phase 2 with `/bin/gcc /tmp/hello.c -o /tmp/hello`.
+> **Milestone in this chapter:** bake everything the link needs
+> into gcc's own target header and sysroot so the chapter-131b
+> shell wrapper is no longer required.
+> **Code referenced:**
+> - [vendor/gcc-14.2.0/gcc/config/aarch64/aarch64-osdev.h](../../../vendor/gcc-14.2.0/gcc/config/aarch64/aarch64-osdev.h)
+> - [Makefile](../../../Makefile) (`xgcc-sysroot`)
+> - [scripts/test_xgcc_compile.py](../../../scripts/test_xgcc_compile.py)
+>
+> **At the end of this chapter** you will have
+> `aarch64-osdev-gcc hello.c -o hello` producing a static
+> aarch64 ELF with no `-B`, no `-isystem`, no `-T`, no
+> `crt0.o` on the command line — everything resolved through
+> gcc's standard sysroot. The chapter-131b shell wrapper is
+> kept as a reference artefact but is no longer invoked.
+> Prerequisites: chapters 131a (binutils-osdev), 131b
+> (wrapper), 132a–c (gcc target + prereqs + cross-build).
 
 ---
 

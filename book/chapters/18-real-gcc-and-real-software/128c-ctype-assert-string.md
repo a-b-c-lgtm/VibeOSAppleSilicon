@@ -1,11 +1,22 @@
-# Chapter 128c — ctype.h, assert.h, and the str* family
+# Chapter 128c — `<ctype.h>`, `<assert.h>`, and the `str*` family
 
-> **Status:** complete. `scripts/test_libc_string.py` green.
-> **Prereq:** chapter 128b (raise/abort, expanded SIG table).
-> **Unlocks:** every upstream C program needs these three
-> headers before it will even parse. With 128c in place the
-> libc surface is wide enough that BearSSL is no longer the
-> only third-party code we can build.
+> **Milestone in this chapter:** add the three headers every
+> upstream C program needs before it will even parse — `ctype`,
+> `assert`, and the full `str*` family.
+> **Code referenced:**
+> - [userspace/libc/ctype.h](../../../userspace/libc/ctype.h)
+> - [userspace/libc/assert.h](../../../userspace/libc/assert.h)
+> - [userspace/libc/string.h](../../../userspace/libc/string.h)
+> - [userspace/libc/cstring.c](../../../userspace/libc/cstring.c)
+>   (where `__assert_fail` lives)
+> - [scripts/test_libc_string.py](../../../scripts/test_libc_string.py)
+>
+> **At the end of this chapter** you will have a libc surface
+> wide enough that BearSSL is no longer the only third-party
+> code you can build against it: ASCII C-locale `ctype`, a
+> working `assert()` that dies with the right diagnostic and
+> exit status 134, and the C99 `str*` family. Prerequisite:
+> chapter 128b (the expanded signal table).
 
 ---
 

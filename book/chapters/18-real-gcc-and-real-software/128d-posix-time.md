@@ -1,10 +1,22 @@
 # Chapter 128d — POSIX `<time.h>`
 
-> **Status:** complete. `scripts/test_libc_time.py` green.
-> **Prereq:** chapter 128c (string/ctype/assert).
-> **Unlocks:** Doom's RNG seed (`time(NULL)`), GCC's diagnostic
-> timestamps, BearSSL cert-expiry checks once we wire a real
-> reference time.
+> **Milestone in this chapter:** replace chapter 95's placeholder
+> `<time.h>` with the C99 POSIX surface that Doom's RNG seed,
+> GCC's diagnostic timestamps, and BearSSL cert-expiry checks
+> all expect.
+> **Code referenced:**
+> - [userspace/libc/time.h](../../../userspace/libc/time.h)
+> - [userspace/date/](../../../userspace/date/),
+>   [userspace/taskbar/](../../../userspace/taskbar/) (the two
+>   existing consumers re-ported to the new shapes)
+> - [scripts/test_libc_time.py](../../../scripts/test_libc_time.py)
+>
+> **At the end of this chapter** you will have `struct tm`,
+> `gmtime_r`, `localtime_r`, `mktime`, `timegm`, `strftime`,
+> `asctime`, `ctime`, `clock_gettime`, and `clock()` available
+> to every userspace binary, with `difftime` declared (callable
+> after chapter 129 lifts `-mgeneral-regs-only`). Prerequisite:
+> chapter 128c (string / ctype / assert).
 
 ---
 
@@ -167,11 +179,11 @@ ts.tv_sec  = 0;
 ts.tv_nsec = 0;
 ```
 
-You could also write `struct timespec ts = { 0 };` but that's
-the freestanding memset trap from `/memories/repo/
-freestanding-c-memset-trap.md` (the 16-byte struct is under
-the ~64-byte threshold so it's actually safe here, but
-explicit field assignment is the discipline-keeping move).
+You could also write `struct timespec ts = { 0 };` but that
+invites the freestanding-C `{ 0 }` memset trap (the 16-byte
+struct is under the ~64-byte threshold so it's actually safe
+here, but explicit field assignment is the discipline-keeping
+move).
 
 ### Pitfall — `:=` immediate-expansion (again)
 

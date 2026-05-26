@@ -262,8 +262,8 @@ own headers.
 - **A debugger.** Errors set a string field; you read it
   from the calling code. No backtrace, no source location.
 
-These exclusions are deliberate. Every feature we shipped
-is reachable from `onclick="..."`. Every feature we left
+These exclusions are deliberate. Every feature included
+is reachable from `onclick="..."`. Every feature left
 out would have required at least one of: a re-entry into
 the parser, a heap object with non-trivial lifetime, or
 floating-point arithmetic. All three are big enough to
@@ -275,8 +275,8 @@ deserve their own chapter.
 
 The first version had `pj_eval` allocate its token array
 and AST node pool inline in `struct pj` and the call site
-put `struct pj` on the stack. That worked headlessly in
-my head and crashed every single invocation in QEMU.
+put `struct pj` on the stack. That works on paper and
+crashes every invocation in QEMU.
 
 The user stack on this OS is 16 pages — 64 KiB — with a
 guard page below (chapter 73). The first cut of `struct
@@ -336,7 +336,7 @@ in the pool is exactly the right shape.
 The regression test drives `browser --check-js "EXPR"`
 through `/bin/sh`. Our shell does single- and
 double-quote expansion before scanning for redirect /
-pipe operators (see [userspace/sh/sh.c](userspace/sh/sh.c)).
+pipe operators (see [userspace/sh/sh.c](../../../userspace/sh/sh.c)).
 The consequence is that `<`, `>`, and `|` *inside*
 quoted strings are still interpreted as redirect / pipe.
 A test that wrote `browser --check-js "2 < 3"` would
@@ -345,7 +345,7 @@ fail, and never spawn the browser.
 
 The engine itself fully supports `<`, `>`, `<=`, `>=`,
 `||` — they're tested via the `onclick` fixture page in
-[assets/osfs/onclick.html](assets/osfs/onclick.html)
+[assets/osfs/onclick.html](../../../assets/osfs/onclick.html)
 where the shell never sees them. The headless regression
 exercises equality, inequality, logical AND, unary not,
 sequence, assignment, alert, console, getElementById, and
@@ -382,7 +382,7 @@ small enough to fit in the 750-line budget.
 
 ## Regression test
 
-[scripts/test_browser_js.py](scripts/test_browser_js.py)
+[scripts/test_browser_js.py](../../../scripts/test_browser_js.py)
 walks 20 expectations across 16 expressions in one boot:
 
 1. Integer literal: `42`.
@@ -438,30 +438,30 @@ JS: alert=hi
 ## Applied to
 
 - Existing apps modified:
-  - [userspace/browser/browser.c](userspace/browser/browser.c) —
+  - [userspace/browser/browser.c](../../../userspace/browser/browser.c) —
     `onclick_at` walks DOM ancestors, `onclick_dispatch`
     runs the engine, MOUSE_DOWN dispatches before
     form_submit, `--check-js` headless debug flag.
 - New libc headers:
-  - [userspace/libc/pocketjs.h](userspace/libc/pocketjs.h)
+  - [userspace/libc/pocketjs.h](../../../userspace/libc/pocketjs.h)
     — engine.
-  - [userspace/libc/dom.h](userspace/libc/dom.h) — gained
+  - [userspace/libc/dom.h](../../../userspace/libc/dom.h) — gained
     `dom_node_set_attr` for JS-driven attribute writes.
 - New browser-private header:
-  - [userspace/browser/jsdom.h](userspace/browser/jsdom.h)
+  - [userspace/browser/jsdom.h](../../../userspace/browser/jsdom.h)
     — DOM/style/console/alert bindings.
 - New asset:
-  - [assets/osfs/onclick.html](assets/osfs/onclick.html)
+  - [assets/osfs/onclick.html](../../../assets/osfs/onclick.html)
     — interactive demo page (4 buttons).
 - Tests added:
-  - [scripts/test_browser_js.py](scripts/test_browser_js.py)
+  - [scripts/test_browser_js.py](../../../scripts/test_browser_js.py)
     — 20 expectations, all green.
 - Tests still green (verified post-change):
-  - [scripts/test_browser_sop.py](scripts/test_browser_sop.py)
+  - [scripts/test_browser_sop.py](../../../scripts/test_browser_sop.py)
     — cookie/SOP chapter 110/110a regression.
-  - [scripts/test_browser_self.py](scripts/test_browser_self.py)
+  - [scripts/test_browser_self.py](../../../scripts/test_browser_self.py)
     — in-guest browser ↔ httpd loopback.
-  - [scripts/test_browser_image.py](scripts/test_browser_image.py)
+  - [scripts/test_browser_image.py](../../../scripts/test_browser_image.py)
     — chapter 97 PNG render still works.
 
 ## What this unlocks

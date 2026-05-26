@@ -43,7 +43,7 @@ nearest thing we have to a "home directory".
 
 ## Cwd lives on the thread, not the AS
 
-I considered both:
+Two designs were on the table:
 
 - **On `struct address_space`** — pro: matches the "kernel
   resources owned by the process" model. Con: kernel threads

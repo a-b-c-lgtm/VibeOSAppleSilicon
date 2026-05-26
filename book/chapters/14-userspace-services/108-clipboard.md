@@ -1,34 +1,47 @@
 # Chapter 108 — The system clipboard, as a userspace service
 
-**Status:** Done. Tracking milestone 90b.
+> **Milestone in this chapter:** 90b — userspace clipboard daemon
+> + clients + GUI integration.
+> **Code referenced:**
+> - [userspace/clipboardd/clipboardd.c](../../../userspace/clipboardd/clipboardd.c)
+> - [userspace/init/init.c](../../../userspace/init/init.c)
+>   (the `clipboardd` supervisor)
+> - [userspace/notepad/notepad.c](../../../userspace/notepad/notepad.c),
+>   [userspace/browser/browser.c](../../../userspace/browser/browser.c),
+>   [userspace/gui_term/gui_term.c](../../../userspace/gui_term/gui_term.c)
+>   (Ctrl-C / Ctrl-X / Ctrl-V key handlers)
+>
+> **At the end of this chapter** notepad can copy text into the
+> browser address bar, the browser can copy URLs back out, and
+> `gui_term` can paste into its inner shell. The kernel gains zero
+> new syscalls; all of the new code lives in userspace on top of
+> chapter 107's IPC primitive.
 
-Notepad cannot copy text into the browser address bar.
-The browser cannot copy a URL out. We have everything
-we need to fix this, and — thanks to chapter 107's IPC
-primitive — we can fix it *without* growing the kernel.
+Notepad cannot copy text into the browser address bar. The browser
+cannot copy a URL out. Everything needed to fix this exists, and —
+thanks to chapter 107's IPC primitive — the fix lives entirely in
+userspace.
 
 This chapter ships three things on top of chapter 107:
 
-1. `/bin/clipboardd` — the system clipboard, as a
-   ~250-line userspace daemon bound to `/srv/clipboard`.
-2. `/bin/clip` — the command-line client (`clip set`,
-   `clip get`, `clip gen`, `clip clear`) that any shell
-   user can reach for, and that the regression test
-   drives end-to-end.
-3. A minimal supervisor in `init` that respawns
-   `/bin/clipboardd` if it dies, so the clipboard is
-   always available once boot finishes.
+1. `/bin/clipboardd` — the system clipboard, as a ~250-line
+   userspace daemon bound to `/srv/clipboard`.
+2. `/bin/clip` — the command-line client (`clip set`, `clip get`,
+   `clip gen`, `clip clear`) that any shell user can reach for, and
+   that the regression test drives end-to-end.
+3. A minimal supervisor in `init` that respawns `/bin/clipboardd`
+   if it dies, so the clipboard is always available once boot
+   finishes.
 
-Plus the GUI integration that finally lets one app's
-text reach another: notepad gains Ctrl-C (copy line),
-Ctrl-X (cut line) and Ctrl-V (paste); the browser's
-URL bar grows the same three keystrokes; and gui_term
-gains Ctrl-V so terminal users can paste seeded
-text into the inner shell.
+Plus the GUI integration that finally lets one app's text reach
+another: notepad gains Ctrl-C (copy line), Ctrl-X (cut line), and
+Ctrl-V (paste); the browser's URL bar grows the same three
+keystrokes; and `gui_term` gains Ctrl-V so terminal users can paste
+seeded text into the inner shell.
 
-The kernel grows zero new syscalls, zero new fd kinds,
-and zero new policy. The cost of the feature is paid
-in userspace, where the cost belongs.
+The kernel grows zero new syscalls, zero new fd kinds, and zero new
+policy. The cost of the feature is paid in userspace, where the
+cost belongs.
 
 ## Why this isn't a kernel feature
 

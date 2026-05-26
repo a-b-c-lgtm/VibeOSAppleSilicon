@@ -34,8 +34,8 @@ about what the bytes mean. `net.c` is a *stack*: it knows about
 Ethernet, ARP, and IPv4. Keeping them separate matters for two
 reasons we will care about later:
 
-1. When [chapter 64](../08-browser/64-url-http-tls.md) adds a
-   second NIC (or, more likely, a loopback pseudo-device), the
+1. When [chapter 106](../13-tcp-server/106-tcp-loopback.md) adds a
+   loopback pseudo-device, the
    stack does not need to grow a notion of "transport-specific"
    anything.
 2. Tests for the protocol layer can be written without booting

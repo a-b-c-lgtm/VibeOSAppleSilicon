@@ -1,27 +1,32 @@
 # Chapter 18 — Console keyboard input and a line-mode shell
 
+> **Milestone in this chapter:** 10 — keyboard input + first shell.
+> **Code referenced:**
+> - [kernel/core/console_in.c](../../../kernel/core/console_in.c)
+>   (PL011 RX path + line discipline)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_READ` console branch)
+> - [userspace/sh/sh.c](../../../userspace/sh/sh.c) — the first shell
+> - [userspace/init/init.c](../../../userspace/init/init.c)
+>   (launches `/bin/sh` after self-tests)
+>
+> **At the end of this chapter** the kernel reads characters from
+> the PL011 UART receive FIFO and exposes them through `read(0, …)`,
+> a small line discipline gives echo and backspace, and a brand-new
+> `/bin/sh` prompts, reads a line, treats it as a path, and spawns
+> it. `init` hands control to the shell after self-tests, so a real
+> human can drive the system.
+
 ## Where this chapter sits
 
-After chapter 17 we had `init`, `spawn`, `wait`, and exit codes. The
-kernel could load multiple user programs and let one parent supervise
-several children. What it could not do was *take input*. Every user
-program ran with `argc = 0` and read only from files we'd already
-embedded into the ramfs. There was nobody at the keyboard.
+After chapter 17 the kernel had `init`, `spawn`, `wait`, and exit
+codes. It could load multiple user programs and let one parent
+supervise several children. What it could not do was *take input*.
+Every user program ran with `argc = 0` and read only from files
+already embedded into the ramfs. There was nobody at the keyboard.
 
-This chapter fixes that. By the end:
-
-- The kernel reads characters from the PL011 UART receive FIFO and
-  exposes them as bytes from `read(0, ...)`.
-- A small line discipline gives users the conveniences they expect:
-  echo of typed characters, backspace, and "press Enter to commit
-  the line."
-- A new user program — `/bin/sh` — prompts, reads a line, treats it
-  as a path, and spawns it via `SYS_SPAWN`. When the child exits, the
-  shell loops back to the prompt.
-- `init` now hands control to the shell after running its self-tests,
-  so a real human can drive the system.
-
-The diff is small. The interactive feeling it produces is enormous.
+This chapter fixes that. The diff is small; the interactive feeling
+it produces is enormous.
 
 ## The hardware: PL011 receive
 
@@ -187,8 +192,8 @@ chapter 17 already.
 
 ## `/bin/sh`
 
-[`userspace/sh/sh.c`](../../../userspace/sh/sh.c) is the shortest
-real shell I can imagine. ~100 lines, no allocator, no globbing, no
+[`userspace/sh/sh.c`](../../../userspace/sh/sh.c) is about as
+short as a real shell gets. ~100 lines, no allocator, no globbing, no
 quoting, no piping, no environment, no redirection. The main loop
 is:
 

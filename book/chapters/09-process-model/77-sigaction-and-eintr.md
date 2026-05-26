@@ -1,9 +1,19 @@
 # Chapter 77 — Catching signals: sigaction, masks, EINTR
 
-**Status:** Implemented (chapter-77 / 2025-Q4) — catch +
-sigreturn ship; mask + EINTR deferred.
-
-Chapter 76 made signals kill processes. Real signals are
+> **Milestone in this chapter:** add `sigaction` + the return-to-
+> user trampoline so processes can catch signals. Mask handling
+> and `EINTR` semantics are deferred to a later chapter.
+> **Code referenced:**
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`sys_sigaction`, the saved trap frame, the sigreturn
+>   trampoline)
+> - [userspace/libc/signal.h](../../../userspace/libc/signal.h)
+>
+> **At the end of this chapter** you will have userspace able
+> to register handlers via `sigaction(2)`, with the kernel
+> entering the handler on delivery and `sigreturn` resuming
+> the interrupted context. Builds on chapter 76 (signal
+> delivery).
 also *catchable* — a process can register a handler that
 runs on delivery. That requires a tiny return-to-user
 trampoline, a saved trap frame, and a decision about what
@@ -58,6 +68,9 @@ in-progress syscalls do when interrupted.
 
 ### Sigframe layout (mirrored across kernel + libc)
 
+(The kernel declares this as `struct sigframe_k`; the libc-side
+shape is `struct sigframe`. The 'k' suffix flags the kernel copy.)
+
 ```c
 struct sigframe {
     uint64_t x[31];     // 248 bytes
@@ -71,9 +84,9 @@ struct sigframe {
 ```
 
 A static_assert in [kernel/core/syscall.c](../../../kernel/core/syscall.c)
-locks both `% 16 == 0` and `== 288`. Lesson learned the
-first time: I shipped 280 bytes and hit the alignment assert
-on build. Round-to-16B is non-negotiable on AArch64 — SP
+locks both `% 16 == 0` and `== 288`. The trap: a 280-byte
+frame will trip the alignment assert at build time.
+Round-to-16B is non-negotiable on AArch64 -- SP
 must be 16-aligned at function entry.
 
 ### Per-thread state

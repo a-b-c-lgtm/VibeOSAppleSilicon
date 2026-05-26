@@ -952,10 +952,9 @@ the target.
 Fixed by hoisting both `:=` assignments to the
 top of the libgui group, before any consumer. The
 fix and a comment block live in
-[Makefile](../../../Makefile) and the trap is
-recorded as a rule in
-`/memories/repo/makefile-pattern-rule-ordering.md`
-so future ports don't relearn it.
+[Makefile](../../../Makefile). The rule for future
+ports: Make's "most specific wins" tiebreaker requires
+that pattern-specific rules sit after the generic ones.
 
 ## What's still in the kernel after this chapter
 

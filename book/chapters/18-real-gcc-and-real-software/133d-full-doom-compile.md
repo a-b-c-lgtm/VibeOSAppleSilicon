@@ -1,16 +1,20 @@
 # Chapter 133d — In-guest Doom rebuild, full vendor compile
 
-> **Status:** shipped (Phase 7 of guest-gcc bring-up).
-> Compiles the full **77-file** canonical DoomGeneric vendor
-> source set, end-to-end, inside the guest, with zero
-> compile or link errors. `scripts/test_doom_full.py` runs
-> **PASS 8 / FAIL 0**. Wall time ~25 min under HVF on
-> M-series silicon. Every earlier in-guest-toolchain test
-> still green (8 scripts, 68/0).
-> **Prereq:** chapter 133c (pilot), 133b (`/bin/make`),
-> 133a (`/bin/tar`), 132g (`/bin/gcc`).
-> **Opens:** chapter 133e (link `doomgeneric.elf`), 133f
-> (rebuilt-doom plays).
+> **Milestone in this chapter:** scale the chapter-133c pilot
+> to the full 77-file DoomGeneric vendor compile, end-to-end
+> inside the guest.
+> **Code referenced:**
+> - [assets/osfs/doom_full.mk](../../../assets/osfs/doom_full.mk)
+> - [userspace/make/make.c](../../../userspace/make/make.c)
+>   (`MK_MAX_VAL` 512 → 4096; expansion buffer 2 KiB → 16 KiB)
+> - [scripts/test_doom_full.py](../../../scripts/test_doom_full.py)
+>
+> **At the end of this chapter** you will have the canonical
+> 77-file DoomGeneric vendor source set compiling cleanly with
+> zero compile or link errors, `test_doom_full.py` at
+> **PASS 8 / FAIL 0**, and a ~25-minute wall time under HVF
+> on Apple silicon. Prerequisites: chapter 133c (pilot),
+> 133b (`/bin/make`), 133a (`/bin/tar`), 132g (`/bin/gcc`).
 
 ---
 
@@ -35,8 +39,7 @@
    `implicit declaration`) instead of bare substrings the
    kernel's `[sys_exit]` log line shares.
 5. Confirm 68/0 across the 8-script regression sweep with
-   `test_doom_full.py` 8/0 added, then capture the traps
-   into `/memories/repo/chapter-133d-full-doom-compile.md`.
+   `test_doom_full.py` 8/0 added.
 
 ---
 
@@ -393,10 +396,6 @@ builds" rule:
   end-to-end smoke test, 8 expectations, ~25 min runtime.
   Uses anchored failure patterns (`make:` prefix +
   `: error:` etc.) to avoid the kernel-sys_exit-log trap.
-- **`/memories/repo/chapter-133d-full-doom-compile.md`**
-  (new): captures both traps (make buffer sizes, kernel
-  log substring) so the next session doesn't re-discover
-  them.
 
 No existing apps were modified — the chapter is still
 plumbing-validation. The user-visible "doom binary on the

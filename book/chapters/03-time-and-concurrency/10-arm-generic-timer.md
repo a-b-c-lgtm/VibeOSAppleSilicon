@@ -228,9 +228,9 @@ always #3.
 ## What chapter 11 adds
 
 We now have a free-running tick. The next conceptual leap is to
-use that tick to switch *between* multiple flows of execution —
+use that tick to switch *between* multiple flows of execution --
 threads. Chapter 11 introduces `struct thread`, the AArch64
 context-switch routine `cswitch` (it lives in
-`kernel/arch/context_switch.S` once we add it), and the
+`kernel/arch/context_switch.s` once we add it), and the
 cooperative `yield()` primitive. Chapter 12 makes the timer
 preempt those threads automatically.

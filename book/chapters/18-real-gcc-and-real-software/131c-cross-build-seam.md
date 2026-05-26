@@ -1,22 +1,25 @@
-# Chapter 131c — Cross-build seam: link-mode wrapper, first libc gaps, the gap catalog
+# Chapter 131c — Cross-build seam: link-mode wrapper, first libc gaps
 
-> **Status:** shipped. Top-level `binutils-2.44` configure now
-> runs cleanly under `--host=aarch64-osdev`, and the first wave
-> of `libiberty/*.c` objects builds against our libc. The full
-> libc surface (`vfprintf` collision class, missing `mktemp` /
-> `freopen` / `_doprnt` / `sleep` class, missing `st_dev` / open
-> `mode` arg class) is catalogued and deferred to chapter 131d.
-> Host smoke test
-> [scripts/test_guest_configure.py](../../../scripts/test_guest_configure.py)
-> passes.
-> **Prereq:** chapter 131b (wrapper installed, `make
-> aarch64-osdev-cc-install`). Run `make` first so
-> `build/userspace/crt/crt0.o` exists — the wrapper's
-> link-mode auto-injects it.
-> **Opens:** chapter 131d — convert our `static inline` libc
-> into a real `libc.a` archive (so autoconf stops compiling
-> libiberty's replacement files) and close the per-function
-> gap list this chapter surfaced.
+> **Milestone in this chapter:** extend the chapter-131b wrapper
+> into link mode, run upstream binutils' configure under
+> `--host=aarch64-osdev`, and catalog the first wave of libc
+> gaps that surface.
+> **Code referenced:**
+> - [scripts/aarch64-osdev-cc.in](../../../scripts/aarch64-osdev-cc.in)
+>   (link-mode auto-injection)
+> - [vendor/binutils-2.44/libiberty/](../../../vendor/binutils-2.44/libiberty/)
+> - [scripts/test_guest_configure.py](../../../scripts/test_guest_configure.py)
+>
+> **At the end of this chapter** you will have a wrapper that
+> auto-injects `build/userspace/crt/crt0.o` on link, a clean
+> upstream `binutils-2.44` configure under
+> `--host=aarch64-osdev`, the first wave of `libiberty/*.c`
+> objects built against the OS libc, and a written catalog of
+> the missing functions (`vfprintf` collision, `mktemp`,
+> `freopen`, `_doprnt`, `sleep`, `st_dev`, open `mode` arg)
+> that chapter 131d will close. Prerequisite: chapter 131b
+> (wrapper installed). Run `make` first so
+> `build/userspace/crt/crt0.o` exists.
 
 ---
 

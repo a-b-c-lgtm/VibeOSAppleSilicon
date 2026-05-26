@@ -152,7 +152,7 @@ There are three subtleties baked into eight lines:
 
 ## Smoke test
 
-[scripts/test_virtio_input.py](scripts/test_virtio_input.py)
+[scripts/test_virtio_input.py](../../../scripts/test_virtio_input.py)
 boots QEMU `-display none` with both `pl011` serial (over a Unix
 socket) and a `virtio-keyboard-device`.  It then drives the
 keyboard via QMP:

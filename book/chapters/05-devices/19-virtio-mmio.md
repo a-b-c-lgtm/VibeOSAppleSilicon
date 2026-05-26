@@ -101,10 +101,10 @@ if (mmio_read32(base + VIRTIO_MMIO_DEVICE_ID) != VIRTIO_DEVICE_ID_BLOCK) return 
 return 1;
 ```
 
-The first time I ran this on QEMU 11 with default flags, the
-probe found a slot with `Version = 1, DeviceID = 2`. That was
+Running this probe on QEMU 11 with default flags, the
+probe finds a slot with `Version = 1, DeviceID = 2`. That is
 the legacy transport. Adding `-global virtio-mmio.force-legacy=off`
-flipped `Version` to `2`. The book code only ships the v2 path,
+flips `Version` to `2`. The book code only ships the v2 path,
 so the flag is mandatory.
 
 In our run the device shows up in **slot 31** (`base = 0x0a003e00`).

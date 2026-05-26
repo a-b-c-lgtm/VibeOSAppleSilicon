@@ -1,11 +1,22 @@
 # Chapter 130b — Staging the WAD (so Doom actually plays)
 
-> **Status:** code complete. `scripts/test_doom.py` reports
-> `doom: PASS (WAD loaded)`; full regression sweep green.
-> **Prereq:** chapter 130a (Doom port), chapter 81
-> (OSFS-2 layout).
-> **Unlocks:** the title screen. Doom that *runs* instead of
-> Doom that exits with "Game mode indeterminate".
+> **Milestone in this chapter:** put a WAD on disk where Doom
+> can find it, without committing the file to the repo.
+> **Code referenced:**
+> - [Makefile](../../../Makefile) (the `$(DATA_DISK)` rule and
+>   its `$(wildcard ...)` prerequisite)
+> - [scripts/mkosfs2.py](../../../scripts/mkosfs2.py)
+> - [userspace/doom/doomgeneric_osdev.c](../../../userspace/doom/doomgeneric_osdev.c)
+>   (default WAD path moved to `/data/doom1.wad`)
+> - [scripts/test_doom.py](../../../scripts/test_doom.py)
+>
+> **At the end of this chapter** you will have Doom that
+> *runs* instead of Doom that exits with "Game mode
+> indeterminate": `assets/wads/*.wad` is gitignored, the
+> Makefile silently formats an empty data image when no WAD
+> is present, and the test script picks its acceptance mode
+> by checking the host for the file. Prerequisites: chapter
+> 130a (Doom port), chapter 81 (OSFS-2 layout).
 
 ---
 
@@ -320,7 +331,7 @@ once the WAD is in place:
 - **`malloc(6 MiB)` for the zone allocator** — exercises the
   user heap from milestone 17 plus `sbrk()` growth. The
   zone is `-mb 6` (megabytes) in the shim default; chapter
-  130a punted on this size and the upstream default of 16
+  130a settled on this size, and the upstream default of 16
   MiB would have stressed but not broken the heap.
 - **`fopen` / `fread` on `/data/doom1.wad`** — first
   4 MiB-class read from OSFS-2 in any test. The block cache

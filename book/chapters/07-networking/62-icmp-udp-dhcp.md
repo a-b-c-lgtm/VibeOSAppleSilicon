@@ -133,7 +133,7 @@ difference.
 > TCP, both of which include a pseudo-header.
 
 Get this wrong and SLIRP will silently drop your echo requests
-for hours. (Ask me how I know.)
+for hours. (A trap easy to fall into.)
 
 The wire layout for an echo packet is the same in both
 directions:
@@ -259,9 +259,9 @@ experiments.
 
 A defensive `__attribute__((used)) static void udp_static_init()`
 sits in `udp.c` purely to prevent GCC from compiling the
-zero-init of the binding table into a `memset` call (see
-[`memories/freestanding-c-memset-trap.md`](../../../README.md)
-for the full story, or just trust the comment in the file).
+zero-init of the binding table into a `memset` call (the
+freestanding-memset trap shows up wherever struct-zero-init
+meets `-O2` -- explicit field init avoids it).
 
 ## DHCP
 

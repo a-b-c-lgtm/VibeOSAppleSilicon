@@ -1,50 +1,58 @@
-# Chapter 114 — PLAN: User-space filesystem servers (9P-shaped)
+# Chapter 114 — User-space filesystem servers (9P-shaped)
 
-> **Status: PLAN ONLY.** This chapter is the design contract
-> for the second half of Part XVI. **Implement only after
-> [Chapter 113](113-mount-table-and-vtable.md) lands** — the
-> mount table and `struct fs_ops` vtable are prerequisites.
-> Trying to add user-space filesystems on top of the current
-> prefix-special-casing ladder would multiply the existing
-> dispatch problem.
+> **Milestone in this chapter:** 114 — design contract for the
+> userspace-filesystem refactor. The implementation lands across
+> the six follow-up chapters 114a–114f.
+> **Code referenced (where the contract lands):**
+> - [kernel/core/userfs.c](../../../kernel/core/userfs.c)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_MOUNT` / `SYS_UMOUNT`)
+> - [userspace/libfs/](../../../userspace/libfs/) (the helper
+>   library every userspace FS server links against)
+>
+> **At the end of this chapter** you will have the dispatch shape
+> that lets a `/bin/` binary register itself as the backing for a
+> mountpoint, the wire format for the kernel-to-server RPC, and the
+> error-and-timeout policy. **No code lands in this chapter** —
+> chapter 114a is the first implementation step, and requires the
+> [chapter 113](113-mount-table-and-vtable.md) mount table to be in
+> place.
 
 ## What this chapter proposes
 
 A way to mount a userspace program as a filesystem.
 
-Today every filesystem is in-kernel: ramfs, OSFS-1,
-OSFS-2, tmpfs, procfs. Each one is a few hundred lines
-of C that runs at EL1 with full kernel privileges. That's
-fine for filesystems that need block-device access (OSFS-1,
-OSFS-2) or kernel-internal state (procfs walks the thread
-table), but it's wrong for everything else.
+Today every filesystem is in-kernel: ramfs, OSFS-1, OSFS-2, tmpfs,
+procfs. Each one is a few hundred lines of C that runs at EL1 with
+full kernel privileges. That is fine for filesystems that need
+block-device access (OSFS-1, OSFS-2) or kernel-internal state
+(procfs walks the thread table), but it is wrong for everything
+else.
 
-We have a system clipboard already shipped
-([Chapter 108](../14-userspace-services/108-clipboard.md),
-riding on the named-IPC bus from
-[Chapter 107](../14-userspace-services/107-ipc.md)) —
-but it lives outside the filesystem namespace, with its
-own one-off API. Step [114d](114d-clipboardd-port.md)
-re-fronts it as `/clipboard/text`. We also have audio
-that probably wants `/dev/audio` or `/dev/snd/` shaped
-paths. We have a future where the browser exposes its
-history as `/sys/browser/history/`. None of these need
-to live in the kernel — they need *interactivity* with
-running userspace processes, which the kernel is bad at.
+The system clipboard already ships
+([Chapter 108](../14-userspace-services/108-clipboard.md), riding
+on the named-IPC bus from
+[Chapter 107](../14-userspace-services/107-ipc.md)) — but it lives
+outside the filesystem namespace, with its own one-off API. Step
+[114d](114d-clipboardd-port.md) re-fronts it as `/clipboard/text`.
+Audio probably wants `/dev/audio` or `/dev/snd/` shaped paths. A
+future browser may expose its history as `/sys/browser/history/`.
+None of these need to live in the kernel — they need *interactivity*
+with running userspace processes, which the kernel is bad at.
 
-The Unix-y answer is "a userspace daemon." The Plan-9 /
-9P answer is "a userspace daemon that *is* a filesystem"
-— so applications interact with it through the same
-`open`/`read`/`write`/`close` they use for every other
-file, and the daemon's namespace is browsable with `ls`.
+The Unix-y answer is "a userspace daemon." The Plan-9 / 9P answer
+is "a userspace daemon that *is* a filesystem" — so applications
+interact with it through the same `open`/`read`/`write`/`close`
+they use for every other file, and the daemon's namespace is
+browsable with `ls`.
 
-This chapter proposes adopting that second approach.
+This chapter adopts that second approach.
 
 ## The shape: 9P, simplified
 
-We borrow the protocol shape from
-[Plan 9's 9P](https://9p.io/sys/man/5/INDEX.html), reduced
-to the operations our `struct fs_ops` already names:
+The protocol shape is borrowed from
+[Plan 9's 9P](https://9p.io/sys/man/5/INDEX.html), reduced to the
+operations `struct fs_ops` already names:
 
 ```c
 enum p9_op {

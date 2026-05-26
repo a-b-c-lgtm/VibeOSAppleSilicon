@@ -1,10 +1,18 @@
 # Chapter 78 — SIGCHLD and waitpid: parent-child plumbing
 
-**Status:** Implemented (chapter-78 / 2025-Q4). Zombie state
-and process groups remain deferred (will land with chapter
-79's job control).
-
-The reaping path today is `wait()` — block in the kernel
+> **Milestone in this chapter:** add `SIGCHLD` delivery and
+> `waitpid(2)` so a parent can asynchronously learn about a
+> child's exit or pick a specific child to reap.
+> **Code referenced:**
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`sys_waitpid`, SIGCHLD on exit)
+> - [userspace/libc/signal.h](../../../userspace/libc/signal.h)
+>
+> **At the end of this chapter** you will have parents receive
+> `SIGCHLD` on child exit and call `waitpid()` (blocking,
+> `WNOHANG`, specific pid). Zombie state and process groups
+> remain deferred to chapter 79 (job control). Builds on
+> chapter 77 (sigaction).
 until the most recently spawned child exits. Real Unix
 processes get notified asynchronously via SIGCHLD and use
 `waitpid()` to pick a specific child or to non-block.

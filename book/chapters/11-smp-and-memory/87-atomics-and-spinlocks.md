@@ -206,8 +206,8 @@ it's a feature that has to keep working.
 
 ## The audit: every shared global, classified
 
-This is the meaty content of the chapter. I walked every
-`static` global in `kernel/` and assigned it to one of four
+This is the meaty content of the chapter. Walk every
+`static` global in `kernel/` and assign it to one of four
 categories.
 
 ### Category 1 — Immutable post-init
@@ -248,8 +248,7 @@ Replace `++` with `atomic_add_return`.
 | `kernel/core/thread.c` | `g_next_id` (tid alloc) | **Done this chapter** |
 | `kernel/core/thread.c` | `g_thread_count`      | TODO, chapter 89   |
 | `kernel/core/timer.c`  | `g_ticks`             | TODO, chapter 88   |
-| `kernel/core/blk_cache.c` | `g_clock`, `g_hits`, `g_misses` | TODO, chapter 89 |
-| `kernel/core/osfs2_cache.c` | same           | TODO, chapter 89   |
+| `kernel/core/osfs2_cache.c` | `g_clock`, `g_hits`, `g_misses` | TODO, chapter 89   |
 | `kernel/core/osfs2_journal.c` | `g_next_txn_id`, `g_commit_count`, `g_replay_count`, `g_journalled_blocks` | TODO, chapter 89 |
 | `kernel/core/wm.c`     | `g_next_z`            | TODO, chapter 89   |
 

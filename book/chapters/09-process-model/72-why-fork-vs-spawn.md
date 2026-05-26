@@ -1,12 +1,18 @@
 # Chapter 72 — Why fork (and not just spawn)
 
-**Status:** Stub. Tracking milestone 65.
+> **Milestone in this chapter:** 65 — design prelude.
+> **Code referenced:** none yet (chapter 73 implements `fork`).
+>
+> **At the end of this chapter** you will know why the next several
+> chapters add `fork`, `exec`, and `waitpid` to a kernel that
+> already has a working `spawn`. No code lands here; the argument
+> matters because the implementation that follows is irreversible.
 
 The kernel has run with `spawn(path, args)` since chapter 17.
-That has been enough for the shell, the launcher, every GUI
-app, and even the browser. But it is not Unix's process model.
-This chapter is the why-this-exists prelude before we add
-`fork` and `exec` over the next several chapters.
+That has been enough for the shell, the launcher, every GUI app,
+and even the browser. But it is not Unix's process model. This
+chapter is the why-this-exists prelude before `fork` and `exec`
+land in chapters 73–75.
 
 ## What this chapter adds
 

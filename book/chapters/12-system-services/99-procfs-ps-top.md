@@ -22,34 +22,34 @@ After this chapter the regression sweep is **55 / 55 PASS**.
 
 ## What this chapter adds
 
-- **A thread-snapshot API** in [kernel/core/thread.c](kernel/core/thread.c) /
-  [kernel/core/thread.h](kernel/core/thread.h):
+- **A thread-snapshot API** in [kernel/core/thread.c](../../../kernel/core/thread.c) /
+  [kernel/core/thread.h](../../../kernel/core/thread.h):
   `thread_snapshot()`, `thread_snapshot_pid()`,
   `thread_runqueue_len()`, and `thread_live_count()`. They walk
   the live thread list under `g_all_lock` and copy each thread
   into a self-contained `struct thread_snap` that callers can
   format without holding any locks.
-- **A new pseudo-FS module** [kernel/core/procfs.c](kernel/core/procfs.c):
+- **A new pseudo-FS module** [kernel/core/procfs.c](../../../kernel/core/procfs.c):
   hand-rolled formatters (the kernel has no `printf`) that turn
   the snapshot structs into the textual files Linux's procfs
   has trained every Unix user to expect — `uptime`, `meminfo`,
   `cpuinfo`, `sched`, `<pid>/status`, `<pid>/cmdline`.
-- **A fifth VFS prefix** in [kernel/core/vfs.c](kernel/core/vfs.c)
-  and a new `FD_PROCFS` fd kind in [kernel/core/vfs.h](kernel/core/vfs.h):
+- **A fifth VFS prefix** in [kernel/core/vfs.c](../../../kernel/core/vfs.c)
+  and a new `FD_PROCFS` fd kind in [kernel/core/vfs.h](../../../kernel/core/vfs.h):
   `vfs_open("/proc/...")` calls `procfs_render` into a fresh
   kheap buffer and stashes it on the fd; `vfs_read` slices that
   buffer; `vfs_close` `kfree`s it.
-- **`sys_listdir_at` dispatch** in [kernel/core/syscall.c](kernel/core/syscall.c):
+- **`sys_listdir_at` dispatch** in [kernel/core/syscall.c](../../../kernel/core/syscall.c):
   paths under `/proc/` and `/proc` route to `procfs_listdir`,
   which enumerates the static top-level files followed by one
   entry per live pid.
-- **`/bin/ps`** [userspace/ps/ps.c](userspace/ps/ps.c) —
+- **`/bin/ps`** [userspace/ps/ps.c](../../../userspace/ps/ps.c) —
   enumerates `/proc/<pid>/` directories, parses each `status`
   file, and prints a `ps`-style column.
-- **`/bin/top`** [userspace/top/top.c](userspace/top/top.c) —
+- **`/bin/top`** [userspace/top/top.c](../../../userspace/top/top.c) —
   same parser plus an `\x1b[2J\x1b[H` redraw every second and
   an optional frame-count argument so test scripts don't hang.
-- **A regression test** [scripts/test_procfs.py](scripts/test_procfs.py):
+- **A regression test** [scripts/test_procfs.py](../../../scripts/test_procfs.py):
   drives the kernel shell over the serial socket and exercises
   every file plus `ps`, end-to-end through the syscall layer.
 

@@ -27,7 +27,7 @@ TLS arc:
    link follows fell off the cliff.
 
 Both bugs lived in the same function — `canonicalize_url` in
-[`userspace/browser/browser.c`](userspace/browser/browser.c) —
+[`userspace/browser/browser.c`](../../../userspace/browser/browser.c) —
 and both came from the same root cause: that function was
 written in chapter 106b, when "fetching anything outside the
 guest" meant "send it to the in-guest httpd proxy". Three
@@ -204,7 +204,7 @@ already documents this limitation for the form-action path.
 
 ## Applied to
 
-- [`userspace/browser/browser.c`](userspace/browser/browser.c) —
+- [`userspace/browser/browser.c`](../../../userspace/browser/browser.c) —
   `canonicalize_url` case (5a) inserted, case (6) default
   flipped to `https://` when `BROWSER_PROXY` is unset.
   Additionally, a latent bug in `resolve_url` was uncovered
@@ -312,7 +312,7 @@ That guard was a vestige from before chapter 112d. Since
 chain against the bundle. There is no reason left to skip
 https stylesheets.
 
-`apply_link_sheets` in [userspace/browser/browser.c](userspace/browser/browser.c)
+`apply_link_sheets` in [userspace/browser/browser.c](../../../userspace/browser/browser.c)
 used to read:
 
 ```c
@@ -347,23 +347,23 @@ because it had never been observed. Now it is fixed.
 
 ## What gets exercised in tests
 
-- [`scripts/test_browser_https.py`](scripts/test_browser_https.py)
+- [`scripts/test_browser_https.py`](../../../scripts/test_browser_https.py)
   (chapter 112d) — PASS. Native TLS to `https://localhost:8443/`
   unaffected; the URL is already absolute so it hits case (3)'s
   passthrough.
-- [`scripts/test_browser_https_multi.py`](scripts/test_browser_https_multi.py)
+- [`scripts/test_browser_https_multi.py`](../../../scripts/test_browser_https_multi.py)
   (chapter 112e) — PASS. Multi-anchor TLS path unaffected.
-- [`scripts/test_tls_pem_bundle.py`](scripts/test_tls_pem_bundle.py)
+- [`scripts/test_tls_pem_bundle.py`](../../../scripts/test_tls_pem_bundle.py)
   (chapter 112f) — PASS. Bundle-format invariants unaffected.
-- [`scripts/test_browser_proxy.py`](scripts/test_browser_proxy.py)
+- [`scripts/test_browser_proxy.py`](../../../scripts/test_browser_proxy.py)
   (chapter 106b) — PASS. The critical proxy regression: with
   `BROWSER_PROXY` set, case (6) still prepends the proxy
   prefix exactly as before. This is the test that proves the
   legacy gate works.
-- [`scripts/test_browser_self.py`](scripts/test_browser_self.py)
+- [`scripts/test_browser_self.py`](../../../scripts/test_browser_self.py)
   (chapter 106c) — PASS. End-to-end loop through the in-guest
   proxy still closes.
-- [`scripts/_dbg_bare_host.py`](scripts/_dbg_bare_host.py)
+- [`scripts/_dbg_bare_host.py`](../../../scripts/_dbg_bare_host.py)
   (NEW, per `/memories/debug-scripts-policy.md`) — manual
   probe, not in regression sweep. Boots the guest, runs
   `browser news.ycombinator.com` (bare hostname, no proxy
@@ -373,7 +373,7 @@ because it had never been observed. Now it is fixed.
   the output (the regression sentinel that the proxy path
   wasn't silently taken). Confirms bare-host → https://
   default flip works against the live HN server.
-- [`scripts/_dbg_hn_resources.py`](scripts/_dbg_hn_resources.py)
+- [`scripts/_dbg_hn_resources.py`](../../../scripts/_dbg_hn_resources.py)
   (NEW, per `/memories/debug-scripts-policy.md`) — manual
   probe for the `resolve_url` "base has no path" fix and the
   follow-on https-stylesheet enable. Boots the guest, runs

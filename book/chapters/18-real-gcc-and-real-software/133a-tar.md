@@ -1,17 +1,21 @@
 # Chapter 133a — `/bin/tar` (ustar reader)
 
-> **Status:** shipped (Phase 5 of guest-gcc bring-up).
-> The in-guest `/bin/tar` extracts a build-time-produced
-> tarball of the DoomGeneric source tree (`/bin/doomgeneric.tar`,
-> 1.9 MB, 203 entries) onto `/data/src/` in ~10 seconds.
-> `scripts/test_tar.py` runs **PASS 8 / FAIL 0**.
-> Four earlier-chapter regressions remain green:
-> `test_gcc_sys_stat.py` 6/0, `test_gcc_hello.py` 10/0,
-> `test_gcc_bf.py` 6/0, `test_gcc_stdio.py` 7/0.
-> **Prereq:** chapter 132j (`<sys/*.h>` headers on `/bin`).
-> **Opens:** chapter 133b (in-guest Makefile audit against
-> DoomGeneric), chapter 133c (rebuild Doom from `/data/src/`
-> with `/bin/gcc` + `/bin/make`).
+> **Milestone in this chapter:** ship an in-guest tar reader so
+> the next chapters can extract a real source tree onto the
+> guest filesystem.
+> **Code referenced:**
+> - [userspace/tar/tar.c](../../../userspace/tar/tar.c)
+> - [scripts/mktar.py](../../../scripts/mktar.py)
+> - [scripts/test_tar.py](../../../scripts/test_tar.py)
+>
+> **At the end of this chapter** you will have a `/bin/tar`
+> that handles `tar tf` (list) and `tar xf [-C dir]`
+> (extract), a deterministic Python producer that emits a
+> byte-stable ustar archive, and `test_tar.py` at **PASS 8 /
+> FAIL 0**. The build-time output `/bin/doomgeneric.tar`
+> (~1.9 MB, 203 entries) extracts onto `/data/src/` in ~10
+> seconds. Prerequisite: chapter 132j (`<sys/*.h>` headers
+> on `/bin`).
 
 ---
 

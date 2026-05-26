@@ -22,13 +22,13 @@ have nothing new to debug at the protocol layer.
 
 Two new source trees under `userspace/`:
 
-- [`userspace/libfs/userfs.h`](userspace/libfs/userfs.h) +
-  [`userspace/libfs/userfs.c`](userspace/libfs/userfs.c) —
+- [`userspace/libfs/userfs.h`](../../../userspace/libfs/userfs.h) +
+  [`userspace/libfs/userfs.c`](../../../userspace/libfs/userfs.c) —
   the boilerplate. A daemon fills in a `struct
   userfs_handler` with up to eight callbacks and calls
   `userfs_serve("/some/prefix", &h)`. The library handles
   every wire detail.
-- [`userspace/echofs/echofs.c`](userspace/echofs/echofs.c) —
+- [`userspace/echofs/echofs.c`](../../../userspace/echofs/echofs.c) —
   the smallest interesting daemon. Mounts `/echo`, serves
   three files (`hello`, `buf`, `echo`), exits when the
   channel closes.
@@ -183,7 +183,7 @@ which is more complexity than this proof-of-concept warrants.
 ## Wiring into the Makefile
 
 The pattern matches every other userspace daemon. From
-[`Makefile`](Makefile):
+[`Makefile`](../../../Makefile):
 
 ```make
 LIBFS_OBJ := $(BUILD)/userspace/libfs/userfs.o
@@ -209,7 +209,7 @@ own `_OBJS` lists.
 
 ## The test
 
-[`scripts/test_userfs_echo.py`](scripts/test_userfs_echo.py)
+[`scripts/test_userfs_echo.py`](../../../scripts/test_userfs_echo.py)
 mirrors the chapter 113f mount test in structure: boot,
 attach to the serial socket, drain to the shell prompt, run
 commands, assert on output. The four assertions are:
@@ -287,8 +287,7 @@ Fix: the WRITE byte count rides in `rsp.flags` (an op-specific
 scalar field), and `rsp.length` stays 0. The kernel-side
 `userfs_op_write` reads `(long)rsp.flags` for the result.
 
-Rule, now codified in
-[`memories/repo/chapter-114-userfs-write-reply-protocol.md`](../../../memories/repo/chapter-114-userfs-write-reply-protocol.md):
+Rule:
 
 > For any RPC reply in the userfs scheme, `rsp.length` is
 > ALWAYS the number of payload bytes the daemon will write
@@ -336,8 +335,7 @@ state assignment had never been observed to matter.
 
 Fix: move `g_current->state = THREAD_EXITED` to AFTER
 `vfs_close_all` returns, right before the parent-wake
-section. Rule, codified in
-[`memories/repo/thread-exit-state-must-flip-after-vfs-close-all.md`](../../../memories/repo/thread-exit-state-must-flip-after-vfs-close-all.md):
+section. The rule:
 
 > Any "terminal" state assignment (thread_exit, fatal signal
 > delivery) must come AFTER all blocking operations in that
@@ -388,11 +386,11 @@ is about to overwrite.
   daemon-side machinery is freshly born and there are no
   /echo callers in the existing app suite.
 - **New apps added**:
-  - [`userspace/echofs/echofs.c`](userspace/echofs/echofs.c)
+  - [`userspace/echofs/echofs.c`](../../../userspace/echofs/echofs.c)
     — a real binary that demonstrates the protocol end to
     end, runnable from the shell (`echofs &`).
 - **Tests added**:
-  - [`scripts/test_userfs_echo.py`](scripts/test_userfs_echo.py)
+  - [`scripts/test_userfs_echo.py`](../../../scripts/test_userfs_echo.py)
     — boots the OS, spawns the daemon, runs the four
     assertions above.
 

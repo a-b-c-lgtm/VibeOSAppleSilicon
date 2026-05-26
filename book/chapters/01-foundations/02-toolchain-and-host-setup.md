@@ -1,13 +1,18 @@
 # Chapter 2 — Toolchain and host setup
 
 > **Milestone in this chapter:** prerequisites for milestone 0.
-> **Code referenced:** [Makefile](../../../Makefile) (the
-> `toolchain-check` target).
+> **Code referenced:**
+> - [Makefile](../../../Makefile) (the `toolchain-check` target)
+>
+> **At the end of this chapter** you will have an `aarch64-elf` cross
+> toolchain, a HVF-capable QEMU, and a GNU `gdb` that can speak to
+> the QEMU stub. `make toolchain-check` will exit zero and chapter 3
+> will build cleanly.
 
-## What we are about to install
+## What you'll install
 
-To build and run the kernel on a MacBook Pro M2 (or any other Apple
-Silicon Mac), you need three pieces of software:
+To build and run the kernel on any Apple Silicon Mac, you need three
+pieces of software:
 
 1. **A cross-compiler toolchain that targets bare-metal aarch64.**
    We use `aarch64-elf-gcc` and its sibling tools from binutils.
@@ -68,19 +73,19 @@ Those are the GMP/MPFR/MPC stack that GCC depends on at runtime.
 
 ## What `aarch64-elf-` actually means
 
-The cross-compiler is named `aarch64-elf-gcc`, not `aarch64-gcc`.
+The cross compiler is named `aarch64-elf-gcc`, not `aarch64-gcc`.
 The `-elf-` part is the *target triple suffix* and matters: it
-tells GCC that:
+tells GCC that
 
-- The target processor is `aarch64`.
-- The target operating system is *no operating system* (the empty
-  middle slot, often shown as `none`).
-- The target object-file format is ELF.
+- the target processor is `aarch64`,
+- the target operating system is *no operating system* (the empty
+  middle slot, often shown as `none`), and
+- the target object-file format is ELF.
 
-This is the right choice for a kernel: the compiler will not
-assume any libc, will not emit calls to `__libc_start_main`, and
-will produce ELF files that can be linked with our own linker
-script and loaded by QEMU directly.
+That is the right choice for a kernel. The compiler will not assume
+a libc, will not emit calls to `__libc_start_main`, and will produce
+ELF files that can be linked against your own linker script and
+loaded by QEMU directly.
 
 A different toolchain you may see online is `aarch64-linux-gnu-gcc`.
 That one targets *Linux on aarch64* — it assumes a libc, emits
@@ -90,7 +95,8 @@ it.
 
 ## What QEMU is going to do
 
-When we run `make run` later, the command we will be executing is:
+The command `make run` executes (with some chapter-specific extras)
+decomposes to:
 
 ```bash
 qemu-system-aarch64 \
@@ -105,7 +111,7 @@ qemu-system-aarch64 \
 Each flag matters:
 
 - `-M virt` selects QEMU's "virt" machine model. This is a
-  synthetic, paravirtualized aarch64 platform — no real hardware
+  synthetic, paravirtualised AArch64 platform — no real hardware
   has this exact memory map. Its great virtue is that *every device
   on the bus is virtio-mmio*, which is the cleanest device-driver
   protocol there is. Most of the rest of this book is virtio.
@@ -135,7 +141,7 @@ takes the bootloader role) is covered in Appendix A.
 
 ## Verifying the toolchain end-to-end
 
-We have a tiny verification target in the Makefile:
+The Makefile ships a tiny verification target:
 
 ```bash
 $ make toolchain-check
@@ -145,8 +151,8 @@ QEMU emulator version 11.0.0
 toolchain ok — building for aarch64 virt under HVF
 ```
 
-If you see that, the rest of the book will work. If you do not,
-the most common causes are:
+If you see that, the rest of the book will work. If you do not, the
+most common causes are:
 
 | Error                                                | Cause                                                 |
 |------------------------------------------------------|-------------------------------------------------------|
@@ -161,24 +167,24 @@ running under Rosetta and `brew install` will install the x86-64
 versions of the tools, which then run under Rosetta themselves and
 are roughly 5× slower than they need to be.
 
-## What we have not installed
+## What you didn't install
 
-You may notice we did not install:
+Deliberately absent from the list above:
 
-- A device-tree compiler (`dtc`). We do not need one until much
-  later, when we want to inspect QEMU's DTB by name; for now the
-  DTB is a black box that the kernel can either read or ignore.
-- An emulator UI (`UTM`, `Parallels`, etc.). QEMU is the only
-  emulator we use, and it does not need a wrapper.
+- A device-tree compiler (`dtc`). You don't need one until much
+  later, when inspecting QEMU's DTB by name becomes useful; for now
+  the DTB is a black box that the kernel can either read or ignore.
+- An emulator UI (UTM, Parallels, etc.). QEMU is the only emulator
+  in this book, and it doesn't need a wrapper.
 - `clang-format` or any linter. Style is enforced lightly through
   the Makefile's `-Wall -Wextra -Werror`, and that is enough at
   this scale.
 
 ## Next chapter
 
-In chapter 3 we write the first kernel. It is two source files
-totalling about 130 lines, plus a 40-line linker script. By the
-end of the chapter you will see this on your terminal:
+Chapter 3 walks through the first kernel: two source files totalling
+about 130 lines, plus a 40-line linker script. By the end of that
+chapter you will see this on your terminal:
 
 ```
 ============================================================

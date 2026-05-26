@@ -28,7 +28,7 @@ on the OS, a program that allocates local variables,
 assigns values to them, computes arithmetic expressions,
 and returns the result as the exit code.
 
-## What shipped
+## What this chapter adds
 
 | File | Δ lines | Role |
 | --- | --- | --- |

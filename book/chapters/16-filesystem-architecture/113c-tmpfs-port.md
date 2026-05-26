@@ -11,7 +11,7 @@ handling and the start of the MOUNT_RO enforcement story.
 
 ## The shape of the tmpfs port
 
-[`kernel/core/tmpfs.c`](kernel/core/tmpfs.c) already exposed
+[`kernel/core/tmpfs.c`](../../../kernel/core/tmpfs.c) already exposed
 the internals we needed:
 
 ```c

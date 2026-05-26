@@ -1,15 +1,20 @@
 # Chapter 132h — `/bin/gcc` builds a medium real program
 
-> **Status:** shipped (Phase 4 of guest-gcc bring-up).
-> The in-guest `/bin/gcc` now compiles a non-trivial real
-> program — a brainfuck interpreter — from source on disk
-> using nothing more than `gcc bf.c -o bf2`. The resulting
-> binary runs and produces byte-identical output to the
-> host-built `bf`.
-> `scripts/test_gcc_bf.py` runs **PASS 6 / FAIL 0**.
-> **Prereq:** chapter 132g (default-spec link works).
-> **Opens:** chapter 133 onwards — port `make`, port a small
-> upstream package, eventually self-host the toolchain.
+> **Milestone in this chapter:** prove the in-guest gcc on a
+> non-trivial real program — a brainfuck interpreter compiled
+> from source on disk — and verify the output is byte-identical
+> to the host-built reference.
+> **Code referenced:**
+> - [userspace/bf/bf.c](../../../userspace/bf/bf.c)
+> - [scripts/test_gcc_bf.py](../../../scripts/test_gcc_bf.py)
+>
+> **At the end of this chapter** you will have `/bin/bf` and
+> its source at `/bin/bf.c` on the OSFS-1 image, a host
+> Makefile rule that links `bf.elf` using the same crt0 +
+> linker_user.ld + `--start-group -losdevc --end-group` shape
+> the in-guest gcc produces, and `test_gcc_bf.py` at **PASS 6
+> / FAIL 0**. Prerequisite: chapter 132g (default-spec link
+> works).
 
 ---
 

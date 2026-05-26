@@ -224,7 +224,7 @@ pipe consumer: enter `sys_read` with IRQs masked, block, never
 get scheduled because the timer can't preempt anyone.
 
 Why doesn't it bite?  Look at `cswitch_to` in
-[`kernel/arch/context_switch.s`](kernel/arch/context_switch.s):
+[`kernel/arch/context_switch.s`](../../../kernel/arch/context_switch.s):
 when a thread voluntarily yields, the saved SPSR is hardcoded to
 `0x345` — `D=1, A=1, I=0, F=1`.  When that thread is later
 resumed via `eret`, PSTATE is loaded from SPSR_EL1, so `DAIF.I`

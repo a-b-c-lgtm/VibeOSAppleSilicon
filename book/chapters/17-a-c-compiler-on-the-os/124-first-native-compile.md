@@ -84,7 +84,7 @@ notepad's Build button, a hand-typed program saved to
 | Re-run exits with `0x7b` again | The disk-resident source is the canonical source |
 
 Nine assertions, all in one boot, all passing on the first
-run after we shipped this chapter.
+run after this chapter lands.
 
 ## Gotchas that bit us, kept here so they don't bite again
 
@@ -151,7 +151,7 @@ Per the user directive ("OS features get used by apps"):
 
 ## Lessons
 
-1. The smallest "I wrote a program and ran it" loop is
+1. The smallest "write a program and run it" loop is
    four moving parts: a file on disk, a compiler that
    reads it, a linker that writes a binary, a loader that
    runs the binary. We had all four by chapter 121. What

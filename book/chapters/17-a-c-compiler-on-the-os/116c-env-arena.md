@@ -1,10 +1,20 @@
 # Chapter 116c — `environ[]`, getenv, setenv, unsetenv, putenv
 
-**Status:** Shipped. The POSIX env arena that `make`, any in-guest
-C compiler, and every other UNIX-shaped tool expects is now in
-place. Substep of
-[Chapter 116](116-libc-stdio-and-env.md); follows
-[Chapter 116b](116b-stdio.md).
+> **Milestone in this chapter:** front the chapter-24
+> `SYS_GETENV` / `SETENV` / `UNSETENV` syscalls with a POSIX
+> env arena — an owning string heap with `environ[]`
+> pointers — so every UNIX-shaped tool sees the surface it
+> expects.
+> **Code referenced:**
+> - [userspace/libc/env.h](../../../userspace/libc/env.h)
+>
+> **At the end of this chapter** you will have `getenv`,
+> `setenv` (3-arg overwrite flag), `unsetenv`, `putenv`, and
+> `clearenv` working over a libc-owned arena, ready for
+> `make`, any in-guest C compiler, and the rest of
+> Part XVII. Substep of
+> [Chapter 116](116-libc-stdio-and-env.md); follows
+> [Chapter 116b](116b-stdio.md).
 
 ## Why this needs its own chapter
 

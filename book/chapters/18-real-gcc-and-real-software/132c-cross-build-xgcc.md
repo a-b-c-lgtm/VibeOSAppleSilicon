@@ -1,22 +1,21 @@
 # Chapter 132c — Cross-building `aarch64-osdev-gcc`
 
-> **Status:** shipped. `make gcc-osdev` builds the patched
-> gcc-14.2.0 source against the in-tree gmp/mpfr/mpc and
-> installs `build/toolchain/bin/aarch64-osdev-gcc`
-> (alongside `aarch64-osdev-cpp` and friends) in roughly
-> four minutes on a 12-core M-series Mac. Host smoke test
-> `scripts/test_xgcc_build.py` passes: the binary exists,
-> reports `-dumpmachine=aarch64-osdev` and
-> `-dumpversion=14.2.0`, predefines `__osdev__`, and
-> resolves `as` through the chapter-131a binutils prefix.
-> Regression sweep still 61/61.
-> **Prereq:** chapters 131a (binutils-osdev), 132a (patched
+> **Milestone in this chapter:** run the patched gcc through its
+> configure + `all-gcc` build against the in-tree math
+> libraries and install the resulting cross compiler.
+> **Code referenced:**
+> - [Makefile](../../../Makefile) (`gcc-osdev`)
+> - [scripts/test_xgcc_build.py](../../../scripts/test_xgcc_build.py)
+>
+> **At the end of this chapter** you will have
+> `build/toolchain/bin/aarch64-osdev-gcc` (and the matching
+> `aarch64-osdev-cpp` and friends) installed in roughly four
+> minutes on a 12-core Apple-silicon Mac, with the smoke test
+> asserting `-dumpmachine=aarch64-osdev`,
+> `-dumpversion=14.2.0`, the `__osdev__` predefine, and `as`
+> resolution through the chapter-131a binutils prefix.
+> Prerequisites: chapter 131a (binutils-osdev), 132a (patched
 > gcc source), 132b (in-tree math libs).
-> **Opens:** chapter 132d — turning the bare cross compiler
-> into one that can compile and link real userspace
-> programs against the OSdev libc + crt0, ending in
-> `/bin/gcc /tmp/hello.c -o /tmp/hello && /tmp/hello`
-> end-to-end.
 
 ---
 

@@ -1,13 +1,21 @@
-# Chapter 128b — Step 2: `raise()`, `abort()`, full POSIX signal table
+# Chapter 128b — `raise()`, `abort()`, full POSIX signal table
 
-> **Status:** shipped. `raise()`, `abort()`, and the
-> C99 / POSIX signal-number macros are in
-> `userspace/libc/signal.h`. `scripts/test_signal_raise.py`
-> is green.
-> **Prereq:** chapter 128a (setjmp/longjmp), chapter 77
-> (`sigaction`), chapter 78 (`SIGCHLD` / `waitpid`).
-> **Opens:** chapter 128c — `<ctype.h>`, `<assert.h>`,
-> and the `str*` family.
+> **Milestone in this chapter:** expand the libc signal surface
+> from the chapter-77 `sigaction` minimum to the full C99 /
+> POSIX table.
+> **Code referenced:**
+> - [userspace/libc/signal.h](../../../userspace/libc/signal.h)
+> - [userspace/libc/syscall.h](../../../userspace/libc/syscall.h)
+>   (the expanded `SIG*` macro table)
+> - [scripts/test_signal_raise.py](../../../scripts/test_signal_raise.py)
+>
+> **At the end of this chapter** you will have `raise(int)` and
+> `abort(void)` available to every userspace binary, the C99 /
+> POSIX signal-number macros (`SIGSEGV`, `SIGFPE`, `SIGABRT`,
+> `SIGUSR1/2`, `SIGILL`, `SIGBUS`, `SIGALRM`) declared, and a
+> green `test_signal_raise.py` regression. Prerequisites:
+> chapter 128a (setjmp / longjmp), chapter 77 (`sigaction`),
+> chapter 78 (`SIGCHLD` / `waitpid`).
 
 ---
 

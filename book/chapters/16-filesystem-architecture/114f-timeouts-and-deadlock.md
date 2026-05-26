@@ -149,11 +149,10 @@ Three things to note:
   slow write, the read won't even park the thread once —
   it returns `-ETIMEDOUT_VFS` immediately.
 
-- **The prefer-data-over-signal rule from
-  [the pipe_read fix](../../../memories/repo/pipe-read-prefer-data-over-signal.md)
-  is preserved.** A signal landing while data is also waiting
-  still drains the data first. That fix predates this
-  chapter and remains the contract.
+- **The prefer-data-over-signal rule from chapter 114e's
+  `pipe_read` fix is preserved.** A signal landing while
+  data is also waiting still drains the data first. That
+  fix predates this chapter and remains the contract.
 
 - **`deadline_ms == 0` means "no deadline"** — `pipe_read`
   becomes a one-line wrapper passing 0. Nothing outside

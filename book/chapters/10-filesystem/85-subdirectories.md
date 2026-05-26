@@ -158,7 +158,7 @@ uint32_t osfs2_create(const char *name)
 ```
 
 For directories we need the same dance, just with
-`OSFS2_TYPE_DIR` and a different parent.  So I extracted the
+`OSFS2_TYPE_DIR` and a different parent.  Extract the
 shared body into a helper:
 
 ```c
@@ -217,8 +217,8 @@ if (hit >= 0) {
 }
 ```
 
-This subtlety cost me one test failure — `test_directories.py`
-caught it on the first run (`mkdir of existing dir fails with
+This subtlety surfaces as one test failure -- `test_directories.py`
+catches it on the first run (`mkdir of existing dir fails with
 errno`).  The test is good; the behaviour difference between
 "create file" and "create dir" is exactly the kind of thing
 that's easy to forget if the test isn't already there to
@@ -334,8 +334,8 @@ long a3 = (long)frame->x[3];
 
 Adding the two missing lines and a corresponding `_svc6`
 wrapper in `userspace/libc/syscall.h` was a mechanical
-chapter-85 detail that's worth flagging in passing — it's
-the kind of "obvious now I see it" change that tends to be
+chapter-85 detail that's worth flagging in passing -- it's
+the kind of "obvious in hindsight" change that tends to be
 invisible until the day a syscall actually wants more than
 four arguments.
 
@@ -457,8 +457,7 @@ RGB to verify the dialog is actually in new-folder mode
 
 ### The hint line tells the user what's possible
 
-I doubled the height of the bottom hint area to fit two
-lines:
+The bottom hint area is two lines tall, sized to fit:
 
 ```
 Up/Down: pick   Enter: open dir / save
@@ -523,8 +522,8 @@ chapter 84's `test_notepad_save_as.py`.
 
 ## What's intentionally NOT in this chapter
 
-A few things that were tempting to do, and that I deliberately
-left for later:
+A few things that were tempting to do, and that are
+deliberately left for later:
 
 - **`rmdir` shell builtin.**  The kernel has `osfs2_rmdir`
   with the empty-directory check, but no syscall surface
@@ -535,7 +534,7 @@ left for later:
   whitespace splitting `/data/a/b/c` into three calls and
   ignoring EEXIST on each.  Doable in 20 lines of shell
   but the only consumer right now (Save As dialog) creates
-  one directory at a time, so I deferred.
+  one directory at a time, so it is deferred.
 - **Cross-mount mkdir.**  `mkdir /tmp/foo` returns EINVAL
   today.  Tmpfs is flat by design (chapter 32) and adding
   hierarchy there is a separate feature, not a "while

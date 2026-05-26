@@ -1,27 +1,40 @@
 # Chapter 100 — strace via /proc/&lt;pid&gt;/trace
 
-In chapter 99 we surfaced live process state through a
-read-only pseudo-filesystem at `/proc`. The same shape — *the
-kernel renders text into a per-open snapshot, userspace just
-reads it* — extends naturally into the next observability
-tool every Unix has: `strace`. A traced program's syscalls
-appear as a textual log under `/proc/<pid>/trace`, and a tiny
-`/bin/strace` wrapper turns the polling into a streaming
-view.
+> **Milestone in this chapter:** 100 — per-thread syscall ring +
+> `/bin/strace`.
+> **Code referenced:**
+> - [kernel/core/strace.c](../../../kernel/core/strace.c)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_TRACE_ME` and the trace branch in `svc_dispatch`)
+> - [userspace/strace/strace.c](../../../userspace/strace/strace.c)
+>
+> **At the end of this chapter** you will have a 64-entry syscall
+> ring buffer per traced thread, a `/proc/<pid>/trace` leaf that
+> drains it on read, a one-argument `SYS_TRACE_ME` self-opt-in, and
+> a 150-line `/bin/strace` wrapper that fork+exec's a child and
+> streams its syscalls to stdout.
 
-This chapter is short on new mechanism and long on
-*reusing* mechanism. We add:
+Chapter 99 surfaced live process state through a read-only
+pseudo-filesystem at `/proc`. The same shape — *the kernel renders
+text into a per-open snapshot, userspace just reads it* — extends
+naturally into the next observability tool every Unix has:
+`strace`. A traced program's syscalls appear as a textual log under
+`/proc/<pid>/trace`, and a tiny `/bin/strace` wrapper turns the
+polling into a streaming view.
+
+This chapter is short on new mechanism and long on *reusing*
+mechanism. The deltas are:
 
 1. A 64-entry ring buffer per traced thread.
 2. One branch in `svc_dispatch` to record entries.
-3. A new procfs leaf, `/proc/<pid>/trace`, that drains
-   the ring on read.
+3. A new procfs leaf, `/proc/<pid>/trace`, that drains the ring on
+   read.
 4. A self-trace syscall, `SYS_TRACE_ME`, with no arguments.
-5. A 150-line `/bin/strace` that forks → `trace_me()` →
-   `execv()` → polls procfs.
+5. A 150-line `/bin/strace` that forks → `trace_me()` → `execv()`
+   → polls procfs.
 
-Total kernel diff: ~280 lines plus 7 single-line edits to
-six existing creation/teardown sites in `thread.c`.
+Total kernel diff: ~280 lines plus seven single-line edits to six
+existing creation/teardown sites in `thread.c`.
 
 ```sh
 $ strace /bin/echo hello
@@ -668,7 +681,7 @@ dance* above. The kernel-side rule is unchanged
 rule is "if the only content this poll is the banner, drop
 it."
 
-I caught this only because I ran the GUI test side-by-side
+The bug surfaces only when the GUI test runs side-by-side
 with the serial test, which is a useful pattern: if a tool
 behaves differently on a fast program vs a slow one, the
 difference is almost always a timing-window assumption you

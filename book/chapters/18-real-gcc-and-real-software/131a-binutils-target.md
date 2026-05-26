@@ -1,20 +1,22 @@
 # Chapter 131a — Binutils with an `aarch64-osdev` target
 
-> **Status:** shipped. `make binutils-osdev` produces
+> **Milestone in this chapter:** teach upstream binutils about a
+> new target triple whose OS field is `osdev`, and host-build
+> the resulting `aarch64-osdev-as` / `aarch64-osdev-ld`.
+> **Code referenced:**
+> - [vendor/binutils-2.44/](../../../vendor/binutils-2.44/)
+>   (`config.sub`, libbfd, `gas`, `ld` — the four-hunk additive
+>   patch)
+> - [Makefile](../../../Makefile) (`make binutils-osdev`)
+> - [scripts/test_binutils_target.py](../../../scripts/test_binutils_target.py)
+>
+> **At the end of this chapter** you will have
 > `build/toolchain/bin/aarch64-osdev-as` and
-> `aarch64-osdev-ld` from a sha256-pinned upstream tarball
-> plus a four-hunk additive patch. Host smoke test
-> `scripts/test_binutils_target.py` passes (assembles +
-> links a 4-instruction program, asserts the output is
-> ELF64-LE aarch64).
-> **Prereq:** chapter 128 plan ("Real GCC and Doom") for
-> the motivation; chapter 130c for the Phase 1 close.
-> **Opens:** Phase 2 of Part XVIII — bringing up a real
-> cross toolchain whose target triple is our OS, not
-> `aarch64-elf`. This chapter does the assembler and
-> linker; chapter 131b ports the same binaries to run
-> inside the guest, 131c does GCC, 131d swaps `/bin/as`
-> and `/bin/ld` for the new ones.
+> `aarch64-osdev-ld` cross-built from a sha256-pinned tarball
+> plus a small additive patch, and a host smoke test that
+> assembles and links a four-instruction program and asserts
+> the output is ELF64-LE aarch64. Prerequisite: chapter 128
+> for motivation, chapter 130c for the Phase 1 close.
 
 ---
 

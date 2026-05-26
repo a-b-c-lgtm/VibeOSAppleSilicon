@@ -1,6 +1,19 @@
 # Chapter 93 — Sharing the FD table: CLONE_FILES and refcounted fd_table
 
-**Status:** Done.
+> **Milestone in this chapter:** make the fd table shareable
+> between threads in the same address space and refcounted so
+> the last thread closes it.
+> **Code referenced:**
+> - [kernel/core/vfs.c](../../../kernel/core/vfs.c)
+>   (refcounted `fd_table`)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`CLONE_FILES` flag)
+> - [kernel/core/thread.c](../../../kernel/core/thread.c)
+>
+> **At the end of this chapter** you will have sibling threads
+> seeing each other's open fds and a thread's exit no longer
+> dropping fds another thread is still using. Builds on
+> chapter 91 (`SYS_CLONE`) and chapter 92 (`SYS_CLONE2`).
 
 Chapter 91 put thread spawning into userspace (`SYS_CLONE`) and
 chapter 92 made spawning honour CPU placement (`SYS_CLONE2`).

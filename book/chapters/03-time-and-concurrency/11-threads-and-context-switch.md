@@ -1,7 +1,7 @@
 # Chapter 11 — Kernel threads and the AArch64 context switch
 
 > **Milestone in this chapter:** 4 — cooperative kernel threads.
-> **Code referenced:** [kernel/arch/context_switch.S](../../../kernel/arch/context_switch.S),
+> **Code referenced:** [kernel/arch/context_switch.s](../../../kernel/arch/context_switch.s),
 > [kernel/core/thread.h](../../../kernel/core/thread.h),
 > [kernel/core/thread.c](../../../kernel/core/thread.c),
 > [kernel/core/main.c](../../../kernel/core/main.c) (`thread_demo`).
@@ -120,7 +120,7 @@ Total: 272 bytes, 16-byte aligned. Both `cswitch_to` and
 ## `cswitch_to` walked in three parts
 
 The function lives in
-[kernel/arch/context_switch.S](../../../kernel/arch/context_switch.S):
+[kernel/arch/context_switch.s](../../../kernel/arch/context_switch.s):
 
 ```c
 extern void cswitch_to(uint64_t *save_sp, uint64_t load_sp);

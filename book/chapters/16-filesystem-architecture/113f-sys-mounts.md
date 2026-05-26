@@ -22,7 +22,7 @@ filesystem-architecture chapter.
 
 `SYS_MOUNTS = 95` (slot picked because chapter 112's
 `SYS_GETRANDOM = 94` was the previous highest). The
-[`kernel/core/syscall.h`](kernel/core/syscall.h) entry
+[`kernel/core/syscall.h`](../../../kernel/core/syscall.h) entry
 spells the contract:
 
 ```c
@@ -52,7 +52,7 @@ SYS_MOUNTS = 95,
 ```
 
 The kernel implementation is small enough to inline. From
-[`kernel/core/syscall.c`](kernel/core/syscall.c):
+[`kernel/core/syscall.c`](../../../kernel/core/syscall.c):
 
 ```c
 struct kern_mount_info {
@@ -112,7 +112,7 @@ Three things worth pointing at:
 
 ## The userspace wrapper
 
-From [`userspace/libc/syscall.h`](userspace/libc/syscall.h):
+From [`userspace/libc/syscall.h`](../../../userspace/libc/syscall.h):
 
 ```c
 #define MOUNT_RO 0x1u
@@ -138,7 +138,7 @@ and the same bit number.
 ## `/bin/mount`: the user-visible payoff
 
 A small new binary lives at
-[`userspace/mount/mount.c`](userspace/mount/mount.c):
+[`userspace/mount/mount.c`](../../../userspace/mount/mount.c):
 
 ```c
 #include "../libc/syscall.h"
@@ -265,5 +265,5 @@ clipboard, notepad, fsync, boot_to_desktop).
   per the discussion above.
 - Existing apps modified: none.
 - New apps added: **`/bin/mount`**
-  ([`userspace/mount/mount.c`](userspace/mount/mount.c)).
+  ([`userspace/mount/mount.c`](../../../userspace/mount/mount.c)).
 - New test scripts: **`scripts/test_mounts.py`**.

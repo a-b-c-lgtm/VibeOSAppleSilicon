@@ -173,9 +173,8 @@ for chapter 88: WFE only wakes on an explicit SEV (Send Event)
 or on the local event register being set, and the GIC does
 **not** automatically `SEV` on IRQ delivery. So a `wfe`
 secondary stays asleep when the IPI arrives. (We'd see the
-PING counter never bump — exactly the failure mode I'd
-expected to discover by experiment, except this time I read
-the docs first.)
+PING counter never bump -- exactly the failure mode the
+docs warn about. The fix is to read the docs first.)
 
 The fix in `secondary_main` is two characters:
 

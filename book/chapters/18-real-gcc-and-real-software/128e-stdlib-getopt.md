@@ -1,12 +1,22 @@
 # Chapter 128e — `<stdlib.h>`: `qsort`, `bsearch`, `strtol`, `getopt`
 
-> **Status:** complete. `scripts/test_libc_stdlib.py` green.
-> **Prereq:** chapter 128c (string/ctype/assert), chapter 116a
-> (errno).
-> **Unlocks:** Doom's command-line parser, binutils' symbol
-> table sort, GCC's option dispatch. Any upstream code that
-> calls `strtol` on a `getenv()` value or sorts an array now
-> compiles unchanged.
+> **Milestone in this chapter:** ship the C99 / POSIX surface
+> missing from libc — the `strto*` family, `qsort` / `bsearch`,
+> and `getopt` — so Doom's command-line parser, binutils'
+> symbol-table sort, and GCC's option dispatch all compile
+> unchanged.
+> **Code referenced:**
+> - [userspace/libc/stdlib.h](../../../userspace/libc/stdlib.h)
+>   (the umbrella header)
+> - [scripts/test_libc_stdlib.py](../../../scripts/test_libc_stdlib.py)
+>
+> **At the end of this chapter** you will have `strtol` /
+> `strtoul` / `strtoll` / `strtoull` with base-0 auto-detection
+> and per-digit overflow handling, `qsort` (median-of-three
+> quicksort + insertion sort for small n) and `bsearch`, and a
+> POSIX `getopt` with `optarg` / `optind` / `optopt` / `opterr`.
+> Prerequisites: chapter 128c (string / ctype / assert),
+> chapter 116a (errno).
 
 ---
 

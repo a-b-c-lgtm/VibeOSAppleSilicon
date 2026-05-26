@@ -195,7 +195,8 @@ To keep this commit honest, here's what stayed unchanged:
 - The chapter 116 stub's "thread-local errno" claim is the
   last loose thread between this sub-chapter and the full
   POSIX libc shape. Re-reading the parent chapter's stub:
-  it commits to thread-local, and we shipped process-global.
+  it commits to thread-local, and the implementation here is
+  process-global.
   That's an honest gap; the parent chapter's index entry
   will need a follow-up note when the upgrade lands.
 

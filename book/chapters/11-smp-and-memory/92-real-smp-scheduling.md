@@ -1,6 +1,20 @@
-# Chapter 92 — Real SMP scheduling: per-CPU timers, locked sleeper walks, and CLONE_CPU
+# Chapter 92 — Real SMP scheduling: per-CPU timers, locked sleeper walks, CLONE_CPU
 
-**Status:** Done.
+> **Milestone in this chapter:** close the three problems
+> chapter 89 deferred — the secondary CPU's timer, the
+> unlocked global thread list, and CPU placement for clones.
+> **Code referenced:**
+> - [kernel/core/timer.c](../../../kernel/core/timer.c)
+>   (per-CPU `CNTV_*`)
+> - [kernel/core/thread.c](../../../kernel/core/thread.c)
+>   (locked sleeper walk)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_CLONE2`)
+>
+> **At the end of this chapter** you will have both cores
+> preempting their own threads, a thread-list walk that is
+> safe under concurrent CPUs, and userspace able to ask the
+> kernel to place a clone on a specific CPU.
 
 Chapter 89 brought up the second core and gave us per-CPU
 runqueues, but it deliberately punted on three problems:
@@ -346,10 +360,10 @@ void yield(void) {
 ```
 
 Without this two-line check the test was completely
-reliable on small workloads but flaky once we added
-cross-CPU futex wakes. The two-line check buys back
+reliable on small workloads but flaky once cross-CPU futex
+wakes were added. The two-line check buys back
 correctness without measurably affecting hot-path
-performance — `runq_pop` returning ourselves is rare.
+performance -- `runq_pop` returning ourselves is rare.
 
 ## Futex serialization across CPUs
 

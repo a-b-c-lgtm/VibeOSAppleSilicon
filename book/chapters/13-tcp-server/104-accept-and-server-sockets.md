@@ -455,7 +455,7 @@ return garbage or fault.
 
 The general rule is: **whenever you add a new fd kind, audit
 every site that dispatches on `enum fd_kind` and decide what
-the new kind should do there.** The kinds I checked for
+the new kind should do there.** The kinds audited for
 chapter 104 were:
 
 - `vfs.c::fd_table_unref` (close path) -- needs the new kind.

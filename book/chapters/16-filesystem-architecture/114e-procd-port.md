@@ -179,9 +179,8 @@ directories specially) skipped them all.
 
 Fix: harmonize all four sites — `libfs` docstring,
 `echofs`, `clipboardd`, and procd — on `1 = file /
-2 = directory`. Recorded as the canonical convention in
-[`/memories/repo/chapter-114e-procd-port.md`](#) so the
-next userfs daemon doesn't get this wrong again.
+2 = directory`. That convention is the contract every
+future userfs daemon must follow.
 
 ### `pipe_read` returns `-EINTR` even when data arrived
 
@@ -243,12 +242,11 @@ return — `svc_dispatch` re-checks `sig_pending` before the
 `eret`, so the handler runs on the very next user-mode
 entry. Nothing is lost; only the ordering changes.
 
-The lesson is wide enough to be worth a permanent note:
+The lesson is wide enough to be worth stating as a rule:
 **any blocking primitive that wakes on both a wait
 condition and a signal must check the wait condition
 first**. Future condvars, semaphores, and select-style
-multiplexers all face the same trap. Recorded as
-[`/memories/repo/pipe-read-prefer-data-over-signal.md`](#).
+multiplexers all face the same trap.
 
 The lesson is also why future *daemons* benefit from this
 fix even though they don't experience it directly: any RPC

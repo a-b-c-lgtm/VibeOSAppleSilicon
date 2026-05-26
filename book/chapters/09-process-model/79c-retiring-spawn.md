@@ -1,50 +1,58 @@
-# Chapter 79c — PLAN: Retiring `spawn` in favour of fork+exec everywhere
+# Chapter 79c — Retiring `spawn` in favour of fork+exec everywhere
 
-> **Status: PLAN ONLY.** This chapter is a binding contract
-> with future-us about a migration we have decided to make
-> but are not yet ready to execute. **Implement only after
-> chapter 84 (persistence-in-practice) ships** — there are
-> two filesystem chapters still to land first (83 journal,
-> 84 persistence-in-practice) and they take priority over
-> internal cleanup work.
+> **Milestone in this chapter:** plan only — implement after
+> chapter 84 (persistence-in-practice).
+> **Code referenced (for the migration inventory):**
+> - [userspace/init/init.c](../../../userspace/init/init.c)
+> - [userspace/sh/sh.c](../../../userspace/sh/sh.c)
+> - [userspace/launcher/launcher.c](../../../userspace/launcher/launcher.c)
+> - [userspace/notepad/notepad.c](../../../userspace/notepad/notepad.c)
+>
+> **At the end of this chapter** you will have a written contract for
+> a future migration: every caller of `SYS_SPAWN`, `SYS_SPAWN_REDIR`,
+> and `SYS_SPAWN_PIPE` is rewritten in terms of `fork`+`exec`, and
+> the three `spawn`-family syscalls are deleted from the kernel.
+> The chapter lays out the inventory, the per-caller transformation,
+> and the order in which to land them. **No code lands in this
+> chapter** — the implementation is scheduled after chapter 84 so
+> the two pending filesystem chapters (83 journal, 84
+> persistence-in-practice) ship first.
 
 ## Why this chapter exists at all
 
-After chapter 82 wrapped (write-back cache + fsync) we
-reviewed the system and noticed `init` still uses `spawn`
-to launch every userspace daemon — the desktop, taskbar,
-launcher, and shell. That's strange in a system that already
-implements `fork()` (chapter 73), `exec()` (chapter 74),
-`SIGCHLD`/`waitpid` (chapter 78) and made `gui_term` use all
-three (chapter 79b).
+After chapter 82 wrapped (write-back cache + fsync) the system was
+in an odd state: `init` still used `spawn` to launch every userspace
+daemon — the desktop, taskbar, launcher, and shell — even though
+`fork()` (chapter 73), `exec()` (chapter 74), `SIGCHLD`/`waitpid`
+(chapter 78), and the `gui_term` rewrite (chapter 79b) had all
+landed.
 
-The question we answered: **if real Linux would use
+The question this chapter answers: **if real Linux would use
 fork+exec for these callers, why doesn't ours?**
 
-Answer: it should. Carrying two parallel process-creation
-APIs forever is dead weight, and worse, it's pedagogically
-confusing. A reader walking the book in order learns
-"fork+exec is how processes are born" in chapter 73 and
-then immediately sees `init` ignoring that lesson when they
-flip to [userspace/init/init.c](userspace/init/init.c).
+Answer: it should. Carrying two parallel process-creation APIs
+forever is dead weight, and worse, it is pedagogically confusing. A
+reader walking the book in order learns "fork+exec is how processes
+are born" in chapter 73 and then immediately sees `init` ignoring
+that lesson when they flip to
+[userspace/init/init.c](../../../userspace/init/init.c).
 
-## What "spawn" is, and why it existed
+## What `spawn` is, and why it existed
 
-`SYS_SPAWN` (and its variants `SYS_SPAWN_REDIR`,
-`SYS_SPAWN_PIPE`) is a single-syscall combination of
-"create address space + load ELF + start thread." It
-predates fork by ~60 chapters: the kernel had user
-processes as far back as chapter 17, but did not have an
+`SYS_SPAWN` (and its variants `SYS_SPAWN_REDIR`, `SYS_SPAWN_PIPE`)
+is a single-syscall combination of "create address space + load ELF
++ start thread." It predates `fork` by ~60 chapters: the kernel had
+user processes as far back as chapter 17, but did not have an
 address-space copy mechanism until chapter 73.
 
 Conceptually `spawn` is what POSIX calls
 [`posix_spawn(3)`](https://pubs.opengroup.org/onlinepubs/9699919799/functions/posix_spawn.html):
-a fused fork+exec for callers who do no setup between the
-two. It's also genuinely faster — no AS to copy or COW,
-even briefly — which matters when fork is eager (chapter
-73) but stops mattering once COW lands (chapter 75).
+a fused fork+exec for callers who do no setup between the two. It
+is also genuinely faster — no AS to copy or COW, even briefly —
+which matters when fork is eager (chapter 73) but stops mattering
+once COW lands (chapter 75).
 
-We have three syscalls in the `spawn` family:
+Three syscalls live in the `spawn` family:
 
 | syscall                  | extra capability                          | shell shape           |
 | ------------------------ | ----------------------------------------- | --------------------- |
@@ -52,36 +60,34 @@ We have three syscalls in the `spawn` family:
 | `SYS_SPAWN_REDIR` (20)   | pre-opens a path as fd 0 in the child     | `cat < foo`           |
 | `SYS_SPAWN_PIPE`  (24)   | dup2s parent's fd N to child's fd 0/1     | `cat foo \| wc -l`    |
 
-The third one is the awkward one. It exists because between
-"fork" and "exec" you need to perform fd surgery (dup2 the
-read end of the pipe onto fd 0; close the unused write
-end), and we didn't have fork+exec at the time. So we
-shoved that fd surgery into the kernel and made it atomic.
+The third is the awkward one. It exists because between "fork" and
+"exec" you need to perform fd surgery (dup2 the read end of the
+pipe onto fd 0; close the unused write end), and the kernel didn't
+have fork+exec at the time. So the surgery was shoved into the
+kernel and made atomic.
 
-Once we have fork+exec, the surgery moves to userspace
-where it belongs, and the kernel surface shrinks by three
-syscalls.
+Once fork+exec is the only path, the surgery moves to userspace
+where it belongs, and the kernel surface shrinks by three syscalls.
 
 ## Inventory of `spawn` callers (snapshot, May 2026)
 
 Captured from `grep -nE 'spawn[(_]' userspace/**/*.c`:
 
-| caller                                  | sites | pattern                                           |
-| --------------------------------------- | ----- | ------------------------------------------------- |
-| [userspace/init/init.c](userspace/init/init.c)             | 5     | sequential daemon launches                        |
-| [userspace/launcher/launcher.c](userspace/launcher/launcher.c) | 1     | fire-and-forget on click                          |
-| [userspace/notepad/notepad.c](userspace/notepad/notepad.c)   | 1     | `spawn("/bin/notify", "saved!")` after Ctrl-S     |
-| [userspace/sh/sh.c](userspace/sh/sh.c)                     | 3 + 1 | `spawn` / `spawn_redir` / `spawn_pipe` + pipeline |
+| caller                                                        | sites | pattern                                           |
+| ------------------------------------------------------------- | ----- | ------------------------------------------------- |
+| [userspace/init/init.c](../../../userspace/init/init.c)             | 5     | sequential daemon launches                        |
+| [userspace/launcher/launcher.c](../../../userspace/launcher/launcher.c) | 1     | fire-and-forget on click                          |
+| [userspace/notepad/notepad.c](../../../userspace/notepad/notepad.c)   | 1     | `spawn("/bin/notify", "saved!")` after Ctrl-S     |
+| [userspace/sh/sh.c](../../../userspace/sh/sh.c)                     | 3 + 1 | `spawn` / `spawn_redir` / `spawn_pipe` + pipeline |
 
-Callers that already use fork+exec (and serve as the
-template):
+Callers that already use fork+exec (and serve as the template):
 
 | caller                                    | added in    |
 | ----------------------------------------- | ----------- |
-| [userspace/gui_term/gui_term.c](userspace/gui_term/gui_term.c) | chapter 79b |
-| [userspace/sigtest/sigtest.c](userspace/sigtest/sigtest.c)     | chapter 77  |
-| [userspace/chldtest/chldtest.c](userspace/chldtest/chldtest.c) | chapter 78  |
-| [userspace/cowtest/cowtest.c](userspace/cowtest/cowtest.c)     | chapter 75  |
+| [userspace/gui_term/gui_term.c](../../../userspace/gui_term/gui_term.c) | chapter 79b |
+| [userspace/sigtest/sigtest.c](../../../userspace/sigtest/sigtest.c)     | chapter 77  |
+| [userspace/chldtest/chldtest.c](../../../userspace/chldtest/chldtest.c) | chapter 78  |
+| [userspace/cowtest/cowtest.c](../../../userspace/cowtest/cowtest.c)     | chapter 75  |
 
 ## What the migrated code looks like
 
@@ -103,7 +109,7 @@ static int run_bg(const char *path, char *const argv[])
 }
 ```
 
-Five sites in [init.c](userspace/init/init.c) become five
+Five sites in [init.c](../../../userspace/init/init.c) become five
 calls to `run_bg`. The reaper loop at the bottom is
 unchanged — it already uses `wait(&code)` which is itself
 the POSIX-shaped path. The only subtlety is the `_exit(127)`
@@ -114,7 +120,7 @@ exit code. (127 is bash's convention for "command not found.")
 
 ### launcher: same as init
 
-[launcher.c](userspace/launcher/launcher.c) line 144 is one
+[launcher.c](../../../userspace/launcher/launcher.c) line 144 is one
 fire-and-forget `spawn` per button click. Identical to init's
 shape. The launcher already doesn't reap its children (init
 does, since the launcher is spawned by init). Migration is
@@ -232,21 +238,21 @@ story analogous to chapter 79b's
 ## Implementation order
 
 1. **Add a userspace `argv-from-string` helper.** Probably
-   in [userspace/libc/](userspace/libc/) as a static inline.
+   in [userspace/libc/](../../../userspace/libc/) as a static inline.
    Today's `MAX_SPAWN_ARGV = 16` token cap stays; just moves
    from kernel to libc.
 
-2. **Migrate init** ([userspace/init/init.c](userspace/init/init.c)).
+2. **Migrate init** ([userspace/init/init.c](../../../userspace/init/init.c)).
    Smallest surface area, most pedagogical impact (it's the
    first userspace file readers see). Verify with
-   [scripts/test_boot_to_desktop.py](scripts/test_boot_to_desktop.py).
+   [scripts/test_boot_to_desktop.py](../../../scripts/test_boot_to_desktop.py).
 
-3. **Migrate launcher** ([userspace/launcher/launcher.c](userspace/launcher/launcher.c)).
-   Verify with [scripts/test_launcher.py](scripts/test_launcher.py).
+3. **Migrate launcher** ([userspace/launcher/launcher.c](../../../userspace/launcher/launcher.c)).
+   Verify with [scripts/test_launcher.py](../../../scripts/test_launcher.py).
 
 4. **Migrate notepad's notify call**
-   ([userspace/notepad/notepad.c](userspace/notepad/notepad.c)).
-   Verify with [scripts/test_notepad.py](scripts/test_notepad.py).
+   ([userspace/notepad/notepad.c](../../../userspace/notepad/notepad.c)).
+   Verify with [scripts/test_notepad.py](../../../scripts/test_notepad.py).
 
 5. **Migrate the shell's plain-command and redir paths.**
    Two of the three sh.c sites. Verify with the existing
@@ -255,7 +261,8 @@ story analogous to chapter 79b's
 6. **Migrate the shell's pipeline path.** This is the
    chapter's centerpiece — the close-unused-ends trap, the
    reaping order, the waitpid pid-list dance. Verify with
-   [scripts/test_pipetest.py](scripts/test_pipetest.py).
+   a new pipeline regression test (`test_pipetest.py`,
+   added as part of this migration).
 
 7. **Add a new regression test** for the
    `execv → _exit(127)` failure path that pre-migration
@@ -265,7 +272,7 @@ story analogous to chapter 79b's
 8. **Retire the kernel surface.** Once steps 1-7 are green:
 
    - Delete `sys_spawn`, `sys_spawn_redir`, `sys_spawn_pipe`
-     from [kernel/core/syscall.c](kernel/core/syscall.c).
+     from [kernel/core/syscall.c](../../../kernel/core/syscall.c).
    - Delete the `case SYS_SPAWN*` arms in the dispatch
      switch.
    - **Keep** the `SYS_SPAWN*` enum values reserved (do NOT
@@ -276,7 +283,7 @@ story analogous to chapter 79b's
      comment that says "RESERVED — formerly SYS_SPAWN, see
      chapter 79c".
    - Delete the `spawn`, `spawn_redir`, `spawn_pipe` inline
-     wrappers from [userspace/libc/syscall.h](userspace/libc/syscall.h).
+     wrappers from [userspace/libc/syscall.h](../../../userspace/libc/syscall.h).
 
 9. **Add a forward-pointer note** to chapter 9
    ([book/chapters/04-userspace/17-init-spawn-wait.md](book/chapters/04-userspace/17-init-spawn-wait.md))

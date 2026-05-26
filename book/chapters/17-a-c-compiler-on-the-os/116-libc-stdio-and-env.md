@@ -1,52 +1,62 @@
 # Chapter 116 — A POSIX-ish libc, part 1: stdio, errno, env
 
-**Status:** In progress. Split into substeps following the
-same pattern as chapters 113 and 114. See [Chapter 115](115-c-compiler-strategy.md)
-for the section overview.
+> **Milestone in this chapter:** section overview for libc part 1.
+> The implementation lands across the four follow-up chapters
+> 116a–116d.
+> **Code referenced (delivered across the substeps):**
+> - [userspace/libc/errno.h](../../../userspace/libc/errno.h),
+>   [userspace/crt/crt0.S](../../../userspace/crt/crt0.S)
+> - [userspace/libc/stdio.h](../../../userspace/libc/stdio.h)
+> - [userspace/libc/env.h](../../../userspace/libc/env.h)
+>
+> **At the end of this chapter** you will know the four substeps that
+> together grow the freestanding libc into a POSIX-ish surface big
+> enough for a self-hosting compiler: an `errno` foundation, a
+> `FILE *` stdio with the standard buffering modes, an `environ[]`
+> arena, and the migration of every existing syscall wrapper to the
+> "return -1, set errno" convention. **No code lands in this
+> chapter.** It is the index for the four that follow.
 
 ## Substeps
 
-- [Chapter 116a](116a-errno.md) — `errno` foundation:
-  global slot defined in `crt0.S`, populated by `__svc_check`
-  inside the `_svc{0..6}` helpers. Backward-compat: the
-  wrappers still return negative kernel errno. **Shipped.**
+- [Chapter 116a](116a-errno.md) — `errno` foundation: global slot
+  defined in `crt0.S`, populated by `__svc_check` inside the
+  `_svc{0..6}` helpers. Backward-compat: the wrappers still return
+  negative kernel errno. **Done.**
 - [Chapter 116b](116b-stdio.md) — `FILE *` with `_IOFBF` /
   `_IOLBF` / `_IONBF` buffering, `fopen` / `fread` / `fwrite` /
-  `fclose` / `fprintf` / `fseek` / `ftell` / `fflush`.
-  Backed by a new `SYS_LSEEK = 101`. **Shipped.**
-- Chapter 116c — [Chapter 116c](116c-env-arena.md) — `environ[]`
-  with an owning string arena, `setenv` (3-arg overwrite flag)
-  / `unsetenv` / `putenv` / `clearenv`. **Shipped.**
+  `fclose` / `fprintf` / `fseek` / `ftell` / `fflush`. Backed by
+  a new `SYS_LSEEK = 101`. **Done.**
+- [Chapter 116c](116c-env-arena.md) — `environ[]` with an owning
+  string arena, `setenv` (3-arg overwrite flag) / `unsetenv` /
+  `putenv` / `clearenv`. **Done.**
 - [Chapter 116d](116d-errno-convention.md) — flip the syscall
-  wrappers from "return `-errno`" to "return `-1` + set
-  `errno`" (the POSIX convention). Migrate the ~50
-  `printf("...errno=%d", -fd)` sites to read `errno` instead.
-  Add `strerror`. Port `cat` / `wc` / `head` / `tail` to
-  `FILE *`. **Shipped.**
+  wrappers from "return `-errno`" to "return `-1` + set `errno`"
+  (the POSIX convention). Migrate the ~50
+  `printf("...errno=%d", -fd)` sites to read `errno` instead. Add
+  `strerror`. Port `cat` / `wc` / `head` / `tail` to `FILE *`.
+  **Done.**
 
 ## Why this chapter exists
 
-Our libc today (`userspace/libc/`) is the freestanding
-subset the book has needed so far: a `printf` family that
-writes straight to fd 1, `malloc` / `free`, the syscall
-wrappers, a few string helpers. It works for everything
-in `userspace/` because every existing app was written
-*to that surface*.
+The libc today (`userspace/libc/`) is the freestanding subset the
+book has needed so far: a `printf` family that writes straight to
+fd 1, `malloc` / `free`, the syscall wrappers, a few string
+helpers. It works for everything in `userspace/` because every
+existing app was written *to that surface*.
 
-A real compiler (the Part XVIII GCC port, or any other
-future backend) is not. It was written to ANSI C plus
-POSIX, and they assume:
+A real compiler (the Part XVIII GCC port, or any other future
+backend) is not. It was written to ANSI C plus POSIX, and they
+assume:
 
-- `FILE *` exists, with `fopen` / `fread` / `fwrite` /
-  `fclose`, `fprintf` / `fscanf`, `setvbuf`, `feof`,
-  `ferror`, `fgetc` / `fputc`, `fgets` / `fputs`,
-  `ungetc`, `fflush`, `ftell` / `fseek`, line-buffered
-  stdout, fully-buffered files.
-- A real `errno` — a per-thread `int` set by every
-  failing libc call, returned alongside a `-1` from the
-  syscall wrappers. Today we return negative kernel
-  error codes directly; that confuses every standard
-  algorithm that wants `errno != 0`.
+- `FILE *` exists, with `fopen` / `fread` / `fwrite` / `fclose`,
+  `fprintf` / `fscanf`, `setvbuf`, `feof`, `ferror`, `fgetc` /
+  `fputc`, `fgets` / `fputs`, `ungetc`, `fflush`, `ftell` /
+  `fseek`, line-buffered stdout, fully-buffered files.
+- A real `errno` — a per-thread `int` set by every failing libc
+  call, returned alongside a `-1` from the syscall wrappers.
+  Today the wrappers return negative kernel error codes directly;
+  that confuses every standard algorithm that wants `errno != 0`.
 - A working `getenv` / `setenv` / `unsetenv` /
   `putenv`, backed by a mutable per-process `environ`.
   Chapter 33 added enough env support for the shell;
@@ -64,7 +74,7 @@ POSIX, and they assume:
   returns `-1` on failure and sets `errno`, instead of
   returning a negative errno directly. Internal kernel
   callers stay as before.
-- `userspace/libc/env.c`: an `environ[]` that owns its
+- `userspace/libc/env.h`: an `environ[]` that owns its
   strings, with `setenv` / `unsetenv` / `putenv` and a
   small string arena so we don't leak on overwrite.
 - New regression: `scripts/test_libc_stdio.py` opens
@@ -83,7 +93,7 @@ POSIX, and they assume:
 ## Plan
 
 1. Add the TLS slot for `errno`. Walk every syscall
-   wrapper in `userspace/libc/syscall.c` and convert it
+   wrapper in `userspace/libc/syscall.h` and convert it
    to the `-1 + errno` convention. Add an internal
    helper (`__set_errno_from_kernel`) so each wrapper
    stays one line.

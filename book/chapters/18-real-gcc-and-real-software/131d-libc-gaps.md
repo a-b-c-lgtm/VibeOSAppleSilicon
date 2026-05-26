@@ -1,23 +1,23 @@
 # Chapter 131d — Closing the libc gap for cross-built `libiberty`
 
-> **Status:** shipped. `vendor/binutils-2.44/libiberty`
-> compiles cleanly under `--host=aarch64-osdev` and
-> produces a complete
+> **Milestone in this chapter:** convert the `static inline` libc
+> into a real `libc.a` archive and fill the per-function gap
+> list from chapter 131c so the full `libiberty` cross-builds.
+> **Code referenced:**
+> - [userspace/libc/](../../../userspace/libc/) (the new
+>   `libosdevc.a` archive shape)
+> - [vendor/binutils-2.44/libiberty/](../../../vendor/binutils-2.44/libiberty/)
+> - [scripts/test_guest_configure.py](../../../scripts/test_guest_configure.py)
+> - [scripts/test_aarch64_osdev_cc.py](../../../scripts/test_aarch64_osdev_cc.py)
+>
+> **At the end of this chapter** you will have a complete
 > `build/binutils-build-guest/libiberty/libiberty.a`
-> (917,890 bytes). Host smoke test
-> [scripts/test_guest_configure.py](../../../scripts/test_guest_configure.py)
-> passes; the chapter 131b byte-identity baseline
-> ([scripts/test_aarch64_osdev_cc.py](../../../scripts/test_aarch64_osdev_cc.py))
-> still emits the same 7864-byte `hello.stripped.elf`.
->
-> **Prereqs:** chapter 131a (toolchain installed via `make
-> binutils-osdev`) and chapter 131b (wrapper installed via
-> `make aarch64-osdev-cc-install`). Run `make` first so
-> `build/userspace/crt/crt0.o` is present.
->
-> **Opens:** chapter 131e — host-build `aarch64-osdev-ld`
-> (and `aarch64-osdev-as`) and replace the chapter 118/119
-> toy binaries at `/bin/as` and `/bin/ld` on the guest disk.
+> (~918 KiB) cross-built under `--host=aarch64-osdev` and the
+> chapter-131b byte-identity baseline (7864-byte
+> `hello.stripped.elf`) still green. Prerequisites: chapter
+> 131a (binutils-osdev installed), chapter 131b (wrapper
+> installed). Run `make` first so `build/userspace/crt/crt0.o`
+> is present.
 
 ---
 

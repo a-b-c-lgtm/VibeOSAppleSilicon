@@ -39,13 +39,13 @@ wrote an absolute URL with an explicit authority" signal the
 policy needs.
 
 The header itself is a thin wrapper over
-[`url.h`](userspace/libc/url.h)'s existing `url_parse`. The
+[`url.h`](../../../userspace/libc/url.h)'s existing `url_parse`. The
 parse work is already done; this header just calls it twice
 and compares the results.
 
 ### 2. The three-branch policy
 
-`form_submit_url_at()` in [browser.c](userspace/browser/browser.c)
+`form_submit_url_at()` in [browser.c](../../../userspace/browser/browser.c)
 now runs an origin compare every time the user clicks a submit
 control. Three outcomes:
 
@@ -100,7 +100,7 @@ braiding them caused the bug.
 
 The full path through `form_submit_url_at` only runs in GUI
 mode after a virtio-tablet click event. That's
-heavyweight to test ([test_browser_forms.py](scripts/test_browser_forms.py)
+heavyweight to test ([test_browser_forms.py](../../../scripts/test_browser_forms.py)
 does it; the harness is 200+ lines). For chapter 110a we
 want fast feedback on the *policy*, separately from the
 GUI plumbing. The new flag:
@@ -208,7 +208,7 @@ Two reasons:
    production submit takes. A separate libtest would need
    to duplicate the resolve logic and could drift.
 2. The test harness mirrors
-   [test_browser_cookies.py](scripts/test_browser_cookies.py)
+   [test_browser_cookies.py](../../../scripts/test_browser_cookies.py)
    — boot, drive the shell, grep the serial log. That's
    the pattern this book uses everywhere; making chapter
    110a follow it keeps the book's test surface uniform.
@@ -219,7 +219,7 @@ interactively.
 
 ## Regression test
 
-[scripts/test_browser_sop.py](scripts/test_browser_sop.py)
+[scripts/test_browser_sop.py](../../../scripts/test_browser_sop.py)
 walks eight policy points in one boot:
 
 1. Relative action → same-origin.
@@ -251,26 +251,26 @@ httpd dependency, no GUI. It runs in under 30 seconds.
 ## Applied to
 
 - Existing apps modified:
-  - [userspace/browser/browser.c](userspace/browser/browser.c) —
+  - [userspace/browser/browser.c](../../../userspace/browser/browser.c) —
     SOP check at form submit, raw-resolve helper,
     `--check-sop` debug subcommand.
 - New libc headers:
-  - [userspace/libc/origin.h](userspace/libc/origin.h) —
+  - [userspace/libc/origin.h](../../../userspace/libc/origin.h) —
     `origin_eq` + `origin_action_is_absolute`.
 - Existing book wiring:
   - [book/INDEX.md](book/INDEX.md) — chapter linked under
     Part XV.
 - Tests added:
-  - [scripts/test_browser_sop.py](scripts/test_browser_sop.py) —
+  - [scripts/test_browser_sop.py](../../../scripts/test_browser_sop.py) —
     8 PASS / 0 FAIL.
 - Tests still green (verified post-change):
-  - [scripts/test_browser_forms.py](scripts/test_browser_forms.py)
+  - [scripts/test_browser_forms.py](../../../scripts/test_browser_forms.py)
     — the same-origin happy path still passes through the
     new SOP gate unchanged.
-  - [scripts/test_browser_cookies.py](scripts/test_browser_cookies.py)
+  - [scripts/test_browser_cookies.py](../../../scripts/test_browser_cookies.py)
     — chapter 110 round-trip still passes, confirming the
     SOP wiring didn't perturb cookie injection or capture.
-  - [scripts/test_browser_self.py](scripts/test_browser_self.py)
+  - [scripts/test_browser_self.py](../../../scripts/test_browser_self.py)
     — the in-guest browser-to-httpd loop still closes.
 
 ## What this unlocks

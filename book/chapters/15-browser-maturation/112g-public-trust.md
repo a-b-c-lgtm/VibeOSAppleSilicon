@@ -179,8 +179,8 @@ A surprising amount. Worth listing because the temptation to
    BearSSL, check the **trust list** before the **validator**.
 2. **macOS `/etc/ssl/cert.pem` is the right file**. It's
    maintained by the OS and updated through Apple security
-   patches. Earlier I almost reached for `certifi` (the Python
-   bundle) which would also have worked but adds a Python
+   patches. The alternative is `certifi` (the Python
+   bundle) which would also work but adds a Python
    dependency to the build.
 3. **`TLS_MAX_ANCHORS` overflow is silent in the bundle parser**
    — chapter 112f noted this and bumped to 32; chapter 112g

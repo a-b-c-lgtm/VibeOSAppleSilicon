@@ -1,26 +1,24 @@
 # Chapter 131f — Replacing `/bin/as` and `/bin/ld` with the real binutils
 
-> **Status:** shipped. `/bin/as` and `/bin/ld` on the
-> guest disk are now the GNU `as-new` / `ld-new` binaries
-> cross-built in chapter 131e. The toy chapter-118
-> assembler and chapter-119 linker stay buildable for
-> readers of those chapters but are no longer wired into
-> `build/disk.img`.
+> **Milestone in this chapter:** swap the chapter-118 / 119 toy
+> assembler and linker on the guest disk for the real GNU
+> binaries cross-built in chapter 131e.
+> **Code referenced:**
+> - [Makefile](../../../Makefile) (wiring `as-new` / `ld-new`
+>   into `build/disk.img` at `/bin/as` and `/bin/ld`)
+> - [scripts/test_bin_as.py](../../../scripts/test_bin_as.py)
+> - [scripts/test_bin_ld_ar.py](../../../scripts/test_bin_ld_ar.py)
+> - [scripts/test_cc_hello.py](../../../scripts/test_cc_hello.py)
+> - [scripts/test_cc_vars.py](../../../scripts/test_cc_vars.py)
+> - [scripts/test_notepad_build.py](../../../scripts/test_notepad_build.py)
 >
-> **Tests.** [scripts/test_bin_as.py](../../../scripts/test_bin_as.py)
-> 8/8 PASS, [scripts/test_bin_ld_ar.py](../../../scripts/test_bin_ld_ar.py)
-> 12/12 PASS, [scripts/test_cc_hello.py](../../../scripts/test_cc_hello.py)
-> 15/15 PASS, [scripts/test_cc_vars.py](../../../scripts/test_cc_vars.py)
-> 16/16 PASS, [scripts/test_notepad_build.py](../../../scripts/test_notepad_build.py)
-> 10/10 PASS. The toolchain contract from chapter 122
-> (the cc → as → ld pipeline) is the spec — every test
-> that drove the toy tools still passes against the GNU
-> drop-in.
->
-> **Prereqs:** chapter 131e (cross-built `ld-new` + `as-new`).
->
-> **Opens:** chapter 132a — give GCC an `aarch64-osdev`
-> target so the real `xgcc` can be cross-built next.
+> **At the end of this chapter** you will have `/bin/as` and
+> `/bin/ld` on the guest disk replaced by the GNU `as-new` /
+> `ld-new` drop-ins, with every chapter-122 toolchain contract
+> test (the `cc → as → ld` pipeline) still green. The toy
+> binaries stay buildable for readers of chapters 118 and 119
+> but are no longer wired into the disk image. Prerequisite:
+> chapter 131e (cross-built `ld-new` + `as-new`).
 
 ---
 
@@ -154,7 +152,7 @@ map.
 
 **Cause:** the chapter-119 toy `ld` hard-coded the
 user load address `0x1000100000` (USER_TEXT_BASE in
-[kernel/core/userspace.h](../../../kernel/core/userspace.h)).
+[kernel/arch/address_space.h](../../../kernel/arch/address_space.h)).
 GNU `ld` defaults to its built-in `elf_aarch64` script,
 which places `.text` at `0x00400000` — an address the
 kernel ELF loader rejects (below USER_HEAP_BASE,
@@ -243,10 +241,9 @@ instrumentation through `bfd/cache.c::cache_bread`,
 `bfd/bfdio.c::bfd_read`, and `bfd/elfcode.h::elf_object_p`
 showed `bfd_read` for `/tmp/hello.o` was returning
 non-ELF bytes at offset 0. That instrumentation is
-gone from the live source now but the diagnostic shape
-is captured in /memories/repo for the next time
-"file format not recognized" with a perfectly-good ELF
-on disk shows up.
+gone from the live source now, but the diagnostic shape
+is worth remembering for the next time "file format not
+recognized" appears for a perfectly-good ELF on disk.
 
 The actual cause lives one layer up.
 `libiberty/lrealpath.c::lrealpath()` in the freestanding

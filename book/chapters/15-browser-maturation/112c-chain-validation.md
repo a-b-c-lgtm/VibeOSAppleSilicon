@@ -1,10 +1,10 @@
-# Chapter 112c — X.509 chain validation
+# Chapter 112c -- X.509 chain validation
 
-In chapter 112b we shipped a working TLS handshake against an
+Chapter 112b ended on a working TLS handshake against an
 in-guest server, but the trust shape was a shortcut: the client
 pinned on the leaf certificate's public key and skipped every
 other check. That works for a single hard-wired peer; it does
-not generalise. To talk to any server we did not enrol ahead of
+not generalise. To talk to any server not enrolled ahead of
 time we need the production trust shape:
 
 1. Walk the chain from the leaf back to a trust anchor.

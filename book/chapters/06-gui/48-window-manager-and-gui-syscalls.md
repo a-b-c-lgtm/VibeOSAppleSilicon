@@ -133,7 +133,7 @@ focus changes, and window destroys trivial to get right.
 
 ## The seven syscalls
 
-Numbers 40..46 in [kernel/core/syscall.h](kernel/core/syscall.h):
+Numbers 40..46 in [kernel/core/syscall.h](../../../kernel/core/syscall.h):
 
 | number | name                  | args                                           |
 |-------:|-----------------------|------------------------------------------------|
@@ -148,8 +148,8 @@ Numbers 40..46 in [kernel/core/syscall.h](kernel/core/syscall.h):
 ### Why arg-pack structs
 
 Three of the seven syscalls have more than four arguments.  Our
-SVC ABI passes `x0..x5`, but I rejected packing 32-bit fields
-into 64-bit registers as fragile (sign-extend mistakes, alignment
+SVC ABI passes `x0..x5`, but packing 32-bit fields
+into 64-bit registers is fragile (sign-extend mistakes, alignment
 mistakes, no struct-printer in the debugger).  Instead each
 multi-arg call passes **one user pointer to a packed struct**:
 
@@ -188,8 +188,8 @@ if (wm_has_windows() && wm_keyboard_byte(c))
     return serial_try_getc(out);     /* don't deliver to stdin */
 ```
 
-But `console_try_getc` is only invoked from `vfs_read` —
-i.e. from a userspace `read()` call.  My first hellogui app
+But `console_try_getc` is only invoked from `vfs_read` --
+i.e. from a userspace `read()` call.  The first hellogui app
 never called `read()`; it only called `gui_poll_event` in a loop.
 Result: virtio-input slots filled up, no `console_try_getc` ran,
 no `wm_keyboard_byte` ran, and the WM never saw a key.
@@ -224,7 +224,7 @@ needs its own `pump_*_into_wm` hook on the syscall path.
 
 ## hellogui
 
-[userspace/hellogui/hellogui.c](userspace/hellogui/hellogui.c) is
+[userspace/hellogui/hellogui.c](../../../userspace/hellogui/hellogui.c) is
 ~140 LOC of GUI code:
 
 ```c
@@ -267,7 +267,7 @@ back at the poll loop.
 
 ## Smoke test
 
-[scripts/test_wm.py](scripts/test_wm.py) is the canonical end-to-end
+[scripts/test_wm.py](../../../scripts/test_wm.py) is the canonical end-to-end
 GUI test:
 
 1. Boot QEMU `-display none` with `virtio-gpu` + `virtio-keyboard`

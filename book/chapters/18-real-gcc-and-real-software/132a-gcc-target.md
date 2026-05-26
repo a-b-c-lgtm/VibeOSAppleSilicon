@@ -1,18 +1,24 @@
 # Chapter 132a — GCC with an `aarch64-osdev` target
 
-> **Status:** shipped. `make gcc-osdev-src` fetches
-> gcc-14.2.0 from a sha256-pinned upstream tarball and
-> applies the four-hunk additive patch. Host smoke test
-> `scripts/test_gcc_target.py` passes (asserts `config.sub`
-> canonicalises `aarch64-osdev` → `aarch64-unknown-osdev`
-> and that the new arms are wired into `gcc/config.gcc`
-> and `libgcc/config.host`).
-> **Prereq:** chapter 131a (the binutils analogue of this
-> chapter, same triple, same workflow, same patch shape);
-> chapter 131f for the in-guest binutils that the eventual
-> xgcc will dispatch to via `-B`.
-> **Opens:** Phase 2 step 2 — bringing up a real
-> aarch64-osdev cross compiler. This chapter does the
+> **Milestone in this chapter:** teach upstream gcc-14.2.0 about
+> the same `aarch64-osdev` target the chapter-131a binutils
+> knows.
+> **Code referenced:**
+> - [vendor/gcc-14.2.0/](../../../vendor/gcc-14.2.0/)
+>   (`config.sub`, `gcc/config.gcc`, `libgcc/config.host` — the
+>   four-hunk additive patch)
+> - [Makefile](../../../Makefile) (`make gcc-osdev-src`)
+> - [scripts/test_gcc_target.py](../../../scripts/test_gcc_target.py)
+>
+> **At the end of this chapter** you will have a patched gcc
+> source tree at `vendor/gcc-14.2.0/` fetched from a
+> sha256-pinned upstream tarball, with `aarch64-osdev`
+> canonicalised by `config.sub` to `aarch64-unknown-osdev` and
+> the new arms wired into `gcc/config.gcc` and
+> `libgcc/config.host`. Prerequisites: chapter 131a (the
+> binutils analogue — same triple, same workflow), chapter
+> 131f for the in-guest binutils that the eventual xgcc will
+> dispatch to via `-B`.
 > source-tree definition only (one .h, two configure
 > tables, one canonicaliser). Chapter 132b builds GMP /
 > MPFR / MPC. Chapter 132c actually runs the cross-gcc

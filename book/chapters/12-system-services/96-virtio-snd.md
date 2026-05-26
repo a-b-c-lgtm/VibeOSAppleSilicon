@@ -1,6 +1,16 @@
 # Chapter 96 — virtio-snd: a boot chime and a beep
 
-**Status:** Done.
+> **Milestone in this chapter:** bring up the last virtio device
+> on QEMU's `virt` bus — virtio-sound — and play a boot chime.
+> **Code referenced:**
+> - [kernel/device/virtio_snd.c](../../../kernel/device/virtio_snd.c)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_BEEP`)
+> - [userspace/beep/](../../../userspace/beep/) (`/bin/beep`)
+>
+> **At the end of this chapter** you will have a
+> minimum-viable virtio-snd driver, a `/bin/beep` tool, and a
+> two-tone boot chime that plays once the desktop is up.
 
 The kernel has talked to virtio-blk since chapter 11, virtio-gpu
 since chapter 26, virtio-input since chapter 39, virtio-tablet

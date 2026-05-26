@@ -1,15 +1,21 @@
 # Chapter 117 — A POSIX-ish libc, part 2: stat, fstat, fcntl, dirent
 
-**Status:** Shipped.
+> **Milestone in this chapter:** add the three filesystem-shaped
+> POSIX surfaces every toolchain stage needs before it can even
+> open a source file — `stat`, `fcntl`, and `dirent`.
+> **Code referenced:**
+> - [userspace/libc/sys/stat.h](../../../userspace/libc/sys/stat.h)
+> - [userspace/libc/fcntl.h](../../../userspace/libc/fcntl.h)
+> - [userspace/libc/dirent.h](../../../userspace/libc/dirent.h)
+>
+> **At the end of this chapter** you will have `stat` /
+> `fstat`, `open` with POSIX flags, and `opendir` /
+> `readdir` / `closedir` available to every userspace
+> binary — the surface the chapter-118 assembler and the
+> chapter-119 linker open files against. Builds on
+> chapter 116a–d (errno, FILE *, env).
 
 Chapter 116a–d gave us POSIX-shaped *byte streams*: `FILE *`,
-`fopen`, `fread`, `fwrite`, `errno`, `strerror`. The pieces
-we're about to bring up — assembler, linker, crt0, our small
-`/bin/cc`, and (in Part XVIII) a real GCC port — all need
-three more things before they can even *try* to read source
-code:
-
-1. **A way to ask "is this path a regular file or a
    directory?"** without opening it. A real preprocessor
    walks the include path with `stat` to disambiguate
    `#include "foo.h"` vs `#include <foo.h>`, and to skip
@@ -29,7 +35,7 @@ code:
 This chapter ships the syscalls, the libc headers, and the
 first app to consume them.
 
-## What shipped
+## What this chapter adds
 
 | Where                                  | What                                                       |
 | -------------------------------------- | ---------------------------------------------------------- |

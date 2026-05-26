@@ -1,6 +1,25 @@
 # Chapter 108c — Moving the GUI SDK into userspace
 
-**Status:** Done. Milestone 90f.
+> **Milestone in this chapter:** 90f — reimplement
+> `gui_fill_rect` / `gui_draw_text` / `gui_present` as a
+> userspace library that draws into the mapped pixel buffer
+> from chapter 108a.
+> **Code referenced:**
+> - [userspace/libgui/](../../../userspace/libgui/) (the new
+>   userspace SDK)
+> - [userspace/launcher/](../../../userspace/launcher/),
+>   [userspace/taskbar/](../../../userspace/taskbar/),
+>   [userspace/notepad/](../../../userspace/notepad/),
+>   [userspace/browser/](../../../userspace/browser/),
+>   [userspace/gui_term/](../../../userspace/gui_term/),
+>   [userspace/paint/](../../../userspace/paint/) (every GUI
+>   app re-ported to the new SDK)
+>
+> **At the end of this chapter** you will have every GUI app
+> drawing entirely in userspace, with the kernel WM reduced
+> to compositing damaged rects. Builds on chapter 108a
+> (mapped window buffers) and chapter 108b (userspace font
+> server).
 
 Chapter 108a gave userspace direct access to a window's pixel
 buffer, but only the chapter-108a demo (`pixapp`) used it. Every
@@ -251,7 +270,7 @@ After:
   for the input-row alignment.
 * One `gui_window_dirty` per paint.
 
-Source: [userspace/hellogui/hellogui.c](userspace/hellogui/hellogui.c).
+Source: [userspace/hellogui/hellogui.c](../../../userspace/hellogui/hellogui.c).
 
 ### `launcher` — port complete
 
@@ -267,7 +286,7 @@ After:
 * `render()` does the bg fill, the button loop, and one
   whole-window `gui_window_dirty`.
 
-Source: [userspace/launcher/launcher.c](userspace/launcher/launcher.c).
+Source: [userspace/launcher/launcher.c](../../../userspace/launcher/launcher.c).
 
 ### `taskbar` — port complete
 
@@ -285,7 +304,7 @@ After:
   damages only the clock rect. Zero syscalls inside the tick
   except for the one damage call.
 
-Source: [userspace/taskbar/taskbar.c](userspace/taskbar/taskbar.c).
+Source: [userspace/taskbar/taskbar.c](../../../userspace/taskbar/taskbar.c).
 
 ### `paint` — port complete
 
@@ -303,7 +322,7 @@ After:
 * Color swatch is one `draw_fill_rect` + one
   `gui_window_dirty`.
 
-Source: [userspace/paint/paint.c](userspace/paint/paint.c).
+Source: [userspace/paint/paint.c](../../../userspace/paint/paint.c).
 
 ### `desktop` — port complete
 
@@ -322,7 +341,7 @@ of the load. The 8 MB of wallpaper data crosses the EL0/EL1
 boundary exactly once — when the disk driver does its DMA
 copy — instead of twice.
 
-Source: [userspace/desktop/desktop.c](userspace/desktop/desktop.c).
+Source: [userspace/desktop/desktop.c](../../../userspace/desktop/desktop.c).
 
 ### `pixapp` — already on the mapped path
 
@@ -331,7 +350,7 @@ cosmetic: replace the hand-rolled rect-fill loops with
 `draw_fill_rect`, and replace the raw `gui_window_damage`
 calls with `gui_window_dirty`. Same wire behaviour.
 
-Source: [userspace/pixapp/pixapp.c](userspace/pixapp/pixapp.c).
+Source: [userspace/pixapp/pixapp.c](../../../userspace/pixapp/pixapp.c).
 
 ### `notify` — unchanged, the legacy-path exhibit
 
@@ -341,7 +360,7 @@ in the kernel WM and rasterise into `w->pixels` exactly as
 before. The reader who wants to know what kernel-side
 drawing looks like reads `userspace/notify/notify.c`.
 
-Source: [userspace/notify/notify.c](userspace/notify/notify.c).
+Source: [userspace/notify/notify.c](../../../userspace/notify/notify.c).
 
 ### Deferred to chapter 108d
 
@@ -412,16 +431,16 @@ kernel paint.
 Two new scripts in `scripts/`, both kept under the regular
 sweep:
 
-* [`scripts/test_busy_on_mix.py`](scripts/test_busy_on_mix.py) —
+* [`scripts/test_busy_on_mix.py`](../../../scripts/test_busy_on_mix.py) —
   runs `/bin/mixtest`, a binary added in this chapter at
-  [`userspace/mixtest/mixtest.c`](userspace/mixtest/mixtest.c).
+  [`userspace/mixtest/mixtest.c`](../../../userspace/mixtest/mixtest.c).
   mixtest does two things: it creates an unmapped window and
   asserts `gui_fill_rect` / `gui_draw_text` / `gui_present`
   all return 0 on it (positive case for the legacy path);
   then it creates a mapped window and asserts the same three
   calls return `-EBUSY`. The harness greps for
   `[mixtest] all checks passed` on the serial console.
-* [`scripts/test_notify_legacy.py`](scripts/test_notify_legacy.py) —
+* [`scripts/test_notify_legacy.py`](../../../scripts/test_notify_legacy.py) —
   a near-twin of `scripts/test_notify.py` framed as the
   legacy-path regression. Boots, fires `/bin/notify
   Chapter108c`, screenshots, asserts the body BG and accent
@@ -494,22 +513,22 @@ recurse on a malformed font and blow its stack.
   exhibit).
 * **Apps deferred to chapter 108d:** `notepad`, `gui_term`,
   `browser` (all resizable; need 108d's remap-on-resize).
-* **New library:** [`userspace/libgui/draw.h`](userspace/libgui/draw.h) +
-  [`userspace/libgui/draw.c`](userspace/libgui/draw.c).
-* **Library extended:** [`userspace/libc/syscall.h`](userspace/libc/syscall.h) —
+* **New library:** [`userspace/libgui/draw.h`](../../../userspace/libgui/draw.h) +
+  [`userspace/libgui/draw.c`](../../../userspace/libgui/draw.c).
+* **Library extended:** [`userspace/libc/syscall.h`](../../../userspace/libc/syscall.h) —
   `struct gui_fb` gained `id`; `gui_window_fb` stamps it.
-* **Service extended:** [`userspace/fontd/fontd.c`](userspace/fontd/fontd.c) —
+* **Service extended:** [`userspace/fontd/fontd.c`](../../../userspace/fontd/fontd.c) —
   multi-client via per-worker `thread_spawn_files` + mutex
   around TTF state.
-* **Kernel extended:** [`kernel/core/wm.c`](kernel/core/wm.c) —
+* **Kernel extended:** [`kernel/core/wm.c`](../../../kernel/core/wm.c) —
   `-EBUSY` guard at the top of `wm_present`, `wm_fill_rect`,
   `wm_draw_text` when the window has a mapping installed.
   `EBUSY = 16` added to the local errno mirror.
 * **Tests added:**
-  [`scripts/test_busy_on_mix.py`](scripts/test_busy_on_mix.py),
-  [`scripts/test_notify_legacy.py`](scripts/test_notify_legacy.py).
+  [`scripts/test_busy_on_mix.py`](../../../scripts/test_busy_on_mix.py),
+  [`scripts/test_notify_legacy.py`](../../../scripts/test_notify_legacy.py).
 * **Test binary added:**
-  [`userspace/mixtest/mixtest.c`](userspace/mixtest/mixtest.c) —
+  [`userspace/mixtest/mixtest.c`](../../../userspace/mixtest/mixtest.c) —
   the in-process assertion engine that
   `test_busy_on_mix.py` drives.
 

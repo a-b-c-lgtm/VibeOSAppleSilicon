@@ -1,22 +1,20 @@
 # Chapter 132e — Cross-building GMP / MPFR / MPC for the guest sysroot
 
-> **Status:** shipped (Phase 1 of guest-gcc bring-up).
-> The three GNU multi-precision libraries that GCC links
-> against — `libgmp.a`, `libmpfr.a`, `libmpc.a` — now
-> cross-build under `--host=aarch64-osdev`, against the
-> chapter-131b cross-compiler wrapper, and land as AArch64
-> ELF archives totalling ~3.4 MiB.  The host smoke
-> [scripts/test_guest_gcc.py](../../../scripts/test_guest_gcc.py)
-> drives the end-to-end pipeline and ends with **PASS
-> (phase 1) — gmp/mpfr/mpc configured, cross-built, and
-> installed under --host=aarch64-osdev**.
-> **Prereq:** chapters 131e (guest-side binutils ld
-> pattern), 132a–d (gcc host cross-compiler + sysroot).
-> **Opens:** Phase 2 of guest-gcc — actually cross-build
-> `xgcc` / `cc1` / `cpp` itself against these archives.
-> The libstdc++ subset is the next big-ticket item; the
-> three math archives are now waiting at
-> `$prefix/aarch64-osdev/lib/` for that build to consume.
+> **Milestone in this chapter:** cross-build the three GNU
+> multi-precision libraries gcc links against, this time under
+> `--host=aarch64-osdev` so they live in the guest sysroot.
+> **Code referenced:**
+> - [scripts/fetch_gcc_prereqs.sh](../../../scripts/fetch_gcc_prereqs.sh)
+>   (the `osdev` config.sub patches per library)
+> - [Makefile](../../../Makefile) (guest sysroot install paths)
+> - [scripts/test_guest_gcc.py](../../../scripts/test_guest_gcc.py)
+>
+> **At the end of this chapter** you will have `libgmp.a`,
+> `libmpfr.a`, and `libmpc.a` (totalling ~3.4 MiB of AArch64
+> ELF) installed under `$prefix/aarch64-osdev/lib/`, ready
+> for the guest xgcc cross-build that follows. Prerequisites:
+> chapter 131e (guest-side binutils ld pattern), chapters
+> 132a–d (gcc host cross-compiler + sysroot).
 
 ---
 
@@ -67,7 +65,7 @@ ship without?" puzzles in a row.
 
 ---
 
-## What shipped, by the byte
+## What this chapter adds, by the byte
 
 ```
 build/gcc-build-guest/gmp/install/lib/libgmp.a   1,631,566 B

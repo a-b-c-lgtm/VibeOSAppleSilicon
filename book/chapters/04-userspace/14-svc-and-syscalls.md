@@ -3,7 +3,7 @@
 > **Where the code lives.**
 > Vector slot: [kernel/arch/vectors.S](../../../kernel/arch/vectors.S) (slot 8 of `vector_table`)
 > User → kernel trampoline: [kernel/arch/vectors.S](../../../kernel/arch/vectors.S) (`svc_entry`)
-> EL1 → EL0 trampoline: [kernel/arch/context_switch.S](../../../kernel/arch/context_switch.S) (`user_trampoline`)
+> EL1 → EL0 trampoline: [kernel/arch/context_switch.s](../../../kernel/arch/context_switch.s) (`user_trampoline`)
 > Dispatcher: [kernel/core/syscall.c](../../../kernel/core/syscall.c)
 > Userspace wrappers: [userspace/libc/syscall.h](../../../userspace/libc/syscall.h)
 
@@ -331,8 +331,7 @@ For a user thread: `M[3:0] = 0000` (EL0 with SP_EL0), `F=1`,
 `0x340`. For a kernel thread: `M[3:0] = 0101` (EL1h),
 `F=1`, `I=0`, `A=1`, `D=1`. Pack: `0x345`.
 
-The lesson burned into [/memories/repo/aarch64-cswitch-spsr-from-irq.md](#)
-applies here: the SPSR has to be **constructed**, not captured from
+The lesson here: the SPSR has to be **constructed**, not captured from
 live `DAIF`. Capturing live `DAIF` from inside an exception handler
 freezes the wrong mask state into the resumed thread.
 
@@ -383,10 +382,8 @@ because the L1 block descriptor for the user's RAM had AP[2:1]=00
 (EL1-only). The fix was to mark RAM blocks above 1 GiB as
 AP[2:1]=01 (EL1+EL0), but with a wrinkle: the L1[1] block (which
 contains the kernel image, boot stack, and the page tables
-themselves) must stay EL1-only. See
-[/memories/repo/aarch64-el0-permissions.md](#) for the full
-diagnosis — re-installing L1[1] with AP=01 mid-boot hangs the
-CPU on both HVF and TCG.
+themselves) must stay EL1-only. Re-installing L1[1] with AP=01
+mid-boot hangs the CPU on both HVF and TCG.
 
 The current `pmap_install_ram_block_1gib` refuses indexes ≤ 1
 silently, so the kernel-side install loop can naively iterate

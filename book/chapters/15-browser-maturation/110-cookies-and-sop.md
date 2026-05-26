@@ -18,9 +18,9 @@ landing them one at a time keeps the test surface small.
 ### 1. A header-only cookie jar at `userspace/libc/cookies.h`
 
 The jar is a header-only library, same convention as
-[printf.h](userspace/libc/printf.h),
-[malloc.h](userspace/libc/malloc.h), and
-[url.h](userspace/libc/url.h). Any userspace binary that
+[printf.h](../../../userspace/libc/printf.h),
+[malloc.h](../../../userspace/libc/malloc.h), and
+[url.h](../../../userspace/libc/url.h). Any userspace binary that
 talks HTTP picks it up with one `#include` and gets:
 
 ```c
@@ -132,8 +132,8 @@ case is not a good use of the next 200 lines of C.
 ### 5. Browser and httpget both share the jar
 
 The cookie wiring lives in two near-identical blocks, one
-in [userspace/browser/browser.c](userspace/browser/browser.c)
-and one in [userspace/httpget/httpget.c](userspace/httpget/httpget.c).
+in [userspace/browser/browser.c](../../../userspace/browser/browser.c)
+and one in [userspace/httpget/httpget.c](../../../userspace/httpget/httpget.c).
 
 **Outbound** (just before the request goes on the wire):
 
@@ -163,7 +163,7 @@ for (size_t i = 0; i < resp->header_count; i++) {
 ```
 
 The loop matters because `http_get_header()` in
-[userspace/libc/http.h](userspace/libc/http.h) returns
+[userspace/libc/http.h](../../../userspace/libc/http.h) returns
 *first* match only. A real server can emit several
 `Set-Cookie:` lines in one response. Walking
 `resp->headers[]` directly captures all of them.
@@ -182,7 +182,7 @@ test has something to grep for:
 
 The cookie machinery is hard to test without a server
 that participates in the protocol. Rather than spin up
-something in the host OS, [userspace/httpd/httpd.c](userspace/httpd/httpd.c)
+something in the host OS, [userspace/httpd/httpd.c](../../../userspace/httpd/httpd.c)
 gains three test endpoints — entirely in-guest, dispatched
 before the chapter-105 `is_local_path` check so they don't
 hit the VFS:
@@ -215,7 +215,7 @@ naively is one of the classic cookie footguns.
 ### 7. A `/bin/cookies` user tool
 
 The user-facing front for the jar lives at
-[userspace/cookies/cookies.c](userspace/cookies/cookies.c).
+[userspace/cookies/cookies.c](../../../userspace/cookies/cookies.c).
 This is the equivalent of `find ~/Library/Cookies` on a
 real OS, except plain text:
 
@@ -291,7 +291,7 @@ ld: error: cookies.o: multiple definition of memcpy;
     layout.o: previous definition
 ```
 
-Both [layout.h](userspace/libc/layout.h) and `cookies.h`
+Both [layout.h](../../../userspace/libc/layout.h) and `cookies.h`
 were defining their own private `static memcpy` so that
 GCC's optimiser had something to call when it lowered a
 big struct copy to a `memcpy` call (the well-known
@@ -302,7 +302,7 @@ cookies for the jar — and the two static definitions
 clashed.
 
 The fix was a one-file extraction:
-[userspace/libc/freestanding.h](userspace/libc/freestanding.h)
+[userspace/libc/freestanding.h](../../../userspace/libc/freestanding.h)
 holds `memcpy`, `memset`, `memmove` once, marked
 `static __attribute__((used))`. Both `layout.h` and
 `cookies.h` now `#include "freestanding.h"`. The `used`
@@ -336,7 +336,7 @@ hostnames.
 
 ### Stationary-index directory iteration
 
-[/bin/cookies clear](userspace/cookies/cookies.c) deletes
+[/bin/cookies clear](../../../userspace/cookies/cookies.c) deletes
 every jar file by looping on `listdir_at(COOKIE_DIR, 0,
 ...)` until it returns "no more entries". The trick: it
 always asks for index 0 because `unlink` shifts later
@@ -350,8 +350,8 @@ alternative.
 ## Regression test
 
 The end-to-end test lives at
-[scripts/test_browser_cookies.py](scripts/test_browser_cookies.py).
-It mirrors the [test_directories.py](scripts/test_directories.py)
+[scripts/test_browser_cookies.py](../../../scripts/test_browser_cookies.py).
+It mirrors the [test_directories.py](../../../scripts/test_directories.py)
 boot harness with one addition — a virtio-net device,
 because httpget dials `127.0.0.1:80` and that goes
 through the kernel TCP stack which needs the netdev to
@@ -402,7 +402,7 @@ the shell you'll use to inspect the jar.
 
 init spawns `/bin/httpd` on port 80 at boot, with the
 three chapter-110 test endpoints
-[wired in](userspace/httpd/httpd.c). No network is required
+[wired in](../../../userspace/httpd/httpd.c). No network is required
 — traffic stays on the loopback interface.
 
 From a `gui_term`:
@@ -464,7 +464,7 @@ output is identical apart from the prefix.
 
 Always type the scheme explicitly. Without it the URL
 falls into case (6) of
-[`canonicalize_url`](userspace/browser/browser.c), which
+[`canonicalize_url`](../../../userspace/browser/browser.c), which
 prepends the proxy prefix `http://127.0.0.1:80/` — so
 `httpbin.org/foo` becomes
 `http://127.0.0.1:80/httpbin.org/foo`. That goes to the
@@ -480,7 +480,7 @@ the host you typed — this is what happened.
 
 ### One-shot reproducer
 
-[scripts/\_dbg\_external\_cookie.py](scripts/_dbg_external_cookie.py)
+[scripts/\_dbg\_external\_cookie.py](../../../scripts/_dbg_external_cookie.py)
 automates the whole external-host round-trip: it
 reformats `/data`, boots QEMU with the data disk and
 virtio-net, runs the three commands above through the
@@ -492,33 +492,33 @@ end-to-end loop is still closed.
 ## Applied to
 
 - Existing apps modified:
-  - [userspace/browser/browser.c](userspace/browser/browser.c) —
+  - [userspace/browser/browser.c](../../../userspace/browser/browser.c) —
     inbound Set-Cookie capture + outbound Cookie injection.
-  - [userspace/httpget/httpget.c](userspace/httpget/httpget.c) —
+  - [userspace/httpget/httpget.c](../../../userspace/httpget/httpget.c) —
     same hook pair; the CLI client now participates in
     the same jar the browser uses.
-  - [userspace/httpd/httpd.c](userspace/httpd/httpd.c) —
+  - [userspace/httpd/httpd.c](../../../userspace/httpd/httpd.c) —
     new `/cookie/{set,whoami,clear}` dispatch and the
     `send_status_with_extra` / `find_header` helpers.
-  - [userspace/libc/layout.h](userspace/libc/layout.h) —
+  - [userspace/libc/layout.h](../../../userspace/libc/layout.h) —
     private mem* shims replaced with
     `#include "freestanding.h"`.
 - New apps:
-  - [userspace/cookies/cookies.c](userspace/cookies/cookies.c) —
+  - [userspace/cookies/cookies.c](../../../userspace/cookies/cookies.c) —
     the `/bin/cookies` jar inspector.
 - New libc headers:
-  - [userspace/libc/cookies.h](userspace/libc/cookies.h) —
+  - [userspace/libc/cookies.h](../../../userspace/libc/cookies.h) —
     the jar itself.
-  - [userspace/libc/freestanding.h](userspace/libc/freestanding.h) —
+  - [userspace/libc/freestanding.h](../../../userspace/libc/freestanding.h) —
     extracted mem* shims, shared between libc headers.
 - Build wiring:
-  - [Makefile](Makefile) — `COOKIES_OBJS` / `COOKIES_ELF`
+  - [Makefile](../../../Makefile) — `COOKIES_OBJS` / `COOKIES_ELF`
     / `COOKIES_STRIPPED` block + master STRIPPED list +
     `cookies=` arg to `mkosfs.py`.
 - Tests added:
-  - [scripts/test_browser_cookies.py](scripts/test_browser_cookies.py) —
+  - [scripts/test_browser_cookies.py](../../../scripts/test_browser_cookies.py) —
     13 PASS / 0 FAIL on first green run.
-  - [scripts/\_dbg\_external\_cookie.py](scripts/_dbg_external_cookie.py) —
+  - [scripts/\_dbg\_external\_cookie.py](../../../scripts/_dbg_external_cookie.py) —
     one-shot external-host probe used to confirm
     end-to-end cookie storage against
     `httpbin.org/response-headers`. Kept per the

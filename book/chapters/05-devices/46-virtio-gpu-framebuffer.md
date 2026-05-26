@@ -103,7 +103,7 @@ On a little-endian host this lays down `B, G, R, 0` in memory
 order — exactly what `B8G8R8X8_UNORM` expects.  The same shift
 pattern shows up later in the `GUI_BGRA(R, G, B)` macro that
 userspace uses (chapter 48), and the smoke test in
-[scripts/test_wm.py](scripts/test_wm.py) parses the resulting PPM
+[scripts/test_wm.py](../../../scripts/test_wm.py) parses the resulting PPM
 on this assumption.
 
 ## The font and text renderer
@@ -150,11 +150,10 @@ out as a single solid block you forgot the per-rect coordinates.
 ## Three gotchas
 
 1. **`memset` from struct initialisers.**  `virtio_gpu.c` builds
-   `struct virtio_gpu_resource_create_2d req = { .hdr = ... };` —
+   `struct virtio_gpu_resource_create_2d req = { .hdr = ... };` --
    GCC at `-O2` lowered the zero-init to a `memset` call.  In a
    freestanding kernel that symbol doesn't exist.  Fixed by adding
-   a one-line `memset` to the same translation unit.  See
-   [/memories/freestanding-c-memset-trap.md](/memories/freestanding-c-memset-trap.md).
+   a one-line `memset` to the same translation unit.
 
 2. **Allocation order in `main.c` matters.**  The kernel heap, the
    `virtio_blk` queue, the `virtio_gpu` queue, and the framebuffer

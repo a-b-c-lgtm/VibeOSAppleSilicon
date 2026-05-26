@@ -1,13 +1,18 @@
-# Chapter 128a — Step 1: setjmp / longjmp
+# Chapter 128a — setjmp / longjmp
 
-> **Status:** shipped. `setjmp` / `longjmp` and `sigsetjmp`
-> / `siglongjmp` live in `userspace/libc/setjmp.{h,S}` and
-> are linked into every userspace binary via `libosdevc.a`.
-> `scripts/test_setjmp.py` is green.
-> **Prereq:** chapter 128 plan (you've read the section
-> opener), chapter 13 (ELF loader and the userspace ABI).
-> **Opens:** chapter 128b — `raise()`, `abort()`, full POSIX
-> signal table.
+> **Milestone in this chapter:** add the AArch64 implementation
+> of `setjmp` / `longjmp` (and the `sig*` pair) that every
+> upstream C program assumes will work.
+> **Code referenced:**
+> - [userspace/libc/setjmp.h](../../../userspace/libc/setjmp.h)
+> - [userspace/libc/setjmp.S](../../../userspace/libc/setjmp.S)
+> - [scripts/test_setjmp.py](../../../scripts/test_setjmp.py)
+>
+> **At the end of this chapter** you will have `setjmp` /
+> `longjmp` / `sigsetjmp` / `siglongjmp` linked into every
+> userspace binary via `libosdevc.a`, and a green
+> `test_setjmp.py` regression. Prerequisite: chapter 13 (ELF
+> loader and the userspace ABI).
 
 ---
 

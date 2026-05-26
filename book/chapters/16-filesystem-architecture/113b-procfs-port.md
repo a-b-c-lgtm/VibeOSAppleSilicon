@@ -18,7 +18,7 @@ the path that got us there has changed.
 
 ## What procfs looked like before
 
-[`kernel/core/procfs.c`](kernel/core/procfs.c) exposed five
+[`kernel/core/procfs.c`](../../../kernel/core/procfs.c) exposed five
 public functions, each one called from a `path_starts_with("/proc")`
 branch in vfs / syscall:
 
@@ -40,7 +40,7 @@ inside `vfs.c` that had already verified the prefix matched.
 ## What it looks like after
 
 A static `fs_ops` table at the bottom of
-[`kernel/core/procfs.c`](kernel/core/procfs.c), plus one
+[`kernel/core/procfs.c`](../../../kernel/core/procfs.c), plus one
 public register function and a static adapter per method:
 
 ```c
@@ -86,7 +86,7 @@ void procfs_register_mount(void)
 }
 ```
 
-[`kernel/core/vfs.c::vfs_init`](kernel/core/vfs.c) gains one
+[`kernel/core/vfs.c::vfs_init`](../../../kernel/core/vfs.c) gains one
 line: `procfs_register_mount();`. The chapter-99 branch in
 `vfs_open` is replaced by a vtable dispatch at the top of the
 function:

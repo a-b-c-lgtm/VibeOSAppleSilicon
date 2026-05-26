@@ -1,6 +1,17 @@
-# Chapter 106 -- TCP loopback (lo0 and 127.0.0.0/8)
+# Chapter 106 — TCP loopback (lo0 and 127.0.0.0/8)
 
-**Status:** Done. Milestone 95.
+> **Milestone in this chapter:** 95 — add an in-kernel loopback
+> interface so two in-guest TCP processes can talk without
+> tromboning through the host.
+> **Code referenced:**
+> - [kernel/core/net.c](../../../kernel/core/net.c) (`lo0` and
+>   the 127.0.0.0/8 short-circuit)
+> - [kernel/core/tcp.c](../../../kernel/core/tcp.c)
+>
+> **At the end of this chapter** you will have an in-guest
+> TCP path between any two processes via 127.0.0.1, with no
+> dependency on QEMU's SLIRP hostfwd. Prerequisite: chapter
+> 39 (TCP) and the chapter-37 net stack.
 
 Before this chapter, two processes in our OS could only talk
 TCP to each other by tromboning through the host: process A
@@ -87,8 +98,7 @@ DHCP has assigned us a non-zero address.
 
 ## Who picks the source
 
-This is the part that took an embarrassing amount of
-thinking to get right. TCP's 4-tuple is `(src_ip, src_port,
+This is the part that needs care. TCP's 4-tuple is `(src_ip, src_port,
 dst_ip, dst_port)`. When you dial `127.0.0.1:9999`, your
 client conn records:
 

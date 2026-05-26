@@ -1,22 +1,21 @@
 # Chapter 133b — Expanding `/bin/make` for a real multi-file build
 
-> **Status:** shipped (Phase 6 of guest-gcc bring-up).
-> Chapter 126 shipped a 351-LoC `/bin/make` that handled the
-> exact shape `target: deps\n\trecipe`. Chapter 133b expands
-> it to ~720 LoC, adding: variable definitions, `$(VAR)` /
-> `${VAR}` / `$$` expansion, the automatic vars `$@` / `$<` /
-> `$^`, `%.o: %.c` pattern rules, `.PHONY:`, `@` (silent) and
-> `-` (ignore-error) recipe prefixes, and line continuation.
-> `scripts/test_make_v2.py` runs **PASS 9 / FAIL 0**.
-> Six earlier-chapter regressions remain green:
-> `test_make_port.py` 14/0 (chapter-126 toy makefile still
-> works), `test_tar.py` 8/0, `test_gcc_sys_stat.py` 6/0,
-> `test_gcc_hello.py` 10/0, `test_gcc_bf.py` 6/0,
-> `test_gcc_stdio.py` 7/0.
-> **Prereq:** chapter 126 (`/bin/make` skeleton), chapter
-> 124 (`/bin/gcc` working in-guest).
-> **Opens:** chapter 133c (rebuild Doom in-guest using a
-> hand-written tailored Makefile).
+> **Milestone in this chapter:** grow the chapter-126 toy
+> `/bin/make` into a real Makefile interpreter — variables,
+> automatic vars, pattern rules, `.PHONY`, line continuation.
+> **Code referenced:**
+> - [userspace/make/make.c](../../../userspace/make/make.c)
+> - [scripts/test_make_v2.py](../../../scripts/test_make_v2.py)
+>
+> **At the end of this chapter** you will have `/bin/make`
+> at ~720 LoC handling `VAR = value`, `$(VAR)` / `${VAR}` /
+> `$$` expansion, the automatic vars `$@` / `$<` / `$^`,
+> `%.o: %.c` pattern rules, `.PHONY:`, `@` (silent) and `-`
+> (ignore-error) recipe prefixes, and line continuation — with
+> `test_make_v2.py` at **PASS 9 / FAIL 0** and the chapter-126
+> `test_make_port.py` still green. Prerequisites: chapter 126
+> (the `/bin/make` skeleton), chapter 124 (`/bin/gcc` working
+> in-guest).
 
 ---
 

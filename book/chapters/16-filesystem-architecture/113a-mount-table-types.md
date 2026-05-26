@@ -2,8 +2,8 @@
 
 [Chapter 113](113-mount-table-and-vtable.md) laid out the plan:
 collapse six prefix-special-cased ladders in
-[`kernel/core/vfs.c`](kernel/core/vfs.c) and
-[`kernel/core/syscall.c`](kernel/core/syscall.c) into one
+[`kernel/core/vfs.c`](../../../kernel/core/vfs.c) and
+[`kernel/core/syscall.c`](../../../kernel/core/syscall.c) into one
 table-driven dispatcher. The plan called for a strict
 seven-step landing — each step ending with a green regression
 sweep — so that no single commit broke userspace. This is the
@@ -41,7 +41,7 @@ abstraction it lives in.
 ## The types
 
 The full surface is small enough to fit on one screen. From
-[`kernel/core/vfs.h`](kernel/core/vfs.h):
+[`kernel/core/vfs.h`](../../../kernel/core/vfs.h):
 
 ```c
 #define MOUNT_MAX   16
@@ -121,7 +121,7 @@ Five things are worth pointing out:
 ## The resolver
 
 Longest-prefix-match, with one wrinkle for the root mount. From
-[`kernel/core/vfs.c`](kernel/core/vfs.c):
+[`kernel/core/vfs.c`](../../../kernel/core/vfs.c):
 
 ```c
 const struct mount *vfs_resolve(const char *path,

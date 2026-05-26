@@ -1,18 +1,28 @@
-# Chapter 113 — PLAN: A real VFS — mount table and `struct fs_ops`
+# Chapter 113 — A real VFS: mount table and `struct fs_ops`
 
-> **Status: PLAN ONLY.** This chapter is the design contract
-> for the first half of Part XVI (Filesystem Architecture).
-> No code lands yet. The matching implementation work will
-> be scheduled as one or more milestones after the chapter is
-> reviewed; the goal of this document is to nail down the
-> shape so the implementation work is mechanical.
+> **Milestone in this chapter:** 113 — design contract for the
+> mount-table refactor. The implementation lands across the
+> seven follow-up chapters 113a–113g, each one sweep-green
+> before the next began.
+> **Code referenced (where the contract lands):**
+> - [kernel/core/vfs.c](../../../kernel/core/vfs.c)
+>   (`vfs_resolve`, the mount table, `struct fs_ops`)
+> - [kernel/core/vfs.h](../../../kernel/core/vfs.h)
+>
+> **At the end of this chapter** you will have a written contract
+> for the dispatch shape the rest of Part XVI uses: a mount table
+> of `(prefix, fs_type, fs_ops *, void *cookie)` rows, a
+> `vfs_resolve(path) → (mount, relpath)` helper, and a `struct
+> fs_ops` vtable whose entries match the chapter-16 syscalls. **No
+> code lands in this chapter** — chapter 113a is the first
+> implementation step.
 
 ## Why this chapter exists
 
 After chapter 99 (`/proc`) shipped, the VFS dispatch in
-[kernel/core/vfs.c](kernel/core/vfs.c) and
-[kernel/core/syscall.c](kernel/core/syscall.c) had grown to
-five separate prefix-special-cased ladders for five
+[kernel/core/vfs.c](../../../kernel/core/vfs.c) and
+[kernel/core/syscall.c](../../../kernel/core/syscall.c) had grown
+into five separate prefix-special-cased ladders for five
 filesystems:
 
 | prefix     | filesystem driver                       | added in   |
@@ -33,31 +43,30 @@ Each of these requires:
 - A branch in `sys_listdir_at`
 - A branch in `sys_unlink`
 - A branch in `sys_mkdir_at`
-- An entry on every "list of writable prefixes" lookup in
-  the shell, `notepad`, `cat`, and friends.
+- An entry on every "list of writable prefixes" lookup in the
+  shell, `notepad`, `cat`, and friends.
 
-That's 7+ branches in the kernel **and** scattered userspace
-knowledge per filesystem. We have six filesystems today;
-the next one (audio? sysfs? netfs? a user-provided FS via
-chapter 114?) is the one that crosses the line from
-"annoying" to "going to introduce a bug."
+That is seven-plus branches in the kernel **and** scattered
+userspace knowledge per filesystem. Six filesystems live in the
+tree today; the next one (audio? sysfs? netfs? a user-provided FS
+via chapter 114?) is the one that crosses the line from "annoying"
+to "going to introduce a bug."
 
-The five places we already drift inconsistently:
+Five places where the current dispatch already drifts inconsistently:
 
 - `vfs_open` accepts both `/proc` and `/proc/` (chapter 99
-  retrofit) but `sys_listdir_at` accepts only `/proc[/...]`
-  (the post-fix code).
-- `/data/` supports `mkdir`; `/tmp/` doesn't. Both are
-  writable. The reason is "we never bothered."
-- `userspace/ls/ls.c` carries its own copy of the prefix
-  list to decide between `listdir` and `listdir_at`. Add a
-  filesystem to the kernel; remember to update `ls` too.
-- `userspace/libgui/save_dialog.c` hard-codes the
-  `/data/` prefix as the only place save dialogs can write.
+  retrofit) but `sys_listdir_at` accepts only `/proc[/...]` (the
+  post-fix code).
+- `/data/` supports `mkdir`; `/tmp/` doesn't. Both are writable.
+  The reason is "nobody bothered."
+- `userspace/ls/ls.c` carries its own copy of the prefix list to
+  decide between `listdir` and `listdir_at`. Add a filesystem to
+  the kernel; remember to update `ls` too.
+- `userspace/libgui/save_dialog.c` hard-codes the `/data/` prefix
+  as the only place save dialogs can write.
 
-We have arrived at the standard problem the Unix VFS
-abstraction was invented to solve. Time to adopt the
-standard solution.
+This is the standard problem the Unix VFS abstraction was invented
+to solve. Time to adopt the standard solution.
 
 ## What this chapter proposes
 
@@ -162,7 +171,7 @@ prefix-to-cookie binding.
 ### `/tmp/` — tmpfs
 
 The current tmpfs (in
-[kernel/core/tmpfs.c](kernel/core/tmpfs.c)) already has a
+[kernel/core/tmpfs.c](../../../kernel/core/tmpfs.c)) already has a
 near-vtable shape: it exposes `tmpfs_open`,
 `tmpfs_read`, `tmpfs_write`, `tmpfs_close`, etc. The
 migration is mechanical: wrap each in a `static long

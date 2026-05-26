@@ -1,18 +1,25 @@
 # Chapter 132i — `#include <stdio.h>` works in the guest
 
-> **Status:** shipped (Phase 4.5 of guest-gcc bring-up).
-> The in-guest `/bin/gcc` now resolves `#include <stdio.h>`,
-> `#include <stdint.h>`, and the rest of the libc + GCC
-> freestanding header set. A C program no longer has to
-> forward-declare every libosdevc.a symbol it uses — it can
-> just `#include <stdio.h>` like every C program written
-> since 1989.
-> `scripts/test_gcc_stdio.py` runs **PASS 7 / FAIL 0**.
-> **Prereq:** chapter 132h (`/bin/gcc` builds a freestanding
-> real program).
-> **Opens:** chapter 132j (subdir support for `sys/`),
-> chapter 133 (port `make`'s standard rules, port small
-> upstream packages).
+> **Milestone in this chapter:** stage the libc and GCC
+> freestanding headers on the disk so a C program can
+> `#include <stdio.h>` instead of forward-declaring every
+> symbol it uses.
+> **Code referenced:**
+> - [kernel/core/osfs.h](../../../kernel/core/osfs.h),
+>   [scripts/mkosfs.py](../../../scripts/mkosfs.py)
+>   (directory cap 128 → 256)
+> - The `gccw` shim (`-isystem /bin` alongside `-B/bin/`)
+> - [userspace/libc/](../../../userspace/libc/) (24 libc
+>   headers staged onto `/bin`) and the 16 GCC freestanding
+>   headers
+> - [scripts/test_gcc_stdio.py](../../../scripts/test_gcc_stdio.py)
+>
+> **At the end of this chapter** you will have `/bin/gcc`
+> resolving `#include <stdio.h>`, `<stdint.h>`, and the rest
+> of the libc + GCC freestanding header set, and
+> `test_gcc_stdio.py` at **PASS 7 / FAIL 0**. Prerequisite:
+> chapter 132h (`/bin/gcc` builds a freestanding real
+> program).
 
 ---
 

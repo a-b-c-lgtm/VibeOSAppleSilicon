@@ -1,29 +1,38 @@
-# Chapter 106a -- httpd as a forwarding proxy (TLS bridge)
+# Chapter 106a — httpd as a forwarding proxy (TLS bridge)
 
-**Status:** Done. Milestone 96.
+> **Milestone in this chapter:** 96 — httpd as a forwarding proxy.
+> **Code referenced:**
+> - [userspace/httpd/httpd.c](../../../userspace/httpd/httpd.c)
+>   (the new proxy dispatch)
+> - [scripts/https_proxy.py](../../../scripts/https_proxy.py)
+>   (the host-side TLS terminator)
+>
+> **At the end of this chapter** `/bin/httpd` has two jobs: it serves
+> static files out of `/mnt`, `/data`, and `/proc` as it always has,
+> *and* it forwards any request whose path is not a local VFS prefix
+> to a configurable upstream proxy, splicing the response straight
+> back to the client. The middle stays dumb — httpd neither parses
+> the response nor knows TLS exists.
 
-Chapter 105 gave `/bin/httpd` exactly one job: serve files
-out of the VFS (`/mnt`, `/data`, `/proc`). This chapter
-teaches it a second job: when a request comes in for a path
-that *isn't* a local VFS prefix, forward the request to a
-configurable upstream proxy (default: the host's
-[`scripts/https_proxy.py`](../../../scripts/https_proxy.py))
-and splice the response straight back to the client. The
-middle stays dumb -- httpd neither parses the response nor
-knows TLS exists.
+Chapter 105 gave `/bin/httpd` exactly one job: serve files out of
+the VFS. This chapter teaches it a second job: when a request comes
+in for a path that *isn't* a local VFS prefix, forward the request
+to a configurable upstream proxy (default: the host's
+[`scripts/https_proxy.py`](../../../scripts/https_proxy.py)) and
+splice the response back to the client. The middle stays dumb —
+httpd neither parses the response nor knows TLS exists.
 
-The motivation is downstream: chapter 106b wants the
-browser's `BROWSER_PROXY` to point at the in-guest httpd
-instead of at the host proxy. For that to work, **httpd has
-to act as a proxy itself for the cases where it isn't acting
-as a static-file server.** This chapter adds that dispatch
-and ships about 90 new lines of C.
+The motivation is downstream: chapter 106b wants the browser's
+`BROWSER_PROXY` to point at the in-guest httpd instead of the host
+proxy. For that to work, **httpd has to act as a proxy itself for
+the cases where it isn't acting as a static-file server.** This
+chapter adds that dispatch and ships about 90 new lines of C.
 
-Everything in this chapter is userspace. The kernel doesn't
-change at all -- we already have `socket_connect`,
-`socket_listen`, `socket_accept`, `socket_shutdown`, and the
-chapter-93 file-descriptor model that lets one process hold
-both an inbound and outbound TCP fd at the same time.
+Everything here is userspace. The kernel doesn't change at all —
+the chapter-93 file-descriptor model already lets one process hold
+an inbound and an outbound TCP fd at the same time, and
+`socket_connect`, `socket_listen`, `socket_accept`, and
+`socket_shutdown` are all in place from Part VII.
 
 ## Prerequisites
 

@@ -1,11 +1,29 @@
 # Chapter 116d — POSIX `errno` convention + `strerror` + first FILE-* app port
 
-**Status:** Shipped.
+> **Milestone in this chapter:** flip every syscall wrapper
+> from the chapter-7 "return `-errno`" convention to the POSIX
+> "return `-1`, set `errno`" convention, then walk the ~50
+> caller sites that printed the negated kernel code.
+> **Code referenced:**
+> - [userspace/libc/syscall.h](../../../userspace/libc/syscall.h)
+>   (the `_svc*` wrappers + `__svc_check`)
+> - [userspace/libc/errno.h](../../../userspace/libc/errno.h)
+>   (`strerror`)
+> - [userspace/cat/](../../../userspace/cat/),
+>   [userspace/wc/](../../../userspace/wc/),
+>   [userspace/head/](../../../userspace/head/),
+>   [userspace/tail/](../../../userspace/tail/) (rewritten on
+>   top of `FILE *`)
+>
+> **At the end of this chapter** you will have every libc
+> entry point obeying the POSIX errno convention, a
+> `strerror` that turns kernel codes into strings, and the
+> four shortest pipeline tools running on `FILE *`.
 
 This is the small-looking, far-reaching chapter that flips
 every syscall wrapper from the "return `-errno`" convention
-we shipped in chapter 7 to the "return `-1` and set `errno`"
-convention POSIX requires — and then walks the ~50 caller
+introduced in chapter 7 to the "return `-1` and set `errno`"
+convention POSIX requires -- and then walks the ~50 caller
 sites that printed the negated kernel code.
 
 It also rewrites the four shortest pipeline tools (`cat`,
@@ -27,8 +45,8 @@ if (fd < 0) {                       /* always -1, never -ENOENT */
 }
 ```
 
-Up to chapter 116a we shipped the opposite: `open()` returned
-`-ENOENT` on failure, and we *also* mirrored the value into
+Up to chapter 116a the convention was the opposite: `open()` returned
+`-ENOENT` on failure, and the value was *also* mirrored into
 `errno`. That dual-channel design was a deliberate
 backward-compat shim — chapter 7 to chapter 115 had ~99
 caller sites of the shape `printf("err=%d\n", -fd)`, and the
@@ -66,7 +84,7 @@ callers will assume `-1 + errno` from day one.
 | [userspace/init/init.c](../../../userspace/init/init.c) | All 11 spawn-failure `putd(-tid)` sites switched to `putd(errno)`. |
 | 15+ other `.c` files | `printf("...errno=%d", -rc)` → `printf("...errno=%d", errno)` across `cssparse.c`, `pngdec.c`, `htmltok.c`, `layout.c`, `htmldom.c`, `grep.c`, `browser.c`, `httpsd.c`, `cookies.c`, `httpd.c`. |
 | [userspace/fontd/fontd.c](../../../userspace/fontd/fontd.c) | `rc == -EINTR` → `rc == -1 && errno == EINTR`. |
-| [userspace/wmclient/wmclient.c](../../../userspace/wmclient/wmclient.c) | Same shape for `ENOENT`. |
+| [userspace/libgui/wmclient.c](../../../userspace/libgui/wmclient.c) | Same shape for `ENOENT`. |
 | [userspace/wsd/wsd.c](../../../userspace/wsd/wsd.c) | Same shape for `EAGAIN` and `EINTR` (2 sites). |
 | [userspace/mixtest/mixtest.c](../../../userspace/mixtest/mixtest.c) | `rc == -EBUSY_RC` → `rc != -1 \|\| errno != EBUSY_RC` (3 sites). |
 | [userspace/errnotest/errnotest.c](../../../userspace/errnotest/errnotest.c) | Header comment updated to describe the new convention. |

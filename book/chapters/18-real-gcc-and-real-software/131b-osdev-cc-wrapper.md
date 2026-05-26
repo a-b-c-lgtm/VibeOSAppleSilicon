@@ -1,21 +1,22 @@
 # Chapter 131b — `aarch64-osdev-cc`: the target-compiler seam
 
-> **Status:** shipped. `make aarch64-osdev-cc-install`
-> installs `build/toolchain/bin/aarch64-osdev-cc` plus
-> `as` / `ld` symlinks pointing at the chapter 131a
-> binutils. Host smoke test
-> `scripts/test_aarch64_osdev_cc.py` passes both halves:
-> the wrapper builds `hello.stripped.elf` byte-identical
-> to the Makefile build, and our `aarch64-osdev-ld`
-> independently links the same Makefile-produced
-> `crt0.o` + `hello.o` into the same byte-identical
-> binary.
-> **Prereq:** chapter 131a (`aarch64-osdev-as` and
-> `aarch64-osdev-ld` installed under `build/toolchain/`).
-> **Opens:** the seam chapter 131c needs to start
-> cross-building real binutils gas for the guest, and
-> the seam chapter 132 will replace with a real
-> `aarch64-osdev-gcc`.
+> **Milestone in this chapter:** install a 30-line shell wrapper
+> that presents the chapter-131a binutils as a single
+> `aarch64-osdev-cc` driver — the seam later chapters replace
+> with a real `aarch64-osdev-gcc`.
+> **Code referenced:**
+> - [scripts/aarch64-osdev-cc.in](../../../scripts/aarch64-osdev-cc.in)
+> - [Makefile](../../../Makefile)
+>   (`make aarch64-osdev-cc-install`)
+> - [scripts/test_aarch64_osdev_cc.py](../../../scripts/test_aarch64_osdev_cc.py)
+>
+> **At the end of this chapter** you will have
+> `build/toolchain/bin/aarch64-osdev-cc` (plus `as` and `ld`
+> symlinks) installed and a host smoke test that builds
+> `hello.stripped.elf` byte-identical to the Makefile build,
+> with `aarch64-osdev-ld` independently linking the same
+> `crt0.o + hello.o` into the same bytes. Prerequisite:
+> chapter 131a.
 
 ---
 

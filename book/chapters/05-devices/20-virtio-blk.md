@@ -18,7 +18,7 @@ just prove the wire works.
 ## The disk image
 
 QEMU's virtio-blk device needs a backing store. The Makefile
-creates a 1 MiB raw image at [build/disk.img](../../../Makefile)
+creates a 1 MiB raw image at `build/disk.img` (see the [Makefile](../../../Makefile))
 on demand, with sector 0 stamped with a recognizable magic
 string:
 

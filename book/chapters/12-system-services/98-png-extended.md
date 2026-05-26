@@ -25,7 +25,7 @@ parsing it as markup.
 
 ## What this chapter adds
 
-- **Decoder support** in [userspace/libc/png.h](userspace/libc/png.h)
+- **Decoder support** in [userspace/libc/png.h](../../../userspace/libc/png.h)
   for:
   - colour type **0** (grayscale) at bit depths 1, 2, 4, 8
   - colour type **3** (palette / indexed) at bit depths 1, 2, 4, 8
@@ -37,7 +37,7 @@ parsing it as markup.
   - `assets/osfs/icon_palette.png` — a four-quadrant palette PNG
   - `assets/osfs/icon_gray.png` — an 8-bit grayscale gradient
 - **Browser content-type sniffing** in
-  [userspace/browser/browser.c](userspace/browser/browser.c):
+  [userspace/browser/browser.c](../../../userspace/browser/browser.c):
   - `br_looks_like_png()` — eight-byte signature check on the
     response.
   - `br_img_cache_install_bytes()` — pre-decode the response and
@@ -47,9 +47,9 @@ parsing it as markup.
     its own URL.
   - Hooked into `load_page()` between fetch and parse.
 - **Smoke tests:**
-  - [scripts/test_png_palette.py](scripts/test_png_palette.py) —
+  - [scripts/test_png_palette.py](../../../scripts/test_png_palette.py) —
     standalone decoder verification for both new colour types.
-  - [scripts/test_browser_direct_png.py](scripts/test_browser_direct_png.py)
+  - [scripts/test_browser_direct_png.py](../../../scripts/test_browser_direct_png.py)
     — end-to-end framebuffer check that direct PNG navigation
     actually paints the picture.
 
@@ -197,7 +197,7 @@ computed:
 int bpp_in = (color_type == 6) ? 4 : 3;        // RGBA or RGB
 ```
 
-…which was right for the two formats we shipped and silently
+…which was right for the two formats supported so far and silently
 wrong for any sub-byte depth. The new code:
 
 ```c
@@ -412,23 +412,23 @@ catch it immediately.
 
 **Added:**
 
-- [scripts/test_png_palette.py](scripts/test_png_palette.py)
-- [scripts/test_browser_direct_png.py](scripts/test_browser_direct_png.py)
-- [assets/osfs/icon_palette.png](assets/osfs/icon_palette.png) (built)
-- [assets/osfs/icon_gray.png](assets/osfs/icon_gray.png) (built)
+- [scripts/test_png_palette.py](../../../scripts/test_png_palette.py)
+- [scripts/test_browser_direct_png.py](../../../scripts/test_browser_direct_png.py)
+- [assets/osfs/icon_palette.png](../../../assets/osfs/icon_palette.png) (built)
+- [assets/osfs/icon_gray.png](../../../assets/osfs/icon_gray.png) (built)
 
 **Modified:**
 
-- [userspace/libc/png.h](userspace/libc/png.h) — colour types
+- [userspace/libc/png.h](../../../userspace/libc/png.h) — colour types
   0/3/4, sub-byte sample unpacking, gray-scale scaling, `tRNS`
   handling, fixed `bpp` semantics.
-- [userspace/browser/browser.c](userspace/browser/browser.c) —
+- [userspace/browser/browser.c](../../../userspace/browser/browser.c) —
   `br_looks_like_png()`, `br_img_cache_install_bytes()`,
   `br_synthesize_image_page()`, sniff hook in `load_page()`.
-- [scripts/make_test_png.py](scripts/make_test_png.py) — `--kind`
+- [scripts/make_test_png.py](../../../scripts/make_test_png.py) — `--kind`
   flag for palette and grayscale variants; bake-time BGRA sum
   reporting for each.
-- [Makefile](Makefile) — bake rules for the two new images;
+- [Makefile](../../../Makefile) — bake rules for the two new images;
   added to `OSFS_FILES` and `mkosfs.py` invocation.
 
 ## Build & run

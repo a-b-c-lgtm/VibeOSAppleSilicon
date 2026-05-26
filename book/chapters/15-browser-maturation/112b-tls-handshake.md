@@ -412,10 +412,7 @@ read). The script also screens for `[svc] unknown syscall` and
 the kernel can't yet" and "tlstest dereferenced something bad"
 markers respectively.
 
-## Memory note: things that bit us
-
-(See `/memories/repo/chapter-112b-tls-handshake.md` for the
-full list.)
+## Things that bit us
 
 - **`br_ssl_client_init_full(cc, NULL, ...)` crashes.** Pass
   a real `br_x509_minimal_context*`, even if you intend to

@@ -1,11 +1,18 @@
 # Chapter 119 — A linker and an archiver: /bin/ld and /bin/ar
 
-**Status:** Shipped. The second and third stages of our
-in-guest toolchain. Code lives in
-`userspace/ld/ld.c` (~570 lines) and
-`userspace/ar/ar.c` (~250 lines), plus a small kernel patch
-to [kernel/core/tmpfs.c](../../../kernel/core/tmpfs.c) so
-linked outputs in `/tmp` can actually be exec'd.
+> **Milestone in this chapter:** ship the second and third
+> toolchain stages — a small static linker at `/bin/ld` and an
+> ar(1)-compatible archiver at `/bin/ar`.
+> **Code referenced:**
+> - [userspace/ld/ld.c](../../../userspace/ld/ld.c) (~570 LoC)
+> - [userspace/ar/ar.c](../../../userspace/ar/ar.c) (~250 LoC)
+> - [kernel/core/tmpfs.c](../../../kernel/core/tmpfs.c) (so
+>   linked outputs in `/tmp` can be exec'd)
+>
+> **At the end of this chapter** you will have a `/bin/ld`
+> that links the relocatable `.o` files produced by chapter
+> 118 into a runnable ELF, and a `/bin/ar` that bundles them
+> into static archives. Builds on chapter 118 (`/bin/as`).
 
 ## Why this chapter exists
 
@@ -45,7 +52,7 @@ into a `.a` archive. We don't need archive scanning in
 toolchain can quote `libfoo.a` filenames if a future
 compiler ever wants them.
 
-## What shipped
+## What this chapter adds
 
 | Component | File | Lines | Role |
 |---|---|---|---|

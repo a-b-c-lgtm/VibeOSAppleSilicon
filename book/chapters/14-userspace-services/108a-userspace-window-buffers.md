@@ -1,6 +1,18 @@
 # Chapter 108a — Userspace access to window pixel buffers
 
-**Status:** Done. Tracking milestone 90d.
+> **Milestone in this chapter:** 90d — map each window's pixel
+> buffer into the owning process's address space so userspace
+> can draw directly instead of going through GUI syscalls.
+> **Code referenced:**
+> - [kernel/core/wm.c](../../../kernel/core/wm.c)
+>   (`SYS_GUI_MAP_WINDOW`, damage-rect ring)
+> - [userspace/pixapp/](../../../userspace/pixapp/) (the demo
+>   that proves the new path)
+>
+> **At the end of this chapter** you will have userspace able
+> to `mmap` a window's BGRA buffer, draw into it directly, and
+> tell the WM about damaged rectangles — the foundation the
+> rest of chapter 108 builds on.
 
 Every window's pixel buffer (`w->pixels`, allocated by
 the WM) lives in kernel memory. Up until this chapter the
@@ -49,7 +61,7 @@ fix wrong:
    composite torn frames or have to `mprotect`-trap
    every write.
 
-The implementation we shipped sidesteps all three by
+The implementation here sidesteps all three by
 keeping `w->pixels` exactly as it is (kheap, contiguous,
 the compositor's authoritative copy) and giving each
 mapping a parallel page-aligned set of pmem frames in
@@ -285,8 +297,8 @@ per-primitive syscalls it already uses.
 * Why "just expose the bytes" is three subtleties,
   not one: page alignment, resize coherence,
   damage semantics.
-* The exact reason X SHM was a watershed in 1995 —
-  it's the same reason we shipped it here.
+* The exact reason X SHM was a watershed in 1995 --
+  the same reason this chapter uses the trick.
 * How an "explicit damage" model maps onto every
   real compositor (Wayland's `wl_surface.damage`,
   X11's `Damage` extension, Quartz's

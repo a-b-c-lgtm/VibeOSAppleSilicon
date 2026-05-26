@@ -20,7 +20,7 @@ op pointer returned `-EINVAL_VFS` instead of the documented
 ## The bug the chapter caught
 
 The chapter-113 plan said RO enforcement was already done.
-The first version of [`scripts/test_mount_ro.py`](scripts/test_mount_ro.py)
+The first version of [`scripts/test_mount_ro.py`](../../../scripts/test_mount_ro.py)
 disagreed loudly:
 
 ```

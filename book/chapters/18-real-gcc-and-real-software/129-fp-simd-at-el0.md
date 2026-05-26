@@ -1,16 +1,26 @@
 # Chapter 129 — FP / SIMD at EL0
 
-> **Status:** code complete. `scripts/test_fp.py` green; full
-> regression sweep green.
-> **Prereq:** chapters 11 (threading + context switch), 13
-> (ELF + crt0), 128a (setjmp / longjmp), 128f (printf without
-> `%f`).
-> **Unlocks:** every later chapter that needs floating-point —
-> Doom's renderer (`R_PointToAngle`, `R_PointToDist`), GCC's
-> own constant folding (the front end uses `mpfr` internally
-> but builds host-side; runtime support is what unlocks
-> *running* compiled code), libpng's filter heuristics, and
-> the eventual `%f` / `strtod` chapter.
+> **Milestone in this chapter:** turn on FP / SIMD for userspace
+> and extend the context-switch frame to save and restore the
+> 32-register vector state.
+> **Code referenced:**
+> - [kernel/arch/mmu.S](../../../kernel/arch/mmu.S)
+>   (`CPACR_EL1.FPEN = 0b11`)
+> - [kernel/arch/context_switch.s](../../../kernel/arch/context_switch.s)
+>   (`q0..q31`, `fpsr`, `fpcr` save / restore)
+> - [kernel/core/thread.h](../../../kernel/core/thread.h)
+>   (`FRAME_SIZE`)
+> - [scripts/test_fp.py](../../../scripts/test_fp.py)
+>
+> **At the end of this chapter** you will have FP / SIMD
+> available to every EL0 thread, an 816-byte context-switch
+> frame that preserves the full vector state on every
+> `cswitch_to`, and a green `test_fp.py` regression. That
+> unlocks Doom's renderer (`R_PointToAngle`,
+> `R_PointToDist`), libpng's filter heuristics, and the
+> eventual `%f` / `strtod` work. Prerequisites: chapters 11
+> (threading + context switch), 13 (ELF + crt0), 128a (setjmp
+> / longjmp), 128f (printf without `%f`).
 
 ---
 
@@ -288,9 +298,8 @@ Three fixes, in order of preference:
    pointer in `x6` for the whole save block. More invasive;
    no upside.
 
-Saved in `/memories/repo/chapter-129-fp-simd-at-el0.md` as a
-reminder for any future per-thread state that wants to live
-beyond offset 504.
+This is worth remembering for any future per-thread state
+that wants to live beyond offset 504.
 
 ### Why save the *whole* register file?
 

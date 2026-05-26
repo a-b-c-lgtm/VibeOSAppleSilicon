@@ -222,13 +222,11 @@ if (v->kind == VMA_ANON) {
 ```
 
 Each branch ends with `l3_tbl[L3_INDEX(va)] = build_user_desc(...)`.
-The first version of this code I wrote treated `l3_for(as, va)`'s
+An early version of this code treated `l3_for(as, va)`'s
 return as a direct entry pointer rather than the L3 table base —
 the kernel built fine and silently corrupted random table
-descriptors on every mmap fault. (The
-[chapter-90 repo memory](../../../memories/repo/chapter-90-mmap-and-page-cache.md)
-has the trap captured.) The fix is to actually index into the
-returned table.
+descriptors on every mmap fault. The fix is to actually index
+into the returned table.
 
 ## The DESC_SW_PAGECACHE bit
 
@@ -339,8 +337,8 @@ static inline void *mmap(void *addr, size_t len, int prot, int flags,
 
 `sys_munmap(addr, len)` is also strict: `addr` must equal a
 vma's start VA, and `len` is ignored (whole-vma unmap only).
-Partial unmap would split the vma into two, which would force
-me to also write a vma-splitter; deferred.
+Partial unmap would split the vma into two, which would
+require a vma-splitter; deferred.
 
 ## Testing it: the smoke
 

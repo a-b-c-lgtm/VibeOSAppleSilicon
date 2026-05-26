@@ -50,7 +50,7 @@ total unique          46 sectors  =  23 KiB
 ```
 
 So 32 KiB (64 slots) holds the entire warm set with room to spare.
-That's where I landed:
+That's the chosen size:
 
 ```c
 #define SLOTS  64
@@ -178,7 +178,7 @@ Result:
 [blk_cache] hits=63 misses=46 evictions=0
 ```
 
-That's the picture I wanted:
+That's the picture we want:
 
 - **46 misses = exactly the count of unique sectors touched.** Every
   miss is a *cold* miss; nothing is ever read from disk twice.

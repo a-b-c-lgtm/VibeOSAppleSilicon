@@ -1,19 +1,18 @@
 # Chapter 132b — GMP, MPFR, MPC as in-tree prerequisites
 
-> **Status:** shipped. `make gcc-osdev-prereqs` (or any
-> top-level target — `make`, `make run`, `make run-graphical`)
-> downloads three sha256-pinned tarballs and symlinks them
-> into the patched gcc source tree as
-> `vendor/gcc-14.2.0/{gmp,mpfr,mpc}`. Host smoke test
-> `scripts/test_gcc_prereqs.py` passes (verifies sha256s,
-> symlink targets, and that each linked dir has a
-> `configure` script).
-> **Prereq:** chapter 132a (the patched gcc source tree
-> must exist before anything can symlink into it).
-> **Opens:** Phase 2 step 3 — the in-tree math libraries
-> that gcc's configure expects to find when it builds xgcc.
-> Chapter 132c will run the actual configure + `make
-> all-gcc` and pick these up automatically.
+> **Milestone in this chapter:** stage the three math libraries
+> gcc's configure expects to find inside its source tree.
+> **Code referenced:**
+> - [scripts/fetch_gcc_prereqs.sh](../../../scripts/fetch_gcc_prereqs.sh)
+> - [Makefile](../../../Makefile) (`gcc-osdev-prereqs`)
+> - [scripts/test_gcc_prereqs.py](../../../scripts/test_gcc_prereqs.py)
+>
+> **At the end of this chapter** you will have three
+> sha256-pinned tarballs (`gmp-6.2.1`, `mpfr-4.1.0`,
+> `mpc-1.2.1`) downloaded and symlinked into the patched gcc
+> source as `vendor/gcc-14.2.0/{gmp,mpfr,mpc}`. Prerequisite:
+> chapter 132a (the patched gcc source tree must exist before
+> anything can symlink into it).
 
 ---
 

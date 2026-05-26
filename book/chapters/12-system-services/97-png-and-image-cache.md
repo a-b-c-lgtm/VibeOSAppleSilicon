@@ -9,7 +9,7 @@ a real picture should go, you see a flat grey rectangle.
 This chapter fixes that. We add:
 
 1. **A header-only PNG decoder** in
-   [userspace/libc/png.h](userspace/libc/png.h) — about 600 lines
+   [userspace/libc/png.h](../../../userspace/libc/png.h) — about 600 lines
    that can take a `.png` byte stream and produce a tightly-packed
    BGRA buffer ready to hand directly to `gui_present`. The decoder
    contains its own complete RFC 1951 inflate.
@@ -30,7 +30,7 @@ This chapter fixes that. We add:
    that puts the bytes on screen.
 
 The end-to-end smoke test
-[scripts/test_browser_image.py](scripts/test_browser_image.py)
+[scripts/test_browser_image.py](../../../scripts/test_browser_image.py)
 boots the kernel graphically, opens a one-image test page, and
 asserts that a 4×4 pure-blue landmark from the test PNG appears on
 the framebuffer. With the test passing we are about to retire the
@@ -398,7 +398,7 @@ no `setjmp`/`longjmp` and no partial-state leak on failure.
 
 ## `/bin/pngdec`: a 60-line consumer that doubles as a smoke test
 
-[userspace/pngdec/pngdec.c](userspace/pngdec/pngdec.c) reads a
+[userspace/pngdec/pngdec.c](../../../userspace/pngdec/pngdec.c) reads a
 file, calls `png_decode`, computes a checksum, and prints:
 
 ```
@@ -648,23 +648,23 @@ unchanged from chapter 96.
 
 Added:
 
-- [userspace/libc/png.h](userspace/libc/png.h)
-- [userspace/pngdec/pngdec.c](userspace/pngdec/pngdec.c)
-- [scripts/make_test_png.py](scripts/make_test_png.py)
-- [scripts/test_png.py](scripts/test_png.py)
-- [scripts/test_browser_image.py](scripts/test_browser_image.py)
-- [assets/osfs/img_test.html](assets/osfs/img_test.html)
+- [userspace/libc/png.h](../../../userspace/libc/png.h)
+- [userspace/pngdec/pngdec.c](../../../userspace/pngdec/pngdec.c)
+- [scripts/make_test_png.py](../../../scripts/make_test_png.py)
+- [scripts/test_png.py](../../../scripts/test_png.py)
+- [scripts/test_browser_image.py](../../../scripts/test_browser_image.py)
+- [assets/osfs/img_test.html](../../../assets/osfs/img_test.html)
 - `assets/osfs/icon.png` (built at make-time, not committed)
 
 Modified:
 
-- [userspace/libc/layout.h](userspace/libc/layout.h):
+- [userspace/libc/layout.h](../../../userspace/libc/layout.h):
   `replaced_pixels*` fields on `struct layout_box`,
   `LAY_PAINT_IMAGE = 4` enum value, `image_*` fields on
   `struct layout_paint_cmd`, image-emit branch in the REPLACED
   paint emitter, init of new fields in `layout_box_new` and on
   every existing paint cmd construction.
-- [userspace/browser/browser.c](userspace/browser/browser.c):
+- [userspace/browser/browser.c](../../../userspace/browser/browser.c):
   `#include "../libc/png.h"`, `struct br_img_cache_entry`,
   cache fields on `struct loaded_page`, `br_img_cache_lookup`,
   `br_resolve_img_src`, `br_img_cache_load`,
@@ -672,7 +672,7 @@ Modified:
   `load_page` and `relayout_page`, image-cache teardown in
   `free_page`, and the `LAY_PAINT_IMAGE` case in the GUI
   render switch.
-- [Makefile](Makefile): `PNGDEC_OBJS`/`ELF`/`STRIPPED` rules,
+- [Makefile](../../../Makefile): `PNGDEC_OBJS`/`ELF`/`STRIPPED` rules,
   `assets/osfs/icon.png` build rule, `OSFS_BIN_FILES` += pngdec,
   `OSFS_FILES` += icon.png + img_test.html, mkosfs.py invocation
   extended.

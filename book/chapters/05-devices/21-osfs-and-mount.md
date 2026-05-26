@@ -47,7 +47,7 @@ read(0)
 
 ## OSFS-1: a deliberately tiny on-disk format
 
-I considered FAT12. It would have been honest — FAT is everywhere —
+FAT12 was a candidate. It would have been honest -- FAT is everywhere --
 but it has too many quirks for this chapter to be about *layering*.
 12-bit packed FAT entries split across byte boundaries. Three
 reserved/EOC value ranges (`0xFF8`-`0xFFF` for end-of-chain,

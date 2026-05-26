@@ -1,17 +1,20 @@
 # Chapter 133c — In-guest Doom rebuild, the pilot
 
-> **Status:** shipped (Phase 7 of guest-gcc bring-up).
-> Compiles three small DoomGeneric vendor sources
-> (`m_random.c`, `m_bbox.c`, `m_fixed.c`) from a tarball
-> extracted at boot, using `/bin/make` (chapter 133b) +
-> `/bin/gcc` (chapter 132g). All three produce ELF
-> AArch64 object files on `/data/src/`. `scripts/test_doom_pilot.py`
-> runs **PASS 8 / FAIL 0**. Seven earlier-chapter
-> regressions remain green (60/0 total).
-> **Prereq:** chapter 132g (`/bin/gcc`), 132j (sys/ headers
-> on OSFS-1), 133a (`/bin/tar`), 133b (expanded `/bin/make`).
-> **Opens:** chapter 133d (scale to the full 82-file vendor
-> compile), 133e (link a runnable doom binary).
+> **Milestone in this chapter:** prove the in-guest `make +
+> gcc` pipeline on three carefully-chosen DoomGeneric vendor
+> sources before scaling to the full set.
+> **Code referenced:**
+> - [assets/osfs/doom_pilot.mk](../../../assets/osfs/doom_pilot.mk)
+> - [scripts/test_doom_pilot.py](../../../scripts/test_doom_pilot.py)
+>
+> **At the end of this chapter** you will have three vendor
+> objects (`m_random.c`, `m_bbox.c`, `m_fixed.c`) compiled
+> from a tarball extracted at boot, exercising cpp's plain,
+> `-I`, and `-isystem /bin` lookups in one run, with
+> `test_doom_pilot.py` at **PASS 8 / FAIL 0**.
+> Prerequisites: chapter 132g (`/bin/gcc`), 132j (`sys/`
+> headers on OSFS-1), 133a (`/bin/tar`), 133b (expanded
+> `/bin/make`).
 
 ---
 
@@ -197,9 +200,6 @@ propagates cwd" can be written cleanly and tied to a
 single change. The pilot's job is to prove the rebuild
 loop, not to fix every gap it surfaces.
 
-The memory note `/memories/repo/chapter-133c-doom-pilot.md`
-documents this so the next session doesn't re-discover it.
-
 ### Pitfall — `/bin/ls` only reads `argv[1]`
 
 **Symptom:** Verifying that the three pilot sources
@@ -360,10 +360,6 @@ builds" rule:
   `OSFS_FILES` and the mkosfs invocation.
 - **`scripts/test_doom_pilot.py`** (new, ~260 LoC):
   end-to-end smoke test, 8 expectations.
-- **`/memories/repo/chapter-133c-doom-pilot.md`** (new):
-  notes the `sys_spawn` cwd-not-propagated trap and the
-  `/bin/ls` argv[1]-only trap so future sessions don't
-  re-discover them.
 
 No existing apps were modified — the chapter is purely
 plumbing-validation. The user-visible app changes happen

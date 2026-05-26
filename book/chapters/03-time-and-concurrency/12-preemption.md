@@ -3,7 +3,7 @@
 > **Milestone in this chapter:** 5 — preemptive scheduling.
 > **Code referenced:** [kernel/core/irq.c](../../../kernel/core/irq.c),
 > [kernel/core/thread.c](../../../kernel/core/thread.c) (`schedule`),
-> [kernel/arch/context_switch.S](../../../kernel/arch/context_switch.S),
+> [kernel/arch/context_switch.s](../../../kernel/arch/context_switch.s),
 > [kernel/core/main.c](../../../kernel/core/main.c)
 > (`preemption_demo`).
 >
@@ -165,8 +165,6 @@ worth a sentence: **a "unified exception frame" only unifies if
 the synthesised SPSR reflects the desired *resumed* state, not
 the live state of the code building the frame.**
 
-(See also `/memories/repo/aarch64-cswitch-spsr-from-irq.md`.)
-
 ## The eret-window trap
 
 The SPSR trap above is a story about *constructing* the saved
@@ -282,8 +280,6 @@ running in EL1 with IRQs unmasked. The new rule of thumb:
 **whenever you write a new exception-return path, mask DAIF.I
 at the top, even if you think it should already be masked.**
 Defence in depth costs one instruction.
-
-(See also `/memories/repo/aarch64-eret-window-must-mask-irqs.md`.)
 
 ## The demo
 

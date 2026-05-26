@@ -1,6 +1,17 @@
 # Chapter 74 — exec: tearing down and rebuilding an AS in place
 
-**Status:** Implemented (milestone 65 / 2025-Q4).
+> **Milestone in this chapter:** 65 — add `SYS_EXEC` so a forked
+> child can replace itself with a different program.
+> **Code referenced:**
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_EXEC`)
+> - [kernel/core/elf.c](../../../kernel/core/elf.c)
+>
+> **At the end of this chapter** you will have `SYS_EXEC(path,
+> argv)` destroying the current AS, loading a fresh ELF, and
+> returning to userspace at the new entry point — the second
+> half of the classic Unix fork + exec pair that lets the
+> shell run external commands.
 
 `fork()` made a clone. `exec()` replaces it with a different
 program in the same pid. Together they finally let the shell

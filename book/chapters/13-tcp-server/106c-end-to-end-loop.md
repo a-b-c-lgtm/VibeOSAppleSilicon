@@ -1,6 +1,18 @@
-# Chapter 106c -- End to end: the browser fetches from its own kernel
+# Chapter 106c — End to end: the browser fetches from its own kernel
 
-**Status:** Done. Milestone 98.
+> **Milestone in this chapter:** 98 — the capstone of Part XIII.
+> Boot the desktop, open `gui_term`, and fetch a page served
+> by `/bin/httpd` running in the same guest.
+> **Code referenced:**
+> - [userspace/httpd/](../../../userspace/httpd/) (the http
+>   server started at boot)
+> - [userspace/browser/](../../../userspace/browser/)
+>
+> **At the end of this chapter** you will have an end-to-end
+> in-guest HTTP loop: a browser, a TCP loopback, an in-guest
+> server, and a file served back to the renderer. Builds on
+> chapters 106 (loopback), 106a (TLS bridge), 106b (proxy
+> retarget).
 
 The capstone of Part XIII. The desktop boots, and `/bin/httpd`
 is already running on port 80 waiting for connections.  Open
@@ -223,7 +235,7 @@ this connection*.
 
 The test boots without virtio-gpu / keyboard / tablet --
 serial only.  That keeps it fast (the entire run, including
-QEMU boot, is ~12 seconds on my machine) and isolates the
+QEMU boot, is ~12 seconds on the test host) and isolates the
 loopback path from the chapter-106b cursor-pump fix.
 The desktop variant of the same fetch path is covered by
 [`test_browser_hn_serial_with_desktop.py`](../../../scripts/test_browser_hn_serial_with_desktop.py),
@@ -232,7 +244,7 @@ which routes through the chapter-106a forwarding proxy.
 ## Timing
 
 Bare-kernel, no GUI, loopback fetch: **~430 ms** wall on
-my Apple Silicon HVF box.  Breakdown from the
+Apple Silicon HVF.  Breakdown from the
 `browser --timing` output:
 
 ```

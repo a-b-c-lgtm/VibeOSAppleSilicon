@@ -1,27 +1,36 @@
 # Chapter 112a — BearSSL builds for our userspace
 
+> **Milestone in this chapter:** 112a — vendor BearSSL and prove
+> one primitive works in-guest.
+> **Code referenced:**
+> - [vendor/bearssl/](../../../vendor/bearssl/) (vendored source)
+> - [userspace/tlstest/tlstest.c](../../../userspace/tlstest/tlstest.c)
+> - [scripts/test_tlstest.py](../../../scripts/test_tlstest.py)
+>
+> **At the end of this chapter** `libbearssl.a` is in the build tree,
+> the cross toolchain links it against a freestanding userspace
+> binary, and the regression boots the kernel, runs `/bin/tlstest`,
+> and verifies that SHA-256 of a fixed input matches the expected
+> digest. No TLS handshake yet — chapter 112b runs the first one.
+
 Chapter 112 added entropy. The kernel can now hand out
 cryptographically unguessable bytes via `SYS_GETRANDOM`, and
 `/bin/getrand` prints them. That solves the *first* prerequisite
-for TLS — a real PRNG. There are several more, and they all
-reduce to the same problem: we need a TLS *implementation*. We
-need a library that can produce a ClientHello, agree on an
-ECDHE shared secret, derive AES-GCM keys, parse and verify an
-X.509 chain, and feed the application 16-KiB plaintext records.
-That is a meaningful amount of code — five-to-six-figure lines
-of it — and the entire stack has to compile under our cross
-toolchain (`aarch64-elf-gcc`, no libc, no syscalls beyond what
-we wrote ourselves), run inside a thread with no FP/NEON
-registers, and produce deterministic output we can KAT-test on
-the host.
+for TLS — a real PRNG. Several more remain, and they all reduce to
+the same problem: a TLS *implementation* is needed. A library that
+can produce a ClientHello, agree on an ECDHE shared secret, derive
+AES-GCM keys, parse and verify an X.509 chain, and feed the
+application 16-KiB plaintext records. That is a meaningful amount
+of code — five-to-six-figure lines of it — and the entire stack has
+to compile under the cross toolchain (`aarch64-elf-gcc`, no libc,
+no syscalls beyond those built earlier), run inside a thread with
+no FP/NEON registers, and produce deterministic output that can be
+KAT-tested on the host.
 
-This chapter takes the first step of that port: vendor the
-library, get it to *build* against our freestanding userspace,
-and prove that one cryptographic primitive (SHA-256) computes
-the right answer when called from an osdev `/bin/` binary. No
-TLS handshake yet — that's chapter 112b. But by the end of
-this chapter, `libbearssl.a` is in the build tree and the
-regression `scripts/test_tlstest.py` boots the kernel, runs
+This chapter takes the first step of that port: vendor the library,
+get it to *build* against the freestanding userspace, and prove that
+one cryptographic primitive (SHA-256) computes the right answer when
+called from an osdev `/bin/` binary.
 
 ```
 /$ tlstest
@@ -133,7 +142,7 @@ is a *bare-metal* compiler. It ships only freestanding headers:
 `<stddef.h>`, `<stdint.h>`, `<limits.h>`, `<stdarg.h>`, and a
 handful more. It deliberately ships *no* `<string.h>`, *no*
 `<stdio.h>`, *no* `<time.h>`. BearSSL's
-[`src/inner.h`](vendor/bearssl/src/inner.h) does:
+[`src/inner.h`](../../../vendor/bearssl/src/inner.h) does:
 
 ```c
 #include <string.h>
@@ -145,7 +154,7 @@ placed earlier in the include path:
 
 ### Piece 1 — the shim header
 
-[`vendor/bearssl-shim/string.h`](vendor/bearssl-shim/string.h):
+[`vendor/bearssl-shim/string.h`](../../../vendor/bearssl-shim/string.h):
 
 ```c
 #ifndef BEARSSL_SHIM_STRING_H
@@ -177,7 +186,7 @@ linker resolves those references against piece 2.
 
 ### Piece 2 — extern definitions in userspace libc
 
-[`userspace/libc/cstring.c`](userspace/libc/cstring.c) provides
+[`userspace/libc/cstring.c`](../../../userspace/libc/cstring.c) provides
 the actual implementations:
 
 ```c
@@ -213,7 +222,7 @@ inherits the strictness but trips a few warnings (`-Wsign-compare`,
 unused parameters, a couple of `-Wmaybe-uninitialized`
 hits that the static analysis can't see through). Rather
 than fight the upstream code, we give BearSSL its own
-`CFLAGS` variable in [`Makefile`](Makefile):
+`CFLAGS` variable in [`Makefile`](../../../Makefile):
 
 ```make
 BEARSSL_CFLAGS := -ffreestanding -nostdlib \
@@ -318,7 +327,7 @@ archive linked once, the cost is negligible.
 
 ## The smoke binary
 
-[`userspace/tlstest/tlstest.c`](userspace/tlstest/tlstest.c) is
+[`userspace/tlstest/tlstest.c`](../../../userspace/tlstest/tlstest.c) is
 roughly 130 lines. It uses BearSSL's `br_sha256_*` API directly:
 
 ```c
@@ -521,7 +530,7 @@ permanent in `/memories/verify-expected-vector-first.md`.
 
 ## What the regression script does
 
-[`scripts/test_tlstest.py`](scripts/test_tlstest.py) follows the
+[`scripts/test_tlstest.py`](../../../scripts/test_tlstest.py) follows the
 same shape as `test_getrand.py`:
 
 1. Boot the kernel under QEMU with the full kitchen-sink device

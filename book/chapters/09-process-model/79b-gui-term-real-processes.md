@@ -1,19 +1,34 @@
 # Chapter 79b — gui_term gets real processes, signals, and Ctrl-C
 
-This is the first chapter of a recurring pattern: every time
-the kernel grows a real Unix-shaped feature, the existing apps
-that were "faking it until then" get rewritten to use the real
-thing. Without that, the chapters past 73 are mathematically
-true but the user-visible system on screen is unchanged from
-chapter 50.
+> **Milestone in this chapter:** 79b — pty + fork+exec inside `gui_term`.
+> **Code referenced:**
+> - [kernel/core/pty.c](../../../kernel/core/pty.c),
+>   [kernel/core/pty.h](../../../kernel/core/pty.h)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_OPENPTY`, `sys_set_fg_pid` auto-routing)
+> - [userspace/gui_term/gui_term.c](../../../userspace/gui_term/gui_term.c)
+>
+> **At the end of this chapter** you will have a `gui_term` whose
+> inner `/bin/sh` runs through a real pty, supports background jobs
+> (`&`), forwards Ctrl-C as `SIGINT`, and reaps children correctly
+> via `waitpid` — the same shell binary that the serial console
+> runs, in the same window manager, talking to the same kernel
+> signal plumbing.
 
-The biggest such app is `gui_term`. It was introduced in
-chapter 50 as "a terminal in a window," but the spawn pattern
-described in that chapter is the **synchronous-pipe** model:
-when you type `ls\n`, gui_term forks a *thread* that runs `ls`
-to completion against an in-memory pipe, then dumps the
-captured output into the window. That model was a stand-in
-for the real thing because at chapter 50 we did not yet have:
+This chapter is the first of a recurring pattern: every time the
+kernel grows a real Unix-shaped feature, the existing apps that were
+faking it until then get rewritten to use the real thing. Without
+that discipline the chapters past 73 are mathematically true but the
+user-visible system on screen stays frozen at the chapter-50
+desktop.
+
+The biggest such app is `gui_term`. Chapter 50 introduced it as "a
+terminal in a window," but the spawn pattern shown there is the
+**synchronous-pipe** model: when you type `ls\n`, `gui_term` forks a
+*thread* that runs `ls` to completion against an in-memory pipe,
+then dumps the captured output into the window. That model was a
+stand-in for the real thing because at chapter 50 the kernel did
+not yet have
 
 - `fork()` of an address space (chapter 73),
 - `exec()` of an arbitrary binary (chapter 74),
@@ -23,33 +38,33 @@ for the real thing because at chapter 50 we did not yet have:
 - a foreground-process notion that survives across `exec`
   (chapter 79).
 
-Chapters 73–79 added every one of those, but only the serial
-shell (`/bin/sh` as `init`'s child) actually used them. This
-chapter is where gui_term finally catches up.
+Chapters 73–79 added every one of those, but only the serial shell
+(`/bin/sh` as `init`'s child) actually used them. This chapter is
+where `gui_term` finally catches up.
 
 ## What this chapter ships
 
 - A `pty` kernel object — two pipes plus a `fg_pid`. See
-  [kernel/core/pty.c](kernel/core/pty.c) and
-  [kernel/core/pty.h](kernel/core/pty.h).
+  [kernel/core/pty.c](../../../kernel/core/pty.c) and
+  [kernel/core/pty.h](../../../kernel/core/pty.h).
 - `SYS_OPENPTY` (=34) returns two new fds — `FD_PTY_MASTER` and
   `FD_PTY_SLAVE` — both bidirectional. Wrapper at
-  [userspace/libc/syscall.h](userspace/libc/syscall.h).
+  [userspace/libc/syscall.h](../../../userspace/libc/syscall.h).
 - A line discipline on the master side: any `0x03` written to
   master is consumed and translated into
   `thread_signal_pid(pty->fg_pid, SIGINT)` — see the master
-  scanner in [kernel/core/pty.c](kernel/core/pty.c).
+  scanner in [kernel/core/pty.c](../../../kernel/core/pty.c).
 - `sys_set_fg_pid` now auto-routes: if the caller's fd 0 is a
   `FD_PTY_SLAVE`, the new fg pid is stored on *that pty*; else
   on the global serial `g_fg_pid`. The same `/bin/sh` binary
   works in both contexts unmodified — see
-  [kernel/core/syscall.c](kernel/core/syscall.c).
+  [kernel/core/syscall.c](../../../kernel/core/syscall.c).
 - `gui_term` is rewritten end-to-end. ~150 lines of in-process
   builtin/pipeline code is gone, replaced by a `fork +
   execv("/bin/sh")` through the pty plus a tiny terminal
   emulator (`\n`, `\r`, `\b`, `\t`, hard-wrap at 88 cols, last
   N rows of history rendered with a block cursor). See
-  [userspace/gui_term/gui_term.c](userspace/gui_term/gui_term.c).
+  [userspace/gui_term/gui_term.c](../../../userspace/gui_term/gui_term.c).
 
 ## The bug we didn't expect: sys_spawn skipped fd inheritance
 
@@ -70,7 +85,7 @@ reading from. Inside a pty, `FD_CONSOLE` was a footgun: every
 spawned binary bypassed the pty entirely.
 
 The fix is the new helper
-[`thread_inherit_fds`](kernel/core/thread.c) — for every
+[`thread_inherit_fds`](../../../kernel/core/thread.c) — for every
 in-use, non-socket fd in the parent, copy the slot into the
 child after dropping any pre-existing pipe/pty refs in the
 destination, then bump the appropriate ref counters
@@ -110,7 +125,7 @@ worked, builtins worked — but pressing Ctrl-C during
 was set on `sig_pending`) but the sleeping thread didn't
 wake up to notice.
 
-Two fixes, both in [kernel/core/thread.c](kernel/core/thread.c):
+Two fixes, both in [kernel/core/thread.c](../../../kernel/core/thread.c):
 
 1. `thread_sleep_ms` was a yield loop on a wall-clock
    deadline with no signal check. Now it checks
@@ -127,7 +142,7 @@ Combined effect: Ctrl-C in `sleep 30` returns the prompt in
 ~2 ms (measured by the test).
 
 For pipe-blocked reads (the more common case),
-[kernel/core/pipe.c](kernel/core/pipe.c)'s `pipe_read` already
+[kernel/core/pipe.c](../../../kernel/core/pipe.c)'s `pipe_read` already
 returned `-EINTR=4` on signal wake from earlier work, so no
 additional change was needed there.
 
@@ -141,7 +156,7 @@ QMP endpoint got eaten by the launcher (mouse-only), so the
 test couldn't even spawn gui_term anymore. It had been quietly
 broken for many chapters.
 
-The fix in [scripts/test_gui_term.py](scripts/test_gui_term.py):
+The fix in [scripts/test_gui_term.py](../../../scripts/test_gui_term.py):
 spawn `gui_term` via the **serial socket** (sh's actual
 stdin), wait for `[wm] window created`, then drive the
 resulting in-window inner sh via QMP keyboard — gui_term
@@ -192,47 +207,47 @@ for a window's actual position.
 
 Kernel:
 
-- [kernel/core/pty.c](kernel/core/pty.c) — new
-- [kernel/core/pty.h](kernel/core/pty.h) — new
-- [kernel/core/syscall.c](kernel/core/syscall.c) —
+- [kernel/core/pty.c](../../../kernel/core/pty.c) — new
+- [kernel/core/pty.h](../../../kernel/core/pty.h) — new
+- [kernel/core/syscall.c](../../../kernel/core/syscall.c) —
   `sys_openpty`, `sys_spawn` / `sys_spawn_redir` /
   `sys_spawn_pipe` inherit-fds wiring,
   `dup_parent_fd_into_child` release-before-overwrite,
   `sys_set_fg_pid` auto-route
-- [kernel/core/syscall.h](kernel/core/syscall.h) —
+- [kernel/core/syscall.h](../../../kernel/core/syscall.h) —
   `SYS_OPENPTY=34`
-- [kernel/core/thread.c](kernel/core/thread.c) —
+- [kernel/core/thread.c](../../../kernel/core/thread.c) —
   `thread_inherit_fds` (new), `thread_fork_user` refactored
   to use it, `thread_sleep_ms` sig_pending check,
   `thread_signal_pid` wakes SLEEPING
-- [kernel/core/thread.h](kernel/core/thread.h) —
+- [kernel/core/thread.h](../../../kernel/core/thread.h) —
   `thread_inherit_fds` declaration
-- [kernel/core/vfs.c](kernel/core/vfs.c) —
+- [kernel/core/vfs.c](../../../kernel/core/vfs.c) —
   `vfs_open_into` release-before-overwrite for pipe/pty;
   `vfs_read` dispatches `FD_PTY_MASTER` / `FD_PTY_SLAVE`
-- [kernel/core/vfs.h](kernel/core/vfs.h) —
+- [kernel/core/vfs.h](../../../kernel/core/vfs.h) —
   `vfs_open_into` declaration
-- [kernel/core/pipe.c](kernel/core/pipe.c) — already
+- [kernel/core/pipe.c](../../../kernel/core/pipe.c) — already
   returned `-EINTR` on signal wake; no further change
-- [Makefile](Makefile) — added `kernel/core/pty.c` to
+- [Makefile](../../../Makefile) — added `kernel/core/pty.c` to
   `C_SRCS`
 
 Userspace:
 
-- [userspace/gui_term/gui_term.c](userspace/gui_term/gui_term.c)
+- [userspace/gui_term/gui_term.c](../../../userspace/gui_term/gui_term.c)
   — full rewrite (~205 lines, debug-print-free)
-- [userspace/libc/syscall.h](userspace/libc/syscall.h) —
+- [userspace/libc/syscall.h](../../../userspace/libc/syscall.h) —
   `openpty` libc wrapper
 
 Tests:
 
-- [scripts/test_gui_term.py](scripts/test_gui_term.py) —
+- [scripts/test_gui_term.py](../../../scripts/test_gui_term.py) —
   rewritten for pty flow with builtins, pipeline, Ctrl-C
-- [scripts/test_launcher.py](scripts/test_launcher.py) —
+- [scripts/test_launcher.py](../../../scripts/test_launcher.py) —
   drop manual `launcher\n` spawn (init auto-spawns it now)
-- [scripts/test_notepad.py](scripts/test_notepad.py) —
+- [scripts/test_notepad.py](../../../scripts/test_notepad.py) —
   route notepad spawn + post-quit `cat` through serial
-- [scripts/test_tablet.py](scripts/test_tablet.py) —
+- [scripts/test_tablet.py](../../../scripts/test_tablet.py) —
   route paint spawn through serial; bump `WIN_X`/`WIN_Y`
   from (80, 60) to (112, 92) for paint's post-launcher
   cascade slot

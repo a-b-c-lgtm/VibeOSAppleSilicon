@@ -1,22 +1,24 @@
 # Chapter 132j — `sys/` headers without a hierarchical filesystem
 
-> **Status:** shipped (Phase 4.6 of guest-gcc bring-up).
-> The in-guest `/bin/gcc` now resolves `#include <sys/stat.h>`,
-> `#include <sys/types.h>`, `#include <sys/time.h>`,
-> `#include <sys/wait.h>`, `#include <sys/times.h>`,
-> `#include <sys/param.h>`, and `#include <unistd.h>`.
-> A program can call `stat()`, `access()`, `wait()`, and
-> friends from inside the guest with the same `#include` lines
-> it would use on Linux.
-> `scripts/test_gcc_sys_stat.py` runs **PASS 6 / FAIL 0**.
-> Three earlier-chapter regressions remain green:
-> `test_gcc_hello.py` 10/0, `test_gcc_bf.py` 6/0,
-> `test_gcc_stdio.py` 7/0.
-> **Prereq:** chapter 132i (the 24 libc + 16 freestanding
-> headers shipped on `/bin`).
-> **Opens:** chapter 133a (`/bin/tar`, which needs
-> `<sys/stat.h>` for permission bits), chapter 133c (rebuild
-> the DoomGeneric portable shim in-guest).
+> **Milestone in this chapter:** stage the `sys/` family of
+> headers on the flat OSFS-1 namespace so guest C programs
+> can `#include <sys/stat.h>` and friends.
+> **Code referenced:**
+> - [scripts/mkosfs.py](../../../scripts/mkosfs.py)
+>   (dirent entries whose 20-byte name literally contains a
+>   `/` byte)
+> - [userspace/libc/](../../../userspace/libc/) (the seven
+>   `sys/*` and `unistd.h` headers)
+> - [scripts/test_gcc_sys_stat.py](../../../scripts/test_gcc_sys_stat.py)
+>
+> **At the end of this chapter** you will have `/bin/gcc`
+> resolving `<sys/stat.h>`, `<sys/types.h>`, `<sys/time.h>`,
+> `<sys/wait.h>`, `<sys/times.h>`, `<sys/param.h>`, and
+> `<unistd.h>`, with `test_gcc_sys_stat.py` at **PASS 6 /
+> FAIL 0** and the three earlier-chapter regressions
+> (`test_gcc_hello.py`, `test_gcc_bf.py`, `test_gcc_stdio.py`)
+> still green. Prerequisite: chapter 132i (the 24 libc + 16
+> freestanding headers on `/bin`).
 
 ---
 

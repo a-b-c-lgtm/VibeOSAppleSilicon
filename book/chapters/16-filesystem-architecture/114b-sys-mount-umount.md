@@ -24,7 +24,7 @@ end-to-end.
 ## The two syscalls
 
 The numbers and the doc comments are in
-[`kernel/core/syscall.h`](kernel/core/syscall.h):
+[`kernel/core/syscall.h`](../../../kernel/core/syscall.h):
 
 ```c
 SYS_MOUNT  = 96,   /* (prefix, fds_out[2]) -> mount_id or -errno */
@@ -32,7 +32,7 @@ SYS_UMOUNT = 97,   /* (mount_id)           -> 0 or -errno */
 ```
 
 The userspace wrappers in
-[`userspace/libc/syscall.h`](userspace/libc/syscall.h) look
+[`userspace/libc/syscall.h`](../../../userspace/libc/syscall.h) look
 exactly the way you'd expect:
 
 ```c
@@ -53,7 +53,7 @@ the primitive.
 ## What `sys_mount` does
 
 The implementation in
-[`kernel/core/syscall.c`](kernel/core/syscall.c) is short
+[`kernel/core/syscall.c`](../../../kernel/core/syscall.c) is short
 enough to walk through end to end. It does four things, in
 strict order:
 
@@ -83,7 +83,7 @@ if (plen > 1 && prefix_buf[plen - 1] == '/') return -EINVAL;
 ```
 
 `copy_user_prefix` is a thin wrapper over
-[`kernel/core/uaccess.h`](kernel/core/uaccess.h)'s
+[`kernel/core/uaccess.h`](../../../kernel/core/uaccess.h)'s
 `copy_string_from_user`. We cap at 32 bytes
 (`USERFS_PREFIX_MAX`) because the prefix lives in the mount
 table for the lifetime of the mount, and the table is
@@ -279,7 +279,7 @@ loop until either the daemon stops accepting or the whole
 slice is consumed.
 
 The arm in
-[`kernel/core/syscall.c`](kernel/core/syscall.c) looks like:
+[`kernel/core/syscall.c`](../../../kernel/core/syscall.c) looks like:
 
 ```c
 } else if (e->kind == FD_USERFS_FILE) {

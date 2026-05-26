@@ -53,8 +53,8 @@ mechanical.
 ## What this chapter adds
 
 * **`/bin/fontd`** — the font daemon.
-  ([userspace/fontd/fontd.c](userspace/fontd/fontd.c),
-  [userspace/fontd/ttf.c](userspace/fontd/ttf.c).)
+  ([userspace/fontd/fontd.c](../../../userspace/fontd/fontd.c),
+  [userspace/fontd/ttf.c](../../../userspace/fontd/ttf.c).)
   Binds `/srv/font` at boot (chapter 107). Owns the
   parser, rasteriser, and glyph cache moved out of
   the kernel. Per-message-per-connection shape: each
@@ -62,15 +62,15 @@ mechanical.
   close. Same shape as `/bin/clipboardd`.
 * **`userspace/libc/font_proto.h`** — the wire
   protocol.
-  ([font_proto.h](userspace/libc/font_proto.h).)
+  ([font_proto.h](../../../userspace/libc/font_proto.h).)
   A 32-byte `struct font_msg` header (op, font id,
   codepoint, size, status, metrics) plus, on a
   successful `FONT_OP_GLYPH` reply, the alpha
   bitmap inline after the header.
 * **`kernel/core/wm_font.c`** — the kernel-side
   IPC client.
-  ([wm_font.c](kernel/core/wm_font.c),
-  [wm_font.h](kernel/core/wm_font.h).) Holds one
+  ([wm_font.c](../../../kernel/core/wm_font.c),
+  [wm_font.h](../../../kernel/core/wm_font.h).) Holds one
   persistent `struct srv_conn` to `/srv/font`, plus
   a per-codepoint glyph cache. `wm_draw_text` calls
   `wm_font_get_glyph(cp, &gi)` first; on success
@@ -80,7 +80,7 @@ mechanical.
   always-available kernel bitmap font.
 * **`/bin/fontd` supervision in init.** Same
   pattern as chapter 108's `/bin/clipboardd`:
-  one line in [init.c](userspace/init/init.c)
+  one line in [init.c](../../../userspace/init/init.c)
   registers fontd with the supervisor table so
   init respawns it if it dies.
 * **Kernel removals.** Deleted
@@ -125,7 +125,7 @@ What we built instead is simpler:
   hard limit) without re-architecting.
 * **Kernel-side cache.** The kernel WM caches
   per-codepoint alpha bitmaps in its own heap
-  via [wm_font.c](kernel/core/wm_font.c). One
+  via [wm_font.c](../../../kernel/core/wm_font.c). One
   IPC round-trip per *cold* codepoint, ever; the
   hot path is a pointer load. With the ASCII
   range warmed at fontd startup and the WM cache
@@ -154,7 +154,7 @@ glyph caching.
 ### Spin-yield lock, not blocking mutex
 
 The WM-side cache + connection state is guarded
-by [wm_font.c](kernel/core/wm_font.c)'s
+by [wm_font.c](../../../kernel/core/wm_font.c)'s
 `g_lock_busy`, taken with inline LL/SC and
 released with `stlr`. Contended waiters call
 `yield()` between attempts. The kernel doesn't
@@ -174,7 +174,7 @@ trade-off in the header.
 ### Bitmap-font fallback for boot and respawn
 
 The kernel still ships the chapter-23 bitmap font
-([kernel/device/font.c](kernel/device/font.c)).
+([kernel/device/font.c](../../../kernel/device/font.c)).
 It's used for:
 
 * the early-boot splash (before init runs and
@@ -208,7 +208,7 @@ rasteriser lived in the kernel.
 ## Test plan
 
 The existing
-[test_truetype.py](scripts/test_truetype.py) from
+[test_truetype.py](../../../scripts/test_truetype.py) from
 chapter 102 is the regression. It boots,
 screen-dumps the framebuffer, and asserts (a)
 intermediate-alpha pixels in launcher button
@@ -220,7 +220,7 @@ silently fell back to the bitmap font.
 userspace move is invisible to the rendering
 pipeline.
 
-[scripts/test_fontd.py](scripts/test_fontd.py) is
+[scripts/test_fontd.py](../../../scripts/test_fontd.py) is
 a new, more focused regression:
 
 1. Asserts `[fontd] ready on /srv/font` appears
@@ -234,7 +234,7 @@ a new, more focused regression:
 
 The respawn-on-crash path is exercised by
 chapter 108's clipboard supervisor regression
-([test_clipboard.py](scripts/test_clipboard.py)),
+([test_clipboard.py](../../../scripts/test_clipboard.py)),
 which uses the same `supervise()` code; no need
 to re-test it here.
 
@@ -274,9 +274,9 @@ to re-test it here.
   GUI app picks up the userspace rasteriser for
   free.
 * New apps added: `/bin/fontd`
-  ([userspace/fontd/](userspace/fontd/)).
+  ([userspace/fontd/](../../../userspace/fontd/)).
 * Existing test scripts upgraded: none —
-  [test_truetype.py](scripts/test_truetype.py)
+  [test_truetype.py](../../../scripts/test_truetype.py)
   passes unchanged.
 * New test scripts:
-  [test_fontd.py](scripts/test_fontd.py).
+  [test_fontd.py](../../../scripts/test_fontd.py).

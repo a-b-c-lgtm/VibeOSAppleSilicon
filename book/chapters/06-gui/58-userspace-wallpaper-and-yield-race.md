@@ -344,9 +344,9 @@ that pushed the system over.
 
 The frustrating part of this kind of bug is that adding
 *any* code between `g_current = next` and `cswitch_to`
-makes the panic disappear.  We learned this the hard way:
+makes the panic disappear. The trap shows up early:
 a frame-validation check inserted "to print a diagnostic
-when the frame looks bad" turned 0/5 into 5/5.  The cost of
+when the frame looks bad" turned 0/5 into 5/5. The cost of
 the check itself was sufficient to close the race window
 enough that the timer never landed inside it.
 
@@ -372,12 +372,12 @@ for (;;) {
 
 This is sensible. The desktop has nothing to do until something
 happens; sleeping for 500 ms is the polite cooperative thing
-to do. We shipped this and moved on.
+to do. That's the first cut.
 
-A couple of milestones later a user reported: "the cursor is
+A couple of milestones later, a user reported: "the cursor is
 smooth while at least one window is open, but very jerky when
 I close every window." That sentence has the answer in it, but
-it took an embarrassing amount of poking to see it.
+the connection is easy to miss.
 
 Recall how the cursor sprite gets repainted. The
 virtio-tablet's used-ring fills as the host pointer moves.
@@ -422,16 +422,17 @@ one ten-pixel jump on the screen.
 
 The temptation is to fix this in the kernel: drain the tablet
 from the timer IRQ, bump the timer rate, add a kernel
-compositor thread. We tried two of those before realising they
-would require fixing a different bug first — `virtio_gpu`'s
+compositor thread. Two of those approaches were attempted
+before the realisation that they would require fixing a
+different bug first -- `virtio_gpu`'s
 descriptor submission uses static `g_avail_idx_seen` /
 `g_used_idx_seen` counters that aren't safe to enter
 concurrently. An IRQ-context `compose_all` interrupting a
 userspace `gui_present` mid-`fb_present` corrupts the
 descriptor ring. M58's repeat-stress harness caught the
-regression on the second run — the kernel heap re-initialised
-itself in the middle of the test, which is a remarkably
-emphatic way to say "you broke something."
+regression on the second run -- the kernel heap re-initialised
+itself in the middle of the test, a remarkably
+emphatic way to say "something is broken."
 
 The actual fix is a one-line change in userspace. Replace
 `sleep_ms(500)` with a bare `yield()`:

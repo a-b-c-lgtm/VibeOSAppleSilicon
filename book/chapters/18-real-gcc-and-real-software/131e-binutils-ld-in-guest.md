@@ -1,27 +1,23 @@
 # Chapter 131e — `ld` in-guest: cross-building binutils' linker
 
-> **Status:** shipped. `vendor/binutils-2.44/ld` cross-builds
-> under `--host=aarch64-osdev` against five companion
-> archives (`libiberty`, `libsframe`, `bfd`, `opcodes`,
-> `libctf`) and produces a 3,206,056-byte AArch64 ELF
-> at `build/binutils-build-guest-ld/ld/ld-new`. Host smoke
-> [scripts/test_guest_ld.py](../../../scripts/test_guest_ld.py)
-> passes. Chapter 131d's
-> [scripts/test_guest_configure.py](../../../scripts/test_guest_configure.py)
-> baseline still passes (libiberty.a = 949,790 bytes — grew
-> slightly because struct stat picked up `st_dev` /
-> `st_ino` and a few small libc additions changed the
-> compile size of two libiberty TUs).
+> **Milestone in this chapter:** cross-build the real binutils
+> `ld` (and `as`) under `--host=aarch64-osdev` together with
+> the five companion archives it links against.
+> **Code referenced:**
+> - [vendor/binutils-2.44/ld/](../../../vendor/binutils-2.44/ld/)
+>   (`libiberty`, `libsframe`, `bfd`, `opcodes`, `libctf`)
+> - [scripts/test_guest_ld.py](../../../scripts/test_guest_ld.py)
+> - [scripts/test_guest_configure.py](../../../scripts/test_guest_configure.py)
 >
-> **Prereqs:** chapters 131a (`make binutils-osdev`),
-> 131b (`make aarch64-osdev-cc-install`), 131c (link-mode
-> wrapper), and 131d (CONFIG_SITE cache + libiberty.a).
-> Run `make` first so `build/userspace/crt/crt0.o`
-> and `build/userspace/libc/cstring.o` are present.
->
-> **Opens:** chapter 131f — copy `ld-new` to `/bin/ld`
-> on the guest disk and retire the chapter-119 toy
-> linker.
+> **At the end of this chapter** you will have a
+> ~3.2 MB AArch64 `ld-new` ELF at
+> `build/binutils-build-guest-ld/ld/ld-new` and the chapter
+> 131d configure baseline still green. Prerequisites:
+> chapters 131a (binutils-osdev), 131b (wrapper), 131c
+> (link-mode wrapper), 131d (CONFIG_SITE cache +
+> `libiberty.a`). Run `make` first so
+> `build/userspace/crt/crt0.o` and
+> `build/userspace/libc/cstring.o` are present.
 
 ---
 

@@ -1,6 +1,18 @@
 # Chapter 91 — Userspace threads (clone-shaped)
 
-**Status:** Done.
+> **Milestone in this chapter:** add a Linux-shaped `SYS_CLONE`
+> so a single process can spawn additional threads that share
+> its address space.
+> **Code referenced:**
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_CLONE`)
+> - [kernel/core/thread.c](../../../kernel/core/thread.c)
+> - [userspace/libc/thread.h](../../../userspace/libc/thread.h)
+>
+> **At the end of this chapter** you will have userspace able
+> to create kernel threads inside an existing address space,
+> enabling worker pools, parallel parsers, and anything else
+> that wants `O(1)` access to shared data structures.
 
 For ninety chapters every user process has been a single
 thread. Chapter 73's `fork` lets a process duplicate itself
@@ -134,8 +146,8 @@ exits and is reaped.
 
 ## Spawning the cloned thread
 
-The kernel side of `SYS_CLONE` is almost embarrassingly
-small once the refcount and trampoline are in place:
+The kernel side of `SYS_CLONE` is compact once the refcount
+and trampoline are in place:
 
 ```c
 static long sys_clone(long entry, long arg,

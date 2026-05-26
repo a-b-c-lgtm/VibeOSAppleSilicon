@@ -304,7 +304,7 @@ state we're about to draw.**  This applies to any UI loop where
 input changes what gets rendered.  Web frameworks call this the
 "controlled vs uncontrolled" distinction; immediate-mode GUIs
 solve it by using last frame's hover state to decide this
-frame's clicks; we solved it by simply moving four lines.
+frame's clicks; this implementation fixes it by simply moving four lines.
 
 The same issue would have lurked in the existing pre-M51
 taskbar (clicking a cell would re-render with the wrong focus

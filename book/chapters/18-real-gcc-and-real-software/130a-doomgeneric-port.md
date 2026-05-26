@@ -1,14 +1,22 @@
 # Chapter 130a — Doom (the port)
 
-> **Status:** code complete. `scripts/test_doom.py` green; full
-> regression sweep green.
-> **Prereq:** chapters 128a–f (libc surface — setjmp,
-> stdio, ctype, stdlib, time, signal), 129 (FP / SIMD at EL0).
-> **Unlocks:** the first real upstream C program running on the
-> guest. Validates that the libc additions in section 18
-> compose against code we did not write, and exercises chapter
-> 129's eager FP save/restore through `r_main.c`'s
-> `R_PointToAngle` / `R_PointToDist` every single frame.
+> **Milestone in this chapter:** vendor DoomGeneric and write the
+> osdev backend shim that drives it through the chapter-108d
+> window manager.
+> **Code referenced:**
+> - [vendor/doomgeneric/src/](../../../vendor/doomgeneric/src/)
+> - [userspace/doom/doomgeneric_osdev.c](../../../userspace/doom/doomgeneric_osdev.c)
+> - [userspace/libc/](../../../userspace/libc/) (`strings.h`,
+>   `inttypes.h`, `unistd.h`, `sys/types.h`, plus new
+>   `strdup` / `calloc` / `realloc` / `atof` / `usleep`)
+> - [scripts/test_doom.py](../../../scripts/test_doom.py)
+>
+> **At the end of this chapter** you will have the first real
+> upstream C program running on the guest — a ~240-line shim
+> implementing the six `DG_*` callbacks against the kernel WM
+> bus, plus the libc holes Doom discovered along the way.
+> Prerequisites: chapters 128a–f (the libc surface), 129 (FP /
+> SIMD at EL0).
 
 ---
 
@@ -342,10 +350,9 @@ comment originally reads:
 The `*/` inside the descriptive text *closes* the comment.
 Everything after that line gets parsed as C code, the
 preprocessor sees garbage, and you get 144 errors out of a
-single file. Saved in
-`/memories/repo/chapter-130a-doom-port.md`: never put `*/`
-inside a C comment body, even in human prose. Use spaces or
-parentheses (`PRI / SCN`, `(PRI*)(SCN*)`).
+single file. The rule:
+never put `*/` inside a C comment body, even in human prose.
+Use spaces or parentheses (`PRI / SCN`, `(PRI*)(SCN*)`).
 
 ### `<unistd.h>` and `<sys/types.h>`
 

@@ -1,16 +1,23 @@
 # Chapter 133f — The rebuilt Doom plays
 
-> **Status:** shipped — final chapter of section 18.
-> The in-guest-linked `/data/doomgeneric.elf` (chapter
-> 133e) runs and renders Doom's title screen on the
-> framebuffer. `scripts/test_doom_rebuilt_plays.py` is
-> green; screenshot saved.
-> **Prereq:** 133e (in-guest link), 130c (cross-built
-> doom plays — same wmclient bridge), 117 (stdio,
-> needed for WAD load).
-> **Closes:** the Phase-2 arc of the chapter-128 plan.
-> Doom, rebuilt from source on the booted OS using
-> binutils and GCC that also live on the OS, plays.
+> **Milestone in this chapter:** run the in-guest-linked
+> `/data/doomgeneric.elf` and verify it renders Doom's title
+> screen on the framebuffer.
+> **Code referenced:**
+> - [scripts/test_doom_rebuilt_plays.py](../../../scripts/test_doom_rebuilt_plays.py)
+> - [scripts/test_doom_link.py](../../../scripts/test_doom_link.py)
+>   (invoked as a `subprocess.run` to produce
+>   `/data/doomgeneric.elf` on `build/data.img`)
+>
+> **At the end of this chapter** you will have a two-phase
+> chained acceptance test that builds Doom from source inside
+> the guest and then runs it in a second QEMU boot, with a
+> QMP screendump confirming the title screen. This closes the
+> Phase-2 arc of the chapter-128 plan: Doom, rebuilt from
+> source on the booted OS using binutils and GCC that also
+> live on the OS, plays. Prerequisites: 133e (in-guest link),
+> 130c (cross-built Doom plays — same `wmclient` bridge),
+> 117 (stdio, needed for WAD load).
 
 ---
 
@@ -40,11 +47,9 @@
    region as the playable threshold, save the captured
    frame to `/tmp/doom_rebuilt_title.ppm`, and exit 0 on
    PASS / non-zero on FAIL.
-5. Record the chained-test pattern and the QEMU serial
-   disconnect in
-   `/memories/repo/chapter-133f-rebuilt-doom-plays.md`
-   so a future session reaching for an inline harness
-   knows why this one is split.
+5. Document the chained-test pattern and the QEMU serial
+   disconnect so a future session reaching for an inline
+   harness knows why this one is split.
 
 ---
 
@@ -192,10 +197,8 @@ decide "this client is taking too long, close the
 connection" is not documented in the QEMU manuals; not
 worth chasing further with a proven workaround in hand.
 
-**Fix:** Captured in the
-[chapter-133f memory note](../../../memories/repo/chapter-133f-rebuilt-doom-plays.md),
-the **chained design**: have the run-test invoke the
-link-test as a precondition via `subprocess.run`, let
+**Fix:** The **chained design**: have the run-test invoke
+the link-test as a precondition via `subprocess.run`, let
 the link-test's own QEMU shut down cleanly between
 phases, then boot phase-2 fresh. Each QEMU instance
 runs at most one logical task; no inter-command idle

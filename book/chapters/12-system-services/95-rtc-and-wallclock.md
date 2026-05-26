@@ -1,40 +1,51 @@
 # Chapter 95 — A real RTC and wall-clock time
 
-**Status:** Done.
+> **Milestone in this chapter:** 95 — PL031 RTC + `SYS_GETTIMEOFDAY`.
+> **Code referenced:**
+> - [kernel/core/walltime.c](../../../kernel/core/walltime.c)
+> - [kernel/core/syscall.c](../../../kernel/core/syscall.c)
+>   (`SYS_GETTIMEOFDAY`)
+> - [userspace/date/date.c](../../../userspace/date/date.c)
+> - [scripts/test_rtc.py](../../../scripts/test_rtc.py)
+>
+> **At the end of this chapter** you will have a kernel that reads
+> the QEMU `virt` PL031 RTC once at boot, exposes UTC seconds and
+> microseconds through a POSIX-shaped `gettimeofday`, and powers
+> the taskbar clock and a new `/bin/date` tool from the same
+> wall-clock source. Every later chapter that needs the date
+> — file mtimes, cookie expiry, log timestamps — reaches for the
+> same one-line syscall.
 
-The taskbar clock has been ticking since chapter 56, but until
-this chapter it counted seconds-since-boot and not seconds-since-
-1970. Open the launcher, watch the clock, hard-reboot the VM,
-watch the clock again — same low values, restarting from
-00:00:00. Nothing in the system knew what year it was; nothing
-could; there was no datum.
+The taskbar clock has been ticking since chapter 56, but until this
+chapter it counted seconds-since-boot, not seconds-since-1970. Open
+the launcher, watch the clock, hard-reboot the VM, watch the clock
+again — same low values, restarting from 00:00:00. Nothing in the
+system knew what year it was; nothing could; there was no datum.
 
 Chapter 95 wires the QEMU `virt` machine's PL031 RTC into the
 kernel, exposes a single new syscall (`SYS_GETTIMEOFDAY`) with a
-POSIX-shaped `struct timeval`, ships a tiny header-only civil-
-time library in libc, and replaces the taskbar's uptime-based
-clock with the same wall-clock-derived value. There is also a
-new userspace tool — [`/bin/date`](../../../userspace/date/date.c)
-— that prints `YYYY-MM-DD HH:MM:SS UTC`. The smoke test
+POSIX-shaped `struct timeval`, ships a tiny header-only civil-time
+library in libc, and replaces the taskbar's uptime-based clock with
+the same wall-clock-derived value. A new userspace tool —
+[`/bin/date`](../../../userspace/date/date.c) — prints
+`YYYY-MM-DD HH:MM:SS UTC`. The smoke test
 [scripts/test_rtc.py](../../../scripts/test_rtc.py) boots the
 kernel, runs `date` twice with a 1.5 s sleep between them, and
 asserts that the timestamps are well-formed, plausible (year
 ≥ 2025), and that the wall clock advances.
 
-The architectural payoff is bigger than the user-visible one.
-Every later chapter that needs to know the date — file mtimes
-in OSFS-2, cookie-jar expiry in the browser, log line
-timestamps, future `strace -t` output — calls the same one-line
-`gettimeofday()`. Wall-clock time stops being a "we'll add it
-later" caveat in chapters that need it.
+The architectural payoff is bigger than the user-visible one. Every
+later chapter that needs to know the date — file mtimes in OSFS-2,
+cookie-jar expiry in the browser, log line timestamps, future
+`strace -t` output — calls the same one-line `gettimeofday()`.
+Wall-clock time stops being a "we'll add it later" caveat.
 
-The kernel-side cost is small. PL031 is a deliberately tiny
-device — three relevant registers, no setup needed because QEMU
-hard-wires the enable bit on. We do exactly one MMIO read at
-boot, pair it with a `timer_ticks()` snapshot, and from then on
-extrapolate everything from the live tick counter. Per-syscall
-walltime is pure arithmetic; the hot path never touches the
-device.
+The kernel-side cost is small. PL031 is a deliberately tiny device
+— three relevant registers, no setup needed because QEMU hard-wires
+the enable bit on. The boot path does exactly one MMIO read, pairs
+it with a `timer_ticks()` snapshot, and from then on extrapolates
+everything from the live tick counter. Per-syscall walltime is pure
+arithmetic; the hot path never touches the device.
 
 ## What this chapter adds
 
@@ -301,7 +312,7 @@ exports 64 bits over the syscall. The PL031 will roll over in
 January 2038, but on a long-lived system (which we don't have)
 we'd handle that with a periodic re-snapshot. For chapter 95
 the kernel's wall-clock value just won't wrap until well after
-the heat death of any QEMU VM I expect to run.
+the heat death of any QEMU VM the book will run.
 
 ## The syscall surface
 

@@ -1,10 +1,21 @@
 # Chapter 79 — Job control in the shell
 
-**Status:** Stub. Tracking milestone 72.
+> **Milestone in this chapter:** plan-only sketch of the
+> chapter-79 job-control work — the real implementation lands
+> in chapter 79b (`gui_term` switching to real fork+exec).
+> **Code referenced:**
+> - [userspace/sh/](../../../userspace/sh/) (background `&`,
+>   Ctrl-Z, `fg`, `bg`, `jobs`)
+>
+> **At the end of this chapter** you will have the shape the
+> shell's job-control surface needs: `&` to background a
+> pipeline, Ctrl-Z (SIGTSTP) to stop the foreground job, and
+> `fg` / `bg` / `jobs` to navigate. Prerequisites: chapters
+> 76–78 (signals + waitpid), chapter 73 + 74 (fork + exec).
+> **No code lands in this chapter** — see chapter 79b for
+> the implementation.
 
 With signals (76, 77), waitpid (78), and fork+exec (73, 74)
-we now have everything a real shell needs to manage jobs:
-background pipelines, suspending, resuming, and listing them.
 
 ## What this chapter adds
 

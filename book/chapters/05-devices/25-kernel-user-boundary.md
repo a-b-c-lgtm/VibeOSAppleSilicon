@@ -45,7 +45,7 @@ exploited. This chapter removes it. The change is one line in
 + l1_pgtable[idx] = BLOCK_NORMAL(pa);     /* AP=00, kernel only */
 ```
 
-To prove the change works, I wrote a one-page user program called
+To prove the change works, write a one-page user program called
 `badpoke`:
 
 ```c

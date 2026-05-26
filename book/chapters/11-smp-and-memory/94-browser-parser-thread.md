@@ -1,6 +1,17 @@
 # Chapter 94 — The browser parser thread: HTML/CSS/layout off the GUI core
 
-**Status:** Done.
+> **Milestone in this chapter:** move the browser's parse-and-
+> layout pipeline to a worker thread pinned to CPU 1, so the
+> GUI event loop on CPU 0 stays responsive during a slow parse.
+> **Code referenced:**
+> - [userspace/browser/](../../../userspace/browser/) (the
+>   parser-thread refactor)
+> - [userspace/libc/thread.h](../../../userspace/libc/thread.h)
+>
+> **At the end of this chapter** you will have a browser whose
+> drag-to-resize on a Hacker-News-sized page no longer freezes
+> the window for the duration of relayout. Builds on chapter
+> 93 (shared fd tables) and chapter 92 (`CLONE_CPU`).
 
 The chapter-93 work bought us a way to share open file descriptors
 between two threads in the same address space. Chapter 94 cashes

@@ -84,7 +84,7 @@ Virtio-rng is the simplest virtio device in the spec. It has:
 
 That makes it a clean place to write our second
 virtio-mmio-v2 driver (the first was `virtio_snd`, chapter 96).
-The whole driver lives in [kernel/device/virtio_rng.c](kernel/device/virtio_rng.c).
+The whole driver lives in [kernel/device/virtio_rng.c](../../../kernel/device/virtio_rng.c).
 
 ### Probe
 
@@ -251,7 +251,7 @@ can compute the round function (a few hundred MB/s on this
 hardware, which is many orders of magnitude faster than the
 device path).
 
-The full CSPRNG lives in [kernel/core/random.c](kernel/core/random.c).
+The full CSPRNG lives in [kernel/core/random.c](../../../kernel/core/random.c).
 It is intentionally minimal: ~230 lines including the ChaCha20
 permutation, the seeding logic, the fallback path, and the
 locking. The block function is RFC 7539 verbatim:
@@ -429,7 +429,7 @@ benign by construction.
 
 ## Wiring init into the boot sequence
 
-In [kernel/core/main.c](kernel/core/main.c), after the sound
+In [kernel/core/main.c](../../../kernel/core/main.c), after the sound
 device probe and before the window manager comes up:
 
 ```c
@@ -452,7 +452,7 @@ reaper loop, so there's no danger of leaving a child unwaitable.
 ## The `SYS_GETRANDOM` syscall
 
 Syscall 94 — slot picked because the previous highest was 93
-(`SYS_WIN_FB_RESIZE`). See [kernel/core/syscall.h](kernel/core/syscall.h):
+(`SYS_WIN_FB_RESIZE`). See [kernel/core/syscall.h](../../../kernel/core/syscall.h):
 
 ```c
 SYS_GETRANDOM       = 94,  /* fill buf[0..len) with crypto bytes;
@@ -520,7 +520,7 @@ case SYS_GETRANDOM:
 
 ## The libc wrapper
 
-[userspace/libc/syscall.h](userspace/libc/syscall.h) gets one
+[userspace/libc/syscall.h](../../../userspace/libc/syscall.h) gets one
 new entry in the syscall-number enum and one new wrapper:
 
 ```c
@@ -537,7 +537,7 @@ That's it. The same shape as `getuid`, `kill`, every other
 
 ## `/bin/getrand`
 
-The userspace surface is [userspace/getrand/getrand.c](userspace/getrand/getrand.c).
+The userspace surface is [userspace/getrand/getrand.c](../../../userspace/getrand/getrand.c).
 It exists for two reasons: to make the entropy stack
 demonstrable from the shell, and to give the regression test
 something to assert on.
@@ -608,7 +608,7 @@ QEMU_RNG ?= -object rng-random,id=rng0,filename=/dev/urandom \
 
 ## The regression test
 
-[scripts/test_getrand.py](scripts/test_getrand.py) boots a
+[scripts/test_getrand.py](../../../scripts/test_getrand.py) boots a
 fresh kernel with the RNG attached, waits for `/$`, runs
 `getrand 16` twice, and asserts:
 
@@ -652,37 +652,37 @@ in order:
   TLS traffic during debugging.
 - **Chapter 117**: end-to-end test against a public HTTPS site.
 
-Each of those builds directly on the entropy we shipped here.
+Each of those builds directly on the entropy delivered here.
 Without `SYS_GETRANDOM` and a CSPRNG behind it, BearSSL refuses
 to run.
 
 ## Applied to
 
 - **Kernel**: new files
-  [kernel/device/virtio_rng.c](kernel/device/virtio_rng.c),
-  [kernel/device/virtio_rng.h](kernel/device/virtio_rng.h),
-  [kernel/core/random.c](kernel/core/random.c),
-  [kernel/core/random.h](kernel/core/random.h).
-  [kernel/core/main.c](kernel/core/main.c) now probes the
+  [kernel/device/virtio_rng.c](../../../kernel/device/virtio_rng.c),
+  [kernel/device/virtio_rng.h](../../../kernel/device/virtio_rng.h),
+  [kernel/core/random.c](../../../kernel/core/random.c),
+  [kernel/core/random.h](../../../kernel/core/random.h).
+  [kernel/core/main.c](../../../kernel/core/main.c) now probes the
   device and seeds the CSPRNG before WM init.
-  [kernel/core/syscall.h](kernel/core/syscall.h) gains
-  `SYS_GETRANDOM = 94`; [kernel/core/syscall.c](kernel/core/syscall.c)
+  [kernel/core/syscall.h](../../../kernel/core/syscall.h) gains
+  `SYS_GETRANDOM = 94`; [kernel/core/syscall.c](../../../kernel/core/syscall.c)
   gains its implementation and dispatch case.
-- **Userspace**: new tool [userspace/getrand/getrand.c](userspace/getrand/getrand.c).
-  [userspace/libc/syscall.h](userspace/libc/syscall.h) gains
+- **Userspace**: new tool [userspace/getrand/getrand.c](../../../userspace/getrand/getrand.c).
+  [userspace/libc/syscall.h](../../../userspace/libc/syscall.h) gains
   the `getrandom` wrapper.
-- **Build**: [Makefile](Makefile) gains the two new C files,
+- **Build**: [Makefile](../../../Makefile) gains the two new C files,
   the `GETRAND_*` target set, the `$(QEMU_RNG)` device block
   appended to every run target, and the OSFS embed line.
 - **Test surface**: new regression
-  [scripts/test_getrand.py](scripts/test_getrand.py).
+  [scripts/test_getrand.py](../../../scripts/test_getrand.py).
   Kitchen-sink boot configs in
-  [scripts/test_browser_forms.py](scripts/test_browser_forms.py),
-  [scripts/test_browser_intrinsic_size.py](scripts/test_browser_intrinsic_size.py),
-  [scripts/test_browser_direct_png.py](scripts/test_browser_direct_png.py),
-  [scripts/test_browser_image.py](scripts/test_browser_image.py),
-  [scripts/test_png.py](scripts/test_png.py), and
-  [scripts/test_png_palette.py](scripts/test_png_palette.py)
+  [scripts/test_browser_forms.py](../../../scripts/test_browser_forms.py),
+  [scripts/test_browser_intrinsic_size.py](../../../scripts/test_browser_intrinsic_size.py),
+  [scripts/test_browser_direct_png.py](../../../scripts/test_browser_direct_png.py),
+  [scripts/test_browser_image.py](../../../scripts/test_browser_image.py),
+  [scripts/test_png.py](../../../scripts/test_png.py), and
+  [scripts/test_png_palette.py](../../../scripts/test_png_palette.py)
   now pass the virtio-rng device through so their kernel logs
   match the production path.
 

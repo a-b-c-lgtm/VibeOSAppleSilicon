@@ -301,7 +301,7 @@ back to pmem.
 
 That's per-process address spaces in 600 lines of new code.
 
-## A subtle bug I hit on the way
+## A subtle bug to watch for
 
 The thread struct used to store `name` as `const char *`. When
 `sys_spawn` was called from EL0, we passed the user-mode pointer

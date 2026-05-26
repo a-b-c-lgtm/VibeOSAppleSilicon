@@ -202,11 +202,11 @@ Here's what happens if you do:
    `eret` lands at a wild address; you get a PC-alignment
    fault (EC=0x22) at PC=0x3296 with SPSR.IL set.
 
-That's not a hypothetical — that's literally the panic I hit
-on first interactive boot of chapter 89. Two interacting
+That's not a hypothetical — that's literally the panic that
+fired on first interactive boot of chapter 89. Two interacting
 bugs:
 
-- **Bug A**: I enabled the timer PPI on CPU 1.
+- **Bug A**: the timer PPI was enabled on CPU 1.
 - **Bug B**: `yield()`'s sleeper-wake walk pushes to the
   *current CPU's* runqueue, not to the sleeper's owning CPU.
 

@@ -1,23 +1,26 @@
-# Chapter 130c — Doom plays (closing Phase 1)
+# Chapter 130c — Doom plays
 
-> **Status:** code complete. `scripts/test_doom_plays.py`
-> passes; manual end-to-end play (title → menu → episode →
-> skill → E1M1 → motion → fire) verified on host with QEMU
-> HVF. Full regression sweep green.
-> **Prereq:** chapters 130a (Doom port) and 130b (WAD on
-> disk and its postscript: the timed-release input shim).
-> **Closes:** Phase 1 of Part XVIII (the "Doom plays"
-> milestone). Phase 2 (real GCC builds it) opens with
-> chapter 131a.
+> **Milestone in this chapter:** close Phase 1 of Part XVIII
+> by verifying end-to-end gameplay — title → menu → episode →
+> skill → E1M1 → motion → fire.
+> **Code referenced:**
+> - [userspace/doom/doomgeneric_osdev.c](../../../userspace/doom/doomgeneric_osdev.c)
+>   (the input shim path — see note below)
+> - [scripts/test_doom_plays.py](../../../scripts/test_doom_plays.py)
 >
-> **Update (chapter 133g):** the timed-release input shim
-> referenced throughout this chapter was retired in chapter
-> 133g, replaced by real `GUI_EVENT_KEY_UP` events plumbed
-> through `virtio_input.c`. The acceptance story below is
-> unchanged — step 8 of the manual procedure still walks
-> with W and fires with F — but the underlying mechanism
-> is now genuine release events, not a 250-ms timer. Read
-> mentions of `HOLD_RELEASE_MS` below as historical context.
+> **At the end of this chapter** you will have a verified
+> manual-play procedure and a green automated acceptance test
+> for the cross-built Doom binary. Prerequisites: chapter 130a
+> (Doom port) and chapter 130b (WAD on disk).
+>
+> **Heads-up.** The 250-ms timed-release input shim used in
+> this chapter is retired in chapter 133g and replaced by real
+> `GUI_EVENT_KEY_UP` events plumbed through `virtio_input.c`.
+> The acceptance story below is unchanged — step 8 of the
+> manual procedure still walks with W and fires with F — but
+> the underlying mechanism is now genuine release events, not
+> a timer. Read mentions of `HOLD_RELEASE_MS` below as
+> historical context.
 
 ---
 

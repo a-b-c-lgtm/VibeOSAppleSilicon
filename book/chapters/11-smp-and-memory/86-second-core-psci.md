@@ -291,8 +291,8 @@ That's the whole chapter.
 
 ## When things don't work
 
-Two failure modes we hit during bring-up. Both kept us
-honest.
+Two failure modes appear during bring-up. Both are
+instructive.
 
 ### `-smp 1` mismatch
 

@@ -25,27 +25,27 @@ a header edit.
 
 Two new files in `kernel/core/`:
 
-- [`kernel/core/userfs.h`](kernel/core/userfs.h) — opcodes,
+- [`kernel/core/userfs.h`](../../../kernel/core/userfs.h) — opcodes,
   the 32-byte `struct p9_msg`, the channel handle, and the
   three exported functions (`userfs_channel_create`,
   `userfs_channel_destroy`, `userfs_call`) plus the
   `g_userfs_ops` vtable symbol.
-- [`kernel/core/userfs.c`](kernel/core/userfs.c) — the
+- [`kernel/core/userfs.c`](../../../kernel/core/userfs.c) — the
   channel allocator, the request/reply marshaller, and the ten
   `fs_ops` methods that bridge into `userfs_call`.
 
 Plus three small edits in existing files:
 
-- [`kernel/core/vfs.h`](kernel/core/vfs.h) gains a new
+- [`kernel/core/vfs.h`](../../../kernel/core/vfs.h) gains a new
   `fd_kind` value (`FD_USERFS_FILE`), two fields on
   `struct fd_entry` (`userfs_ch`, `userfs_handle`), and a
   forward declaration of `struct userfs_channel`.
-- [`kernel/core/vfs.c`](kernel/core/vfs.c) gains a
+- [`kernel/core/vfs.c`](../../../kernel/core/vfs.c) gains a
   `FD_USERFS_FILE` branch in `vfs_read` and `vfs_close`, plus
   the field-zero discipline in `fd_table_create` and
   `fd_table_unref` so every newly allocated fd starts with
   null `userfs_ch`.
-- [`Makefile`](Makefile) adds `kernel/core/userfs.c` to
+- [`Makefile`](../../../Makefile) adds `kernel/core/userfs.c` to
   `KERNEL_OBJS`.
 
 That's the full surface. There is intentionally no syscall
@@ -127,10 +127,10 @@ small twists:
   request payload; the daemon needs to know how many bytes
   the caller wanted, so the byte count rides in `flags`. The
   matching comment in
-  [`kernel/core/userfs.c`](kernel/core/userfs.c)
+  [`kernel/core/userfs.c`](../../../kernel/core/userfs.c)
   (`userfs_op_read`) documents the convention; the daemon
   side recovers it in
-  [`userspace/libfs/userfs.c`](userspace/libfs/userfs.c)'s
+  [`userspace/libfs/userfs.c`](../../../userspace/libfs/userfs.c)'s
   `P9_OP_READ` switch arm.
 - `LISTDIR` piggybacks similarly: the request's `flags`
   carries the iteration index, the reply's `flags` carries
@@ -250,7 +250,7 @@ field compare.
 ## The new fd_kind value
 
 The dispatcher in
-[`kernel/core/vfs.c`](kernel/core/vfs.c) needs to know that
+[`kernel/core/vfs.c`](../../../kernel/core/vfs.c) needs to know that
 an fd backed by a userfs mount routes through `g_userfs_ops`
 instead of any of the pre-existing per-driver branches. We
 add a new value to the kind enum and two fields to

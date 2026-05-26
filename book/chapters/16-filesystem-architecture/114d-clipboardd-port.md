@@ -201,8 +201,7 @@ it, then `copy_to_user(buf, kbuf, got)`. `copy_to_user`
 runs the existing `prefault_user_write` helper which
 breaks COW shares and installs lazy-anon pages cleanly —
 the same discipline the rest of the kernel's syscalls
-already use. Recorded as a permanent rule in
-`/memories/repo/userfs-pipe-read-user-pointer-trap.md`:
+already use. The rule:
 **any future userfs op that writes into a user buffer must
 stage through a kernel buffer and `copy_to_user` at the
 boundary**; `pipe_read` is not safe to drive directly from

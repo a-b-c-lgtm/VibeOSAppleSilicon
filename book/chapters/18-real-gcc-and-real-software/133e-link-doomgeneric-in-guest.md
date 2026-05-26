@@ -1,15 +1,21 @@
-# Chapter 133e — In-guest Doom link, doomgeneric.elf produced
+# Chapter 133e — In-guest Doom link, `doomgeneric.elf` produced
 
-> **Status:** shipped (Phase 8 of guest-gcc bring-up).
-> Links the 82 vendor `.o` files plus a small runtime
-> archive into a single `/data/doomgeneric.elf` (2.5 MB),
-> end-to-end, inside the guest, using `/bin/ld` (binutils
-> 2.44, chapter 131f). `scripts/test_doom_link.py` runs
-> **PASS 11 / FAIL 0**. Wall time ~12 s under HVF on
-> M-series silicon.
-> **Prereq:** chapter 133d (full vendor compile), 131f
-> (`/bin/ld` is real binutils), 132j (OSFS-1 subdirs).
-> **Opens:** chapter 133f (rebuilt Doom plays).
+> **Milestone in this chapter:** link the 82 vendor `.o` files
+> plus a small runtime archive into one Doom ELF, inside the
+> guest, using `/bin/ld`.
+> **Code referenced:**
+> - The runtime archive `/bin/libdoomrt.a` (bundling `crt0.o`,
+>   `doomgeneric_osdev.o`, `setjmp.o`, `cstring.o`,
+>   `wmclient.o`)
+> - `/bin/doom_link.args` (binutils `@file` response file)
+> - [scripts/test_doom_link.py](../../../scripts/test_doom_link.py)
+>
+> **At the end of this chapter** you will have a single
+> `/data/doomgeneric.elf` (~2.5 MB) linked end-to-end inside
+> the guest in ~12 s under HVF, with `test_doom_link.py` at
+> **PASS 11 / FAIL 0**. Prerequisites: chapter 133d (full
+> vendor compile), 131f (`/bin/ld` is real binutils), 132j
+> (OSFS-1 subdirs).
 
 ---
 

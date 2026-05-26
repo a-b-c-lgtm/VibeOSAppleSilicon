@@ -1,14 +1,24 @@
 # Chapter 128f — Real `printf` and `scanf`
 
-> **Status:** complete. `scripts/test_libc_printf2.py` green.
-> **Prereq:** chapters 19 / 116b (existing printf + stdio FILE
-> infrastructure), chapter 128e (stdlib, for shared
-> `_scn_src`-style abstractions).
-> **Unlocks:** GCC's diagnostics (which lean on `%*s` for
-> source-line markers and `%n` for column accounting), tar's
-> `printf("%-10s %8d %s\n", mode, size, name)` listing format,
-> any upstream code that calls `sscanf("%d %s", ...)` on a
-> config-file line.
+> **Milestone in this chapter:** grow the libc formatter from
+> the milestone-19 minimum to the full C99 conversion-spec
+> table, and add the matching `scanf` family.
+> **Code referenced:**
+> - [userspace/libc/printf.h](../../../userspace/libc/printf.h)
+> - [userspace/libc/scanf.h](../../../userspace/libc/scanf.h)
+> - [userspace/libc/stdio.h](../../../userspace/libc/stdio.h)
+>   (`fscanf` / `vfscanf` / `scanf` / `vscanf` shims)
+> - [scripts/test_libc_printf2.py](../../../scripts/test_libc_printf2.py)
+>
+> **At the end of this chapter** you will have octal (`%o`),
+> precision (`.N`), the `+` / space / `#` flags, variable
+> width and precision (`%*`), `%n`, and a full `sscanf` /
+> `vsscanf` / `fscanf` family. That is wide enough for GCC's
+> diagnostics (`%*s` for source-line markers, `%n` for column
+> accounting), tar's listing format, and any upstream code
+> that scans a config file. Prerequisites: chapters 19 and
+> 116b (the existing printf and `FILE *` infrastructure),
+> chapter 128e (stdlib).
 
 ---
 

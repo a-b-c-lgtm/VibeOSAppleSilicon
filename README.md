@@ -21,7 +21,7 @@ test page, over a flowers wallpaper with a taskbar and live clock.](assets/scree
 The screenshot above is `make run-graphical` on an M2: the launcher
 in the top-left, `notepad` editing a tmpfs file, `gui_term` running
 `ps`, and two `/bin/browser` windows — one on Hacker News, one on a
-PNG colour-swatch test page — all composited by the in-kernel WM
+PNG colour-swatch test page — all composited in userspace by `wsd`
 over a userspace-rendered wallpaper, with the taskbar and live
 clock along the bottom.
 

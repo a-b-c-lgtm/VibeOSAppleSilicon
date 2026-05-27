@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/test_guest_configure.py — chapters 131c / 131d smoke test.
+# scripts/test_guest_configure.py — chapters 177 / 131d smoke test.
 #
 # NOT in scripts/sweep.sh.  Host-side toolchain sanity, run
 # manually after editing the wrapper template or after touching
@@ -17,7 +17,7 @@
 #       a serious link test) gets past the strerror link probe
 #       without tripping GCC_NO_EXECUTABLES.  This is the test
 #       that proves crt0 auto-injection works for autoconf-style
-#       conftests.  Before chapter 131c the conftest link failed
+#       conftests.  Before chapter 177 the conftest link failed
 #       with "undefined reference to __errno_value" and autoconf
 #       refused all further link tests.
 #
@@ -30,7 +30,7 @@
 #       configure cache that lies to autoconf about our
 #       static-inline functions being externally linked — so the
 #       libiberty replacement files don't get compiled and don't
-#       clash with our headers.  See chapter 131d for the audit.
+#       clash with our headers.  See chapter 178 for the audit.
 #
 # Build artefacts go under build/binutils-build-guest/ which is
 # in .gitignore.  The test wipes and recreates that dir on every
@@ -57,11 +57,11 @@ EXPECTED_LIBIBERTY = [
     "alloca.o",
     "argv.o",
     "bsearch_r.o",
-    "cplus-dem.o",   # exercises sprintf (chapter 131c addition)
+    "cplus-dem.o",   # exercises sprintf (chapter 177 addition)
     "regex.o",       # exercises abort via stdlib.h cascade
 ]
 
-# Chapter 131d: libiberty must build *every* object file it
+# Chapter 178: libiberty must build *every* object file it
 # decides to compile.  We don't enumerate them — we just assert
 # the link of `libiberty.a` succeeds.
 
@@ -199,7 +199,7 @@ def main():
         fail(f"libiberty objects did not build: {missing}\n"
              f"  make stderr tail: {mk.stderr[-2000:]}")
 
-    # Chapter 131d — wider assertion: ALL of libiberty must build.
+    # Chapter 178 — wider assertion: ALL of libiberty must build.
     # If autoconf chose to compile a replacement we don't like,
     # the cache file needs another entry; surface that loudly.
     print("guest_configure: building all of libiberty.a...")

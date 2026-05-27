@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_browser_rapid_resize.py — chapter 108e follow-up #4
+"""scripts/_dbg_browser_rapid_resize.py — chapter 118 follow-up #4
 
 Reproduces the user-reported bug from May 2026:
   "Resize works a lot of the time, but frequent resizing

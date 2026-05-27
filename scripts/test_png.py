@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_png.py — chapter 97 PNG decoder smoke test.
+"""scripts/test_png.py — chapter 98 PNG decoder smoke test.
 
 Boots the kernel, drops to /bin/sh, runs `/bin/pngdec /mnt/icon.png`,
 and asserts that the decoder produced the exact byte counts that
@@ -136,7 +136,7 @@ def main():
 
         print(f"PASS: pngdec /mnt/icon.png -> {w}x{h}, "
               f"sum={sm}, opaque={op} (matches host bake)")
-        print("PASS: chapter 97 PNG decoder smoke test")
+        print("PASS: chapter 98 PNG decoder smoke test")
         return 0
     finally:
         q.terminate()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_parser_thread.py — chapter 94 smoke test.
+"""scripts/test_browser_parser_thread.py — chapter 95 smoke test.
 
 Boots the kernel with -smp 2 so we have a CPU 1 to pin the parser
 thread to, drops to /bin/sh, and runs the browser's headless
@@ -7,13 +7,13 @@ thread to, drops to /bin/sh, and runs the browser's headless
 
   1. Loads /mnt/test_layout.html synchronously at viewport=600.
   2. Spawns a parser thread on CPU 1 via thread_spawn_files()
-     (so it shares the GUI core's fd table — chapter 93).
+     (so it shares the GUI core's fd table — chapter 94).
   3. Posts a relayout request for viewport=900 to the parser.
   4. Spins polling for the result, counting GUI-loop iterations
      that ran while the parser was busy.
   5. Prints "BENCH parse_ms=N gui_iters=N work_done=N".
 
-Chapter 94 invariant (the regression we defend):
+Chapter 95 invariant (the regression we defend):
 
     gui_iters > 0
 
@@ -176,7 +176,7 @@ def main():
             print(f"FAIL: new doc_w == old doc_w ({new_doc_w}) "
                   f"— relayout had no effect"); return 1
 
-        print("PASS: chapter 94 browser parser-thread smoke test")
+        print("PASS: chapter 95 browser parser-thread smoke test")
         return 0
     finally:
         q.kill(); q.wait()

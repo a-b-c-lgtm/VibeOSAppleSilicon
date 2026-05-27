@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""scripts/test_threads.py — chapter 91 smoke test.
+"""scripts/test_threads.py — chapter 92 smoke test.
 
 Boots the kernel, drops to /bin/sh, runs `threadtest`, and asserts
 that the chapter-91 marker `[thread] OK` appears in the serial log,
 preceded by the four worker-done lines.  Failures dump the
 captured section so the user can see exactly which step blew up.
 
-Modelled after scripts/test_mmap.py (chapter 90)."""
+Modelled after scripts/test_mmap.py (chapter 91)."""
 import os, select, socket, subprocess, sys, time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -98,7 +98,7 @@ def main():
                 print(f"FAIL: missing marker {needle!r}"); return 1
         if b"[thread] OK" not in log:
             print("FAIL: overall thread marker missing"); return 1
-        print("PASS: chapter 91 thread smoke test")
+        print("PASS: chapter 92 thread smoke test")
         return 0
     finally:
         q.kill(); q.wait()

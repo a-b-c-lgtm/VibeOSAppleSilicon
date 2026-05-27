@@ -1,7 +1,7 @@
 /* userspace/libc/elf_write.h — minimal ELF64 writer.
  *
- * Header-only.  Used by chapter 118's /bin/as, chapter 119's
- * /bin/ld, and chapter 120's runtime tooling.
+ * Header-only.  Used by chapter 154's /bin/as, chapter 155's
+ * /bin/ld, and chapter 156's runtime tooling.
  *
  * We only emit AArch64 ELF64-LSB.  No 32-bit, no big-endian,
  * no other architecture.  The reader contract (book INDEX.md)
@@ -10,7 +10,7 @@
  * Two output shapes are supported via the same low-level
  * helpers: relocatable (.o files: ET_REL with sections but no
  * program headers) and executable (ET_EXEC with program
- * headers).  Chapter 118 only uses the relocatable shape; 119
+ * headers).  Chapter 154 only uses the relocatable shape; 119
  * grows the executable shape on top of the same byte-pushers.
  */
 #ifndef LIBC_ELF_WRITE_H

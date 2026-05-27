@@ -1,5 +1,5 @@
 /*
- * kernel/core/page_cache.c — chapter 90 unified page cache.
+ * kernel/core/page_cache.c — chapter 91 unified page cache.
  *
  * See page_cache.h for the contract.  Implementation is the
  * smallest possible thing that does the job:

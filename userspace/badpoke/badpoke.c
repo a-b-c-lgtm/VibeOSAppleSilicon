@@ -1,8 +1,8 @@
-/* userspace/badpoke/badpoke.c — milestone 16 isolation smoke test.
+/* userspace/badpoke/badpoke.c — isolation smoke test.
  *
  * Writes to a kernel address from EL0.  Used to silently succeed
  * (and clobber the kernel heap) back when DRAM identity slots
- * were mapped EL0-RW.  As of milestone 16 the kernel has revoked
+ * were mapped EL0-RW.  As of the kernel/user boundary chapter the kernel has revoked
  * EL0 access to those slots, so this program SHOULD take a data
  * abort and the kernel should kill it cleanly.
  *
@@ -10,7 +10,7 @@
  * panic-style diagnostic from the EL1 fault handler followed by
  * the parent reaping the dead child.  The exit code reported back
  * to sh should be non-zero (we plan to start tagging killed-by-
- * fault processes with a special code in a later milestone).
+ * fault processes with a special code in a later chapter).
  */
 
 #include "../libc/syscall.h"
@@ -25,7 +25,7 @@ int main(void)
      * in our per-process AS's slot 8 (which is inherited from
      * boot L1, where slot 8 is now BLOCK_NORMAL = AP=00 = no EL0).
      *
-     * Pre-milestone-16 this would silently corrupt the heap.
+     * Before the kernel/user boundary chapter this would silently corrupt the heap.
      * Now it should take a Data Abort from EL0.
      */
     volatile unsigned long *kaddr = (volatile unsigned long *)0x230000000UL;

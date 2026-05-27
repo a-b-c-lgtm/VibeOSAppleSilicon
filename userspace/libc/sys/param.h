@@ -1,4 +1,4 @@
-/* userspace/libc/sys/param.h — chapter 131e minimal BSD-isms.
+/* userspace/libc/sys/param.h — chapter 179 minimal BSD-isms.
  *
  * libctf/ctf-impl.h and ctf-create.c unconditionally include
  * <sys/param.h>.  ctf-decls.h then `#undef`s and redefines

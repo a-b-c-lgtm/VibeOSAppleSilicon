@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_strace.py — chapter 100 smoke test.
+"""scripts/test_strace.py — chapter 102 smoke test.
 
 Boots the kernel, drops into /bin/sh, and runs:
 

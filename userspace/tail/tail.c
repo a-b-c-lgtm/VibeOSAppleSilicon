@@ -8,7 +8,7 @@
  * the earliest one and stream from there.  O(file size) work,
  * O(N) memory.  No -f option (would require a growing file).
  *
- * Chapter 116d: drives the FILE * layer and uses fseek (chapter
+ * Chapter 152: drives the FILE * layer and uses fseek (chapter
  * 116b's new SYS_LSEEK) to jump back instead of the old
  * read-and-discard loop.
  */

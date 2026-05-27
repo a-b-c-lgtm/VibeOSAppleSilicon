@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_rng.c — chapter 112 entropy source driver.
+ * kernel/device/virtio_rng.c — chapter 123 entropy source driver.
  *
  * Modelled after virtio_snd.c (same MMIO transport, same v2
  * handshake), but the entropy device is the simplest virtio

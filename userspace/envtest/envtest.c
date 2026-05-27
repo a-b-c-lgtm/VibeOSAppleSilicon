@@ -1,4 +1,4 @@
-/* userspace/envtest/envtest.c -- chapter 116c env arena smoke test.
+/* userspace/envtest/envtest.c -- chapter 151 env arena smoke test.
  *
  * Drives the new POSIX-shaped env API:
  *

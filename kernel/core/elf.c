@@ -1,16 +1,16 @@
 /*
- * kernel/core/elf.c — minimal ELF64 loader for milestone 7.
+ * kernel/core/elf.c — minimal ELF64 loader.
  *
  * The user binary is linked at a fixed VA (USER_LOAD_ADDR =
  * 0x100000) and contains a single PT_LOAD segment.  We could
  * cheat and just memcpy the raw image, but parsing the program
  * headers properly costs no extra code and means whoever rewrites
- * the loader for the real per-process page-table milestone has
+ * the loader for the real per-process page-table layer has
  * one fewer thing to refactor.
  *
  * Identity mapping caveat: the loader places each segment at
  * `paddr = pmem_alloc_page() ...` and does NOT remap that physical
- * page to the segment's link-time VA.  For milestone 7 we get away
+ * page to the segment's link-time VA.  In this initial version we get away
  * with this because the user link-time VA (0x100000) sits inside
  * the same 1 GiB device-mapped block as MMIO, which is harmful for
  * code execution — so we do something subtler: we pick a load
@@ -20,10 +20,10 @@
  * baked in beyond local jumps that the linker resolved relative)
  * so it runs correctly at whatever address we put it at.
  *
- * Specifically: the milestone-7 hello.elf has its single PT_LOAD
+ * Specifically: the early hello.elf has its single PT_LOAD
  * segment marked p_vaddr = 0x100000 but ALL its code uses PC-
  * relative addressing (adrp/add) so the actual load address is
- * irrelevant.  Once chapter 14 introduces per-process page tables,
+ * irrelevant.  Once chapter 13 introduces per-process page tables,
  * we will start honouring p_vaddr exactly.
  */
 
@@ -75,7 +75,7 @@ struct elf64_phdr {
 
 #define USER_STACK_PAGES 16  /* 64 KiB user stack — must match
                               * arch/address_space.h.  Bumped from
-                              * 4 (16 KiB) at M64 to handle deeply
+                              * 4 (16 KiB) to handle deeply
                               * nested DOMs (HN comment threads). */
 #define MAX_USER_ARGV    64  /* hard cap on argc; matches sys_exec */
 
@@ -285,7 +285,7 @@ int elf_load_user(const uint8_t *data, size_t size,
         if (k == USER_STACK_PAGES - 1) top_page_pa = pa;
     }
 
-    /* Chapter 101 — install a one-page guard immediately below
+    /* Chapter 103 — install a one-page guard immediately below
      * the stack base.  No physical backing; the L3 entry is
      * invalid + tagged with DESC_SW_GUARD.  When a runaway
      * recursion (or a single fat frame) pokes through the

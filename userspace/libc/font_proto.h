@@ -1,5 +1,5 @@
 /*
- * userspace/libc/font_proto.h — chapter 108b wire protocol for
+ * userspace/libc/font_proto.h — chapter 115 wire protocol for
  * the userspace font server.
  *
  * Shared between three callers:
@@ -15,7 +15,7 @@
  *                                       bitmaps without owning
  *                                       a rasteriser.
  *   - userspace/libgui/text.h        — future client lib for
- *                                       chapter 108c (apps that
+ *                                       chapter 116 (apps that
  *                                       have mapped their own
  *                                       pixel buffer per ch108a
  *                                       and want to draw text

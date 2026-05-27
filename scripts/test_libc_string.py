@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_libc_string.py — chapter 128c regression for
+"""scripts/test_libc_string.py — chapter 167 regression for
 ctype.h / string.h / assert.h.
 
 Two binaries:

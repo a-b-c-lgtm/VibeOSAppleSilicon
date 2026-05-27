@@ -1,4 +1,4 @@
-/* userspace/top/top.c — chapter 99 live process viewer.
+/* userspace/top/top.c — chapter 101 live process viewer.
  *
  * Same data as `ps` but redraws every second.  Clears the
  * terminal with the ANSI sequence "\x1b[2J\x1b[H" between

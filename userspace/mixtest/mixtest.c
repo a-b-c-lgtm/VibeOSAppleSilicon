@@ -1,4 +1,4 @@
-/* userspace/mixtest/mixtest.c — chapter 108c mixed-paths assertion.
+/* userspace/mixtest/mixtest.c — chapter 116 mixed-paths assertion.
  *
  * Verifies the kernel's one-window-one-draw-path contract:
  *
@@ -7,7 +7,7 @@
  *
  *     gui_create_window → gui_fill_rect → gui_draw_text → gui_present
  *     all return 0.  This is the path that `notify` and the
- *     WM's own title bars use; we never want chapter 108c to
+ *     WM's own title bars use; we never want chapter 116 to
  *     regress it.
  *
  *   NEGATIVE (a window that DID install a userspace mapping via

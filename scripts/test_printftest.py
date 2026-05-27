@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """scripts/test_printftest.py — boot kernel, run /bin/printftest,
-capture full output. M58 diagnostic for the literal-strlen issue."""
+capture full output. Diagnostic for the literal-strlen issue."""
 import os, select, socket, subprocess, sys, time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

@@ -1,10 +1,10 @@
 /*
- * kernel/core/icmp.c \u2014 milestone-54 ICMPv4 echo responder.
+ * kernel/core/icmp.c \u2014 ICMPv4 echo responder.
  *
  * Strict subset: we answer echo requests (RFC 792 type 8 \u2192 reply
  * type 0) and ignore everything else.  No outbound ping client
  * yet; that's a userspace `ping` once we have UDP-style
- * raw-socket plumbing (well beyond M54).
+ * raw-socket plumbing.
  */
 
 #include "icmp.h"

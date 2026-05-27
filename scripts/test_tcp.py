@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""scripts/test_tcp.py \u2014 milestone-55 TCP client smoke test.
+"""scripts/test_tcp.py — TCP client smoke test.
 
 Brings up a tiny localhost HTTP server on port 8888, then boots
 the kernel with QEMU SLIRP user-mode networking.  SLIRP forwards
 the guest's connection to 10.0.2.2:8888 to the host's
-127.0.0.1:8888 \u2014 so the kernel's boot self-test exercises every
-TCP state transition (SYN \u2192 SYN+ACK ack \u2192 ESTABLISHED \u2192
-PSH+ACK data \u2192 FIN exchange \u2192 CLOSED) against a real listener.
+127.0.0.1:8888 — so the kernel's boot self-test exercises every
+TCP state transition (SYN → SYN+ACK ack → ESTABLISHED →
+PSH+ACK data → FIN exchange → CLOSED) against a real listener.
 
 Passing this test means the kernel can:
-  - acquire a DHCP lease (M54 still works),
+  - acquire a DHCP lease (the DHCP path still works),
   - open an outbound TCP connection,
   - send a complete HTTP/1.0 request,
   - receive the server's response body intact,
@@ -158,7 +158,7 @@ def main():
             return 1
         print("PASS: shell prompt reached after TCP self-test")
 
-        print("\nMILESTONE 55 (TCP): ALL TESTS PASSED")
+        print("\nTCP: ALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

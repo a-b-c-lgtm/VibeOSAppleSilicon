@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/test_gcc_prereqs.py — chapter 132b host smoke test.
+# scripts/test_gcc_prereqs.py — chapter 182 host smoke test.
 #
 # NOT added to scripts/sweep.sh because this only exercises
 # host-side vendoring.  Run manually after editing
@@ -19,7 +19,7 @@
 #   5. Print PASS, exit 0.  Any mismatch exits 1 with FAIL.
 #
 # We deliberately don't try to ./configure or build the libs
-# here — that's chapter 132c's job (it happens automatically as
+# here — that's chapter 183's job (it happens automatically as
 # part of `make all-gcc` once xgcc is built in-tree).
 
 import hashlib

@@ -1,5 +1,5 @@
 /*
- * userspace/libc/cookies.h -- chapter 110 cookie jar.
+ * userspace/libc/cookies.h -- chapter 120 cookie jar.
  *
  * Header-only.  Include from one .c per binary, same convention
  * as printf.h / malloc.h / url.h.  Depends on syscall.h (open /

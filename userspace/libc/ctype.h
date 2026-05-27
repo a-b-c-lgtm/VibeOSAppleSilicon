@@ -1,4 +1,4 @@
-/* userspace/libc/ctype.h — chapter 128c.
+/* userspace/libc/ctype.h — chapter 167.
  *
  * Header-only C99 <ctype.h>.  Every function is `static inline`
  * so each binary that includes the header gets a private copy

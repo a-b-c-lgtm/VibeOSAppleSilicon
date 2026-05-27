@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_osfs2.py — chapter 81 smoke test.
+"""scripts/test_osfs2.py — chapter 82 smoke test.
 
 Boots the system fully headless on the serial console (no
 GUI), waits for the shell prompt, and exercises the freshly-

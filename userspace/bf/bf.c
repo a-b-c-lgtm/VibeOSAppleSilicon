@@ -1,6 +1,6 @@
 /* userspace/bf/bf.c — brainfuck interpreter.
  *
- * Chapter 132h: the "medium real program" that proves /bin/gcc
+ * Chapter 188: the "medium real program" that proves /bin/gcc
  * works on real (i.e. non-trivial, non-hello-world) C source.
  *
  * Brainfuck has exactly eight instructions:
@@ -36,7 +36,7 @@
  * Two reasons:
  *
  *   1. In-guest /bin/gcc has no system include directory wired
- *      up (chapter 132g's "what we did NOT do").  Shipping the
+ *      up (chapter 187's "what we did NOT do").  Shipping the
  *      libc headers on the disk would push the OSFS-1 file
  *      count past its 128-entry directory cap; that ABI bump
  *      is its own chapter, not this one's problem.

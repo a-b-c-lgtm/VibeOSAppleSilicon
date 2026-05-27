@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_image.py — chapter 97 end-to-end test.
+"""scripts/test_browser_image.py — chapter 98 end-to-end test.
 
 Boots the kernel graphically, drops to /bin/sh, opens the test
 page in the GUI browser, and asserts that the icon.png we bake
@@ -210,7 +210,7 @@ def main():
 
         print(f"PASS: image rendered "
               f"(red={red} green={green} blue={blue})")
-        print("PASS: chapter 97 browser image smoke test")
+        print("PASS: chapter 98 browser image smoke test")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""scripts/test_pixapp.py — chapter 108d regression.
+"""scripts/test_pixapp.py — chapter 117 regression.
 
 What this proves
 ----------------
-After chapter 108d (kernel-WM compose retired, wsd takes over), a
+After chapter 117 (kernel-WM compose retired, wsd takes over), a
 userspace app can still paint a window's pixel buffer by writing
 BGRA bytes directly through the wmclient-mapped framebuffer and
 the wsd compositor blits the result onto the scanout via
@@ -43,13 +43,13 @@ DUMP_PATH   = "/tmp/osdev-fb-pixapp.ppm"
 FB_W = 1280
 FB_H = 800
 
-# Chapter 108d -- wsd's cascade starts at WM_CASCADE_BASE_X/Y
+# Chapter 117 -- wsd's cascade starts at WM_CASCADE_BASE_X/Y
 # (100, 100) and steps by 40 px per cascade-positioned window.
 # Boot auto-launches desktop (full-screen, _at), taskbar (_at),
 # and launcher (also _at, anchored above the taskbar).  Only
 # wm_create_window_input advances the cascade, so all three
 # boot apps leave it untouched.  Pixapp is the first cascade
-# client and lands at slot 0 = (100, 100).  chapter 108e added
+# client and lands at slot 0 = (100, 100).  chapter 118 added
 # wsd-side title bars: a 24-px tall bar painted at (PIX_X, PIX_Y)
 # on top of the body, so the body now starts at
 # (PIX_X, PIX_Y + WSD_TITLE_H).  Pixapp doesn't pass
@@ -266,7 +266,7 @@ def main():
         # keeps an exclusive lock on build/disk.img that
         # blocks every subsequent test from even creating its
         # serial socket.  See repo memory
-        # /memories/repo/chapter-108a-userspace-window-buffers.md
+        # /memories/repo/chapter-114-userspace-window-buffers.md
         # for the sweep-breakage symptom.
         try: q.kill()
         except Exception: pass

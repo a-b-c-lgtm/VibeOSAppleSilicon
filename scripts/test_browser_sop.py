@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_sop.py -- chapter 110a same-origin policy.
+"""scripts/test_browser_sop.py -- chapter 121 same-origin policy.
 
 Drives `browser --check-sop <page-url> <action> [resolved]` from
 the in-guest shell to exercise every branch of the form-submission
@@ -11,7 +11,7 @@ SOP decision tree:
 
 The third branch is currently unreachable in production code (no
 <base href>, no JS to mutate form.action), so the test feeds an
-override "resolved" URL to simulate what chapter 113's <base
+override "resolved" URL to simulate what chapter 132's <base
 href> work would surface: a relative action that resolves
 cross-origin.  Same one-line decision; same test fixture exercises
 all branches.
@@ -185,7 +185,7 @@ def main():
         # 7. The blocked branch (defense-in-depth, currently
         #    unreachable in production -- needs <base href> or JS
         #    to mutate form.action).  Use the resolved-override
-        #    third arg to simulate what chapter 113's <base href>
+        #    third arg to simulate what chapter 132's <base href>
         #    would surface: a /login action that resolves to a
         #    third-party host.
         out = send_cmd(s, f"browser --check-sop {page} /login "

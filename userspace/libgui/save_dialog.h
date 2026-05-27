@@ -2,12 +2,12 @@
  * userspace/libgui/save_dialog.h — modal "Save As" dialog widget.
  *
  * The first member of the libgui userspace widget library
- * (chapter 84).  Apps include this header and link against
+ * (chapter 85).  Apps include this header and link against
  * `userspace/libgui/save_dialog.o` to get a complete, self-
  * contained "ask the user where to save" dialog without having
  * to grow that code into the app itself.
  *
- * Chapter 108d — ported off the kernel WM syscalls
+ * Chapter 117 — ported off the kernel WM syscalls
  * (gui_fill_rect / gui_draw_text / gui_flush / gui_poll_event)
  * onto the wsd-backed libgui primitives (draw_fill_rect /
  * draw_text / wm_window_dirty / wm_poll_event).  The dialog

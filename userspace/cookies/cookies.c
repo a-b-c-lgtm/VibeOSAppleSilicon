@@ -1,5 +1,5 @@
 /*
- * userspace/cookies/cookies.c -- chapter 110 cookie jar inspector.
+ * userspace/cookies/cookies.c -- chapter 120 cookie jar inspector.
  *
  * Reads the on-disk cookie jar that browser and httpget share at
  * /data/cookies/<host>.  This is the user-visible front for the

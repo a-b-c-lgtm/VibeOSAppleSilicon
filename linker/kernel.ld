@@ -13,7 +13,7 @@
  *   data  — RW, holds .data + .bss + the boot stack.
  * Splitting them silences the linker's "LOAD segment with RWX
  * permissions" warning and is what we want once the MMU is on
- * (milestone 3) so .text can map as Normal-Cacheable + RO + XN=0
+ * so .text can map as Normal-Cacheable + RO + XN=0
  * while .data maps as RW + XN=1.
  *
  * --orphan-handling=error in the Makefile catches any future input
@@ -82,7 +82,7 @@ SECTIONS
         stack_top = .;
     } :data
 
-    /* Chapter 86 — secondary CPU boot stacks.  One per non-boot
+    /* Chapter 87 — secondary CPU boot stacks.  One per non-boot
      * CPU up to SMP_MAX_CPUS=4 (cpu.h).  16 KiB each is enough
      * for the early boot path: the secondary brings up its MMU,
      * sets TPIDR_EL1, prints "[smp] CPU N ready", and then sits
@@ -101,10 +101,10 @@ SECTIONS
         secondary_stacks_top = .;
     } :data
 
-    /* End-of-image marker.  Milestone 6 onwards uses this so the
+    /* End-of-image marker.  The kernel uses this so the
      * page allocator can carve out [KERNEL_LOAD_ADDR, kernel_end)
      * before adding the rest of physical RAM to the freelist.
-     * Pre-milestone-6 builds reserved a fixed 16 MiB .heap section
+     * Earlier builds reserved a fixed 16 MiB .heap section
      * here; the heap now lives in DTB-discovered RAM instead. */
     . = ALIGN(4K);
     kernel_end = .;

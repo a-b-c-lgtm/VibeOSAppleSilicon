@@ -1,4 +1,4 @@
-/* cpu.c — chapter 86 per-CPU registry, SMP bring-up, secondary main.
+/* cpu.c — chapter 87 per-CPU registry, SMP bring-up, secondary main.
  *
  * Sequence in smp_init() (called from kernel_main after heap is up):
  *
@@ -16,7 +16,7 @@
  *
  * secondary_main() is the C entry point boot.s::secondary_start
  * tail-calls.  It just announces itself and parks in WFE; the
- * actual SMP scheduler arrives in chapter 89.
+ * actual SMP scheduler arrives in chapter 90.
  */
 
 #include "cpu.h"
@@ -35,7 +35,7 @@
 extern uint8_t secondary_stack_top_1[];
 extern uint8_t secondary_stack_top_2[];
 extern uint8_t secondary_stack_top_3[];
-extern uint8_t stack_top[];   /* boot CPU stack from milestone 1 */
+extern uint8_t stack_top[];   /* boot CPU stack */
 
 struct cpu g_cpus[SMP_MAX_CPUS];
 static uint32_t g_smp_count = 1;   /* boot CPU always counts */
@@ -69,7 +69,7 @@ static void serial_put_cpu_id(uint32_t id)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 89 — boot-CPU pre-registration.
+ * Chapter 90 — boot-CPU pre-registration.
  *
  * thread_init() runs BEFORE smp_init_with_dtb() in kernel_main
  * (because the boot thread needs to exist before we wake any
@@ -106,7 +106,7 @@ void cpu_register_boot(void)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 89 — per-CPU idle loop.
+ * Chapter 90 — per-CPU idle loop.
  *
  * Every CPU has an "idle thread" that runs whenever its runqueue
  * is empty.  It does the absolute minimum: wait for an interrupt
@@ -138,7 +138,7 @@ void cpu_idle_loop(void *arg)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 89 — SMP scheduler smoke test.
+ * Chapter 90 — SMP scheduler smoke test.
  *
  * Choreography:
  *   1. CPU 0 zeroes g_smp_sched_count.
@@ -162,7 +162,7 @@ void cpu_idle_loop(void *arg)
  * with the observed count.  No "FAIL" / "PANIC" so the regression
  * sweep stays green.
  *
- * Why CPU 1 only?  Chapter 89 deliberately keeps thread placement
+ * Why CPU 1 only?  Chapter 90 deliberately keeps thread placement
  * static — once a thread is on CPU N's runqueue it never migrates.
  * That sidesteps the need for cross-CPU TLB shootdown
  * (`tlbi vmalle1is`), which we'll only need if/when we add user-
@@ -227,7 +227,7 @@ static void smp_sched_smoke_test(void)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 87 — SMP atomic smoke test.
+ * Chapter 88 — SMP atomic smoke test.
  *
  * Goal: prove that atomic_add_return64 is actually atomic across
  * cores by having every CPU race to increment the same counter
@@ -278,7 +278,7 @@ static void smp_smoke_verify(uint32_t online_cpus)
         serial_puts(" OK\n");
     } else {
         /* Use "mismatch" not "FAIL" — the test harness greps for
-         * FAIL/PANIC/FATAL on benign paths (chapter 86 trap). */
+         * FAIL/PANIC/FATAL on benign paths (chapter 87 trap). */
         serial_puts(" MISMATCH (lost ");
         serial_puthex(expected - got);
         serial_puts(" updates)\n");
@@ -287,20 +287,20 @@ static void smp_smoke_verify(uint32_t online_cpus)
 
 void secondary_main(struct cpu *self)
 {
-    /* Chapter 87 — hammer the shared atomic counter BEFORE
+    /* Chapter 88 — hammer the shared atomic counter BEFORE
      * setting READY so that CPU 0's "wait for all READY" spin
      * doubles as a join barrier for the smoke test.  Skipping
      * this is fine if you ever need a "secondary that just
-     * comes up cleanly" (chapter 88 may want that). */
+     * comes up cleanly" (chapter 89 may want that). */
     smp_smoke_hammer();
 
-    /* Chapter 88 — bring this CPU's GIC slice online so it can
+    /* Chapter 89 — bring this CPU's GIC slice online so it can
      * receive SGIs (IPIs).  Order matters:
      *   1. Per-CPU redistributor + CPU interface init.  Until
      *      this runs, nothing on this CPU can take an IRQ
      *      because GICR_WAKER.ProcessorSleep is still set.
      *   2. Enable the SGI vectors we care about (PING + HALT
-     *      from chapter 88; RESCHED from chapter 89).
+     *      from chapter 89; RESCHED from chapter 90).
      *   3. Vector table install — vbar_el1 was set by boot.s
      *      before we got here, so nothing more to do.
      *   4. Allocate a per-CPU idle thread BEFORE we unmask IRQs
@@ -310,21 +310,21 @@ void secondary_main(struct cpu *self)
      *      CPU 0 will land in the IRQ vector and reach
      *      ipi_handle.
      *
-     * CHAPTER 92 — additionally enable the CNTV (timer) PPI on
+     * CHAPTER 93 — additionally enable the CNTV (timer) PPI on
      * this CPU.  Pre-92, secondaries had no timer because
      * preemption requires a runqueue policy that handles cross-
-     * CPU wakeup placement (chapter 89's "no migration" floor
+     * CPU wakeup placement (chapter 90's "no migration" floor
      * couldn't satisfy that — it would have stolen sleepers).
-     * Chapter 92 adds home_cpu pinning + runq_push_to + locked
+     * Chapter 93 adds home_cpu pinning + runq_push_to + locked
      * g_all_head walks, so a timer tick on CPU 1 can safely
      * preempt and the sleeper-walk no longer adopts CPU-0
-     * threads onto CPU 1.  See chapter 92 for the full story. */
+     * threads onto CPU 1.  See chapter 93 for the full story. */
     gic_init_per_cpu();
     gic_enable_irq(IPI_PING);
     gic_enable_irq(IPI_HALT);
     gic_enable_irq(IPI_RESCHED);
 
-    /* Chapter 92 — enable this CPU's generic-timer PPI.
+    /* Chapter 93 — enable this CPU's generic-timer PPI.
      * timer_init_per_cpu programs CNTV_TVAL_EL0 + CNTV_CTL_EL0
      * (per-CPU registers); gic_enable_irq routes ID 27 through
      * this CPU's redistributor.  Priority matches CPU 0's
@@ -334,7 +334,7 @@ void secondary_main(struct cpu *self)
     gic_enable_irq(TIMER_CNTV_INTID);
     timer_init_per_cpu();
 
-    /* Chapter 89 — install this CPU's idle thread.  Must run
+    /* Chapter 90 — install this CPU's idle thread.  Must run
      * BEFORE daifclr so that the first IRQ (timer or RESCHED)
      * sees a non-NULL cpu_current()->current. */
     if (thread_secondary_init_idle("idle/1") != 0) {
@@ -358,7 +358,7 @@ void secondary_main(struct cpu *self)
 
     __asm__ volatile("msr daifclr, #2" ::: "memory");
 
-    /* Chapter 89 — instead of WFI-only, enter the per-CPU idle
+    /* Chapter 90 — instead of WFI-only, enter the per-CPU idle
      * loop: wfi until an IRQ (timer tick or IPI_RESCHED) arrives,
      * then yield to whichever thread the runqueue points at.
      * cpu_idle_loop never returns. */
@@ -484,7 +484,7 @@ void smp_init_with_dtb(const void *dtb)
      * the kernel to boot so we can debug from a usable shell. */
     serial_puts("[smp] waiting for secondaries to report ready ...\n");
 
-    /* Chapter 87 — CPU 0's share of the SMP atomic smoke test.
+    /* Chapter 88 — CPU 0's share of the SMP atomic smoke test.
      * Done HERE, between the PSCI loop and the spin-wait, so
      * CPU 0 is incrementing the counter while the secondaries
      * are doing the same.  Each secondary increments BEFORE
@@ -511,14 +511,14 @@ void smp_init_with_dtb(const void *dtb)
             }
             smp_smoke_verify(online);
 
-            /* Chapter 88 — IPI round-trip smoke.  By now every
+            /* Chapter 89 — IPI round-trip smoke.  By now every
              * READY secondary has unmasked IRQs and is sitting
              * in WFI waiting for an SGI; a PING from us should
              * bump its per-CPU receive counter within a handful
              * of microseconds. */
             ipi_smoke_test();
 
-            /* Chapter 89 — SMP scheduler smoke.  Spawn 4 kernel
+            /* Chapter 90 — SMP scheduler smoke.  Spawn 4 kernel
              * threads on CPU 1 and wait for all of them to run
              * to completion.  Proves end-to-end:
              *   - per-CPU runqueue accepts cross-CPU enqueues

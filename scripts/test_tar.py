@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_tar.py -- chapter 133a /bin/tar smoke test.
+"""scripts/test_tar.py -- chapter 191 /bin/tar smoke test.
 
 We just shipped /bin/tar (a ustar archive reader) and bundled
 the doomgeneric source tree into /bin/doomgeneric.tar via the
@@ -145,7 +145,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 133a] /bin/tar")
+    print("[chapter 191] /bin/tar")
     reformat_data()
     q = boot()
     s = conn()

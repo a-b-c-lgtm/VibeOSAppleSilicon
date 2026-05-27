@@ -1,5 +1,5 @@
 /*
- * kernel/core/tcp.c — milestone-55 TCPv4 (client side).
+ * kernel/core/tcp.c — TCPv4 (client side).
  *
  * Design notes:
  *
@@ -75,7 +75,7 @@ static int t_memeq(const void *a, const void *b, uint32_t n)
 #define TCP_CONN_CAP   16
 /* Receive window: also doubles as our SO_RCVBUF.  Larger windows
  * let a fast peer send more bytes per round trip before stalling
- * on our zero-window ACK.  At 4 KB the M63 browser was getting
+ * on our zero-window ACK.  At 4 KB the browser was getting
  * ~1 KB/s on HN's 38 KB index because each `<= 4 KB` chunk had
  * to wait for the peer's persist timer (~200 ms first probe,
  * doubling) between window-update opportunities.  32 KB cuts a
@@ -90,7 +90,7 @@ static int t_memeq(const void *a, const void *b, uint32_t n)
 #define TCP_TX_MAX     1400u      /* max payload bytes per outbound segment
                                      (under MSS by 60 bytes for safety) */
 
-/* Chapter 103: per-listener accept queue depth.  A listener can
+/* Chapter 105: per-listener accept queue depth.  A listener can
  * have up to this many fully-handshaked-but-not-yet-accepted
  * children queued.  Once the queue is full the next SYN_RECEIVED
  * -> ESTABLISHED promotion is dropped (the child is RSTed and
@@ -145,7 +145,7 @@ struct tcp_conn {
     /* Retransmission. */
     uint64_t last_tx_poll;     /* tcp_poll counter at last data TX */
 
-    /* Chapter 103 -- passive open.
+    /* Chapter 105 -- passive open.
      *
      * For a listener (state == TCP_LISTEN): `accept_q[0..accept_q_n)`
      * holds cids of fully-ESTABLISHED children waiting to be
@@ -165,13 +165,13 @@ struct tcp_conn {
     uint8_t  accept_q_n;
     int      parent_listen_cid;
 
-    /* Chapter 106b diag: per-conn counters to chase the 8 MiB
+    /* Chapter 110 diag: per-conn counters to chase the 8 MiB
      * amplification on a 38 KiB response.  Both reset by
      * alloc_conn's t_memset. */
     uint32_t dbg_rx_total;      /* bytes accepted into rx_buf this conn */
     uint32_t dbg_rx_next_log;   /* next 1 MiB threshold to print at */
     uint32_t dbg_rx_rejected;   /* data segments rejected by seq mismatch */
-    /* Chapter 106b: how many times this conn's RTO-rewind fired.
+    /* Chapter 110: how many times this conn's RTO-rewind fired.
      * If non-zero on a successful fetch it is a strong signal
      * that TCP_RTX_THRESH (poll-iteration counter, not wall ms)
      * tripped under the in-desktop cooperative-yield load.
@@ -224,12 +224,12 @@ static int alloc_conn(void)
         if (!g_conns[i].valid) {
             t_memset(&g_conns[i], 0, sizeof(g_conns[i]));
             g_conns[i].valid = 1;
-            /* Chapter 103: default to "not a listener's child".
+            /* Chapter 105: default to "not a listener's child".
              * Cid 0 is a valid cid, so a literal 0 here would
              * misroute brand-new active-open conns to the slot-0
              * listener (if any) when we count children. */
             g_conns[i].parent_listen_cid = -1;
-            /* Chapter 106b diag: first 1 MiB threshold. */
+            /* Chapter 110 diag: first 1 MiB threshold. */
             g_conns[i].dbg_rx_next_log   = 1024u * 1024u;
             return i;
         }
@@ -240,7 +240,7 @@ static int alloc_conn(void)
 static void release_conn(int cid)
 {
     if (cid < 0 || cid >= TCP_CONN_CAP) return;
-    /* Chapter 106b diag: print the 4-tuple of the conn being
+    /* Chapter 110 diag: print the 4-tuple of the conn being
      * released, plus a small set of state counters.  Useful
      * for catching slot reuse and "who hung up first" bugs. */
     struct tcp_conn *c = &g_conns[cid];
@@ -288,7 +288,7 @@ static int find_conn_for_pkt(const uint8_t remote_ip[NET_IPV4_LEN],
     return -1;
 }
 
-/* Chapter 103: scan for a listener slot bound to `local_port`.
+/* Chapter 105: scan for a listener slot bound to `local_port`.
  * Used by tcp_handle when an inbound packet has no exact 4-tuple
  * match -- maybe it's the first SYN of a new connection to one
  * of our listeners.  Returns the listener's cid, or -1. */
@@ -304,7 +304,7 @@ static int find_listener_for_port(uint16_t local_port)
     return -1;
 }
 
-/* Chapter 103: count children (TCP_SYN_RECEIVED + queued
+/* Chapter 105: count children (TCP_SYN_RECEIVED + queued
  * accepted) attached to a given listener.  Used to enforce the
  * backlog cap on incoming SYNs without having to walk the queue
  * itself (the queue only holds promoted ESTABLISHED children;
@@ -386,7 +386,7 @@ static int tcp_tx(struct tcp_conn *c, uint8_t flags,
      * Source-address selection is loopback-aware: when the peer
      * is one of our own addresses, net_choose_src returns the
      * peer's address (so both halves of the conversation observe
-     * a symmetric 4-tuple).  See chapter 106 for the full story.
+     * a symmetric 4-tuple).  See chapter 108 for the full story.
      * The same `our_ip` MUST be used for the pseudo-header here
      * and for the IPv4 header in net_ipv4_send_from below -- a
      * mismatch would make the receiver drop the segment as
@@ -467,7 +467,7 @@ int tcp_connect(const uint8_t dst_ip[NET_IPV4_LEN], uint16_t dst_port)
     c->state       = TCP_SYN_SENT;
     c->last_tx_poll = g_poll_counter;
 
-    /* Chapter 106b diag: log every active open with its 4-tuple
+    /* Chapter 110 diag: log every active open with its 4-tuple
      * so the [tcp] rx_total lines can be cross-referenced to
      * "who connected to whom".  Helps disambiguate which slot
      * is the browser-to-httpd path vs httpd-to-host. */
@@ -493,7 +493,7 @@ int tcp_connect(const uint8_t dst_ip[NET_IPV4_LEN], uint16_t dst_port)
 }
 
 /* ----------------------------------------------------------------
- * Chapter 103 -- passive open
+ * Chapter 105 -- passive open
  * ---------------------------------------------------------------- */
 
 int tcp_listen(uint16_t local_port)
@@ -592,7 +592,7 @@ int tcp_recv(int cid, void *buf, uint32_t cap)
      * either the new window is now >= MSS, or we previously had
      * essentially nothing to advertise.
      *
-     * Without this, a userspace fetch like the M63 browser pulls
+     * Without this, a userspace fetch like the browser pulls
      * a 4-KB-window full, drains it locally, and then sits idle
      * waiting for the peer to probe again — which on Linux/macOS
      * starts at ~200 ms and doubles per probe.  For a 38 KB HN
@@ -600,7 +600,7 @@ int tcp_recv(int cid, void *buf, uint32_t cap)
      * the ACK eagerly costs one 40-byte packet per call but
      * uncaps end-to-end throughput.
      *
-     * Chapter 106b — we also need to fire in TCP_FIN_WAIT_1 and
+     * Chapter 110 — we also need to fire in TCP_FIN_WAIT_1 and
      * TCP_FIN_WAIT_2.  serve_forward's splice issues
      * socket_shutdown(up) RIGHT after sending the request body
      * (so upstream knows we're done and can start streaming the
@@ -640,7 +640,7 @@ int tcp_close(int cid)
 
     if (c->reset) { release_conn(cid); return 0; }
 
-    /* Chapter 103: closing a listener releases it immediately.
+    /* Chapter 105: closing a listener releases it immediately.
      * Any children already promoted to TCP_ESTABLISHED and
      * waiting in the accept queue have to be flushed first --
      * leaking them would leak conn-table slots.  Half-open
@@ -742,7 +742,7 @@ static void apply_ack(struct tcp_conn *c, uint32_t ack)
      * and subtracting 1 leaves one trailing data byte stranded
      * in tx_buf permanently -- which drain_tx then ships at a
      * fresh seq number every poll, amplifying a 38 KiB response
-     * into megabytes on the peer.  See chapter 106b. */
+     * into megabytes on the peer.  See chapter 110. */
     uint32_t data_in_flight = in_flight;
     if (c->fin_sent && in_flight > c->tx_len) data_in_flight -= 1;
     uint32_t data_acked = acked < data_in_flight ? acked : data_in_flight;
@@ -799,7 +799,7 @@ void tcp_handle(const struct ipv4_hdr *ip,
 
     int cid = find_conn_for_pkt(ip->src, dst_port, src_port);
     if (cid < 0) {
-        /* Chapter 103: no exact 4-tuple match -- maybe this is
+        /* Chapter 105: no exact 4-tuple match -- maybe this is
          * the opening SYN of a brand-new connection to one of
          * our listeners.  Look for a TCP_LISTEN slot bound to
          * dst_port; if found and the packet is a pure SYN
@@ -868,7 +868,7 @@ void tcp_handle(const struct ipv4_hdr *ip,
     /* For all later states we expect ACK. */
     if (!(flags & TCP_FLAG_ACK)) return;
 
-    /* Chapter 103 -- SYN_RECEIVED: the peer's final handshake
+    /* Chapter 105 -- SYN_RECEIVED: the peer's final handshake
      * ACK has arrived.  Promote the child to ESTABLISHED and
      * push it onto its parent listener's accept queue.
      *
@@ -904,7 +904,7 @@ void tcp_handle(const struct ipv4_hdr *ip,
     apply_ack(c, seg_ack);
 
     /* Handle data payload (only if seg_seq matches rcv_nxt — no
-     * out-of-order buffering in this milestone). */
+     * out-of-order buffering yet). */
     uint32_t data_len = plen - hdr_len;
     if (data_len && seg_seq == c->rcv_nxt) {
         uint32_t free_rx = TCP_BUF_SIZE - c->rx_len;
@@ -913,7 +913,7 @@ void tcp_handle(const struct ipv4_hdr *ip,
             t_memcpy(c->rx_buf + c->rx_len, payload + hdr_len, take);
             c->rx_len  += take;
             c->rcv_nxt += take;
-            /* Chapter 106b diag: log a serial line each time
+            /* Chapter 110 diag: log a serial line each time
              * a conn's accepted-data total crosses a 1 MiB
              * threshold.  If the browser claims to read 8 MiB
              * on a fetch where httpd wrote 38 KiB, this line
@@ -1029,7 +1029,7 @@ void tcp_poll(void)
          * fail with -EMFILE -- exactly the symptom hit by the
          * browser when navigating between many pages.
          *
-         * The `rx_len == 0` guard was added in chapter 106:
+         * The `rx_len == 0` guard was added in chapter 108:
          * loopback delivers the peer's full echo plus FIN in a
          * single net_poll drain cycle, which means we hit
          * CLOSED before user code has had a chance to drain
@@ -1051,7 +1051,7 @@ void tcp_poll(void)
             (g_poll_counter - c->last_tx_poll) > TCP_RTX_THRESH) {
             /* Walk back snd_nxt to snd_una and re-drain.
              *
-             * Chapter 106b: if the FIN was in-flight (peer never
+             * Chapter 110: if the FIN was in-flight (peer never
              * ACKed it), the rewind drops it -- tcp_drain_tx's
              * FIN gate is `!fin_sent`, so it WON'T re-emit.
              * Clear fin_sent so the gate re-fires after the data
@@ -1079,7 +1079,7 @@ void tcp_poll(void)
             c->dbg_rtx_fired++;
         }
 
-        /* Chapter 103: retransmit SYN+ACK if SYN_RECEIVED is
+        /* Chapter 105: retransmit SYN+ACK if SYN_RECEIVED is
          * idle too long.  The peer may have lost our SYN+ACK
          * and is waiting on its own SYN-retransmit timer, but
          * sending it again can't hurt -- if the peer already

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_hellowsd.py — chapter 108d smoke test.
+"""scripts/test_hellowsd.py — chapter 117 smoke test.
 
 Where `scripts/test_wsd_hello.py` exercises wsd through
 `/bin/wmtest` (a one-shot CLI that speaks the wire protocol
@@ -19,7 +19,7 @@ What this pins
 
   1. init's supervisor launches /bin/wsd (carried over from
      test_wsd_hello).
-    2. wsd's chapter 108d start banner appears (this slice retires the
+    2. wsd's chapter 117 start banner appears (this slice retires the
      kernel compositor; wsd is now the sole owner of the
      scanout and SYS_FB_PRESENT pushes pixels to virtio-gpu).
   3. Shell prompt is reached.
@@ -36,7 +36,7 @@ What this pins
      px=0xff7755aa' -- proves the painted bytes survived the
      wsd compose path and that the window-local-to-scanout
      translation used the post-MOVE position offset by the
-     24-px title bar height (chapter 108e).
+     24-px title bar height (chapter 118).
   8. hellowsd's final '[hellowsd] PASS' -- proves DESTROY
      ran cleanly and the process exited 0.
 
@@ -46,7 +46,7 @@ What this does NOT pin
 No screen-survival check via virtio-gpu readback: the
 wsd-side readback in the damage log line is the only
 verification that runs synchronously with the blit.  In
-In chapter 108d the kernel `compose_all` is retired entirely,
+In chapter 117 the kernel `compose_all` is retired entirely,
 so unlike earlier transitional slices the painted pixels DO persist on the
 scanout afterward — a future screenshot-based test
 will verify that, but this one only walks the wire
@@ -153,13 +153,13 @@ def main():
             return rc
         print("PASS: init launched /bin/wsd")
 
-        # 2. wsd's starting banner for chapter 108d
+        # 2. wsd's starting banner for chapter 117
         #    (kernel compositor retired; wsd is
         #    now the sole owner of the scanout and pushes
         #    pixels via SYS_FB_PRESENT).
-        log = wait_for(ser, b"[wsd] starting (chapter 108d)",
+        log = wait_for(ser, b"[wsd] starting (chapter 117)",
                        15.0, baseline=log)
-        if b"[wsd] starting (chapter 108d)" not in log:
+        if b"[wsd] starting (chapter 117)" not in log:
             print("FAIL: wsd starting banner missing")
             print(log[-2000:].decode("ascii", "replace"))
             return rc
@@ -198,7 +198,7 @@ def main():
             return rc
         print("PASS: wmclient connected and completed HELLO")
 
-        # 7. wmclient window-creation line.  Chapter 108d:
+        # 7. wmclient window-creation line.  Chapter 117:
         #    boot auto-launches desktop (full-screen, _at), taskbar
         #    (_at), and launcher (also _at, anchored above the
         #    taskbar as a Start-menu panel).  wsd's cascade is

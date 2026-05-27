@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_tablet.py — milestone-41 smoke test.
+"""scripts/test_tablet.py — tablet smoke test.
 
 Boots the kernel headless with virtio-keyboard + virtio-tablet,
 launches the `paint` userspace demo via the virtio-keyboard, drives
@@ -36,7 +36,7 @@ ABS_MAX = 0x7FFF
 # Match wm.c / paint.c.
 WIN_W   = 600
 WIN_H   = 400
-# chapter 108e — wsd paints a 24-px title bar above each
+# chapter 118 — wsd paints a 24-px title bar above each
 # decorated window.  Paint is decorated (flags = 0), so its
 # body starts at WIN_Y + TITLE_H.  Paint still quits on ESC.
 TITLE_H = 24
@@ -211,7 +211,7 @@ def main():
         print("PASS: tablet + WM probed, shell ready")
 
         # Spawn paint via the serial socket (sh's actual stdin).
-        # Since M51 the launcher window auto-focuses at boot, so QMP
+        # Since the launcher window auto-focuses at boot, QMP
         # keystrokes go to the launcher (mouse-only) and never reach
         # sh.  Routing through serial bypasses the WM input path.
         ser.sendall(b"paint\n")
@@ -253,7 +253,7 @@ def main():
 
         close_x = WIN_X + WIN_W - 10
         close_y = WIN_Y + 10
-        # Chapter 108d: no decoration / close button --
+        # Chapter 117: no decoration / close button --
         # paint quits on ESC.  Click inside paint first to make
         # sure wsd focuses it, then send ESC via virtio-keyboard.
         # The earlier drag block already left-clicked inside paint
@@ -278,7 +278,7 @@ def main():
             print(f"FAIL: window was not closed (centre still {after})"); return 1
         print(f"PASS: close via ESC worked (centre {post_centre} -> {after})")
 
-        print("\nMILESTONE 41: ALL TESTS PASSED")
+        print("\nALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

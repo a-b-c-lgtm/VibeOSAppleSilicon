@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_wsd_browser_resize.py — chapter 108e bug #3.
+"""scripts/test_wsd_browser_resize.py — chapter 118 bug #3.
 
 Exercise the asynchronous-repaint resize path that fails for
 notepad-style tests.  Browser handles GUI_EVENT_RESIZE by:

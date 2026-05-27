@@ -1,5 +1,5 @@
 /*
- * userspace/gui_term/gui_term.c — chapter 79b rewrite.
+ * userspace/gui_term/gui_term.c — chapter 79 rewrite.
  *
  * Synopsis: gui_term is a terminal in a window.  Pre-79b it was
  * a one-shot command runner: read a line of input from the
@@ -33,7 +33,7 @@
  *     lines deep, set by HISTORY_ROWS); there is NO disk-
  *     backed scrollback yet.
  *   - No SIGTSTP / Ctrl-Z; SIGSTOP doesn't exist as a signum
- *     yet.  Lands with chapter 79.
+ *     yet.  Lands with chapter 78.
  *   - One terminal emulator per gui_term process; no `tmux`-
  *     style multiplexing.
  */
@@ -276,7 +276,7 @@ static void render(void)
             draw_text(&g_win.fb, GUTTER_X, cur_y, cur_line,
                       FG_BGRA, BG_BGRA, 1);
         }
-        /* Block cursor at the end of cur_line. Chapter 102 --
+        /* Block cursor at the end of cur_line. Chapter 104 --
          * the proportional kernel font means we measure the
          * rendered width rather than counting characters * 8. */
         uint32_t cur_x = (uint32_t)GUTTER_X;
@@ -414,7 +414,7 @@ int main(int argc, char **argv)
                     scroll_offset = 0;
                     render();
                 }
-                /* Chapter 108 -- Ctrl-V pastes the system
+                /* Chapter 113 -- Ctrl-V pastes the system
                  * clipboard onto the shell's stdin.  Ctrl-C
                  * stays SIGINT (line discipline routes 0x03
                  * to the foreground pgid via the pty); Ctrl-V

@@ -1,5 +1,5 @@
 /*
- * userspace/libgui/draw.c — chapter 108c fontd client + text
+ * userspace/libgui/draw.c — chapter 116 fontd client + text
  * rendering.
  *
  * Shape of this file
@@ -22,7 +22,7 @@
  * Why persistent connection (not per-request)
  * -------------------------------------------
  *
- * Chapter 108b learned the hard way that opening + closing a
+ * Chapter 115 learned the hard way that opening + closing a
  * srv_connect per glyph is the wrong shape: every cache miss
  * costs an srv_connect + handshake + close cycle.  For the
  * kernel WM that meant a measurable per-frame stall whenever
@@ -34,7 +34,7 @@
  *
  * The trade-off: while g_conn is held open, fontd's accept
  * loop is parked in `read(g_conn)` on this client (chapter
- * 108b's single-connection model).  Chapter 108c upgrades
+ * 108b's single-connection model).  Chapter 116 upgrades
  * fontd to spawn a worker thread per accepted conn so the
  * other clients (kernel WM + every GUI app) aren't serialised
  * behind each other.  See userspace/fontd/fontd.c.
@@ -85,8 +85,8 @@
 
 /* GCC's optimiser may pattern-match the `(struct) { 0 }` init
  * below into a call to memset; freestanding userspace has no
- * libc-memset.  Provide a private one.  Same trap that bit
- * milestone 19 (and is documented in
+ * libc-memset.  Provide a private one.  Same trap from the
+ * early printf chapter (and documented in
  * /memories/freestanding-c-memset-trap.md). */
 static __attribute__((used)) void *memset(void *dst, int c, size_t n)
 {

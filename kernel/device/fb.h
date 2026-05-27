@@ -1,5 +1,5 @@
 /*
- * kernel/device/fb.h — framebuffer abstraction (milestone 38).
+ * kernel/device/fb.h — framebuffer abstraction.
  *
  * The framebuffer is a contiguous, physically-allocated B8G8R8X8 pixel
  * buffer that the virtio-gpu driver has bound as the active scanout.

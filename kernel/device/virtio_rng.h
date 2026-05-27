@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_rng.h — chapter 112 entropy source.
+ * kernel/device/virtio_rng.h — chapter 123 entropy source.
  *
  * Spec reference: virtio v1.2 §5.4 (entropy device, device id 4).
  * On the QEMU `virt` board we attach

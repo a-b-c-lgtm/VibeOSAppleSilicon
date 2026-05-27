@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_notepad.py — milestone-43 smoke test.
+"""scripts/test_notepad.py — notepad smoke test.
 
 Boots headless, opens notepad with /tmp/np.txt as the file path,
 types some text, presses Ctrl-S to save, and then re-opens the
@@ -21,7 +21,7 @@ FB_H = 800
 # launcher auto-runs at boot but uses wm_create_window_at (anchored
 # above the taskbar as a Start-menu panel), which does NOT advance
 # the cascade.  notepad spawned next is therefore the first cascade
-# client and lands at slot 0 -> (100,100).  chapter 108e paints a
+# client and lands at slot 0 -> (100,100).  chapter 118 paints a
 # 24-px title bar above each decorated body.
 WIN_X, WIN_Y = 100, 100
 WIN_W, WIN_H = 720, 440
@@ -183,7 +183,7 @@ def main():
         print("PASS: shell ready")
 
         # Spawn notepad via the serial socket (sh's actual stdin).
-        # Since M51 the launcher window auto-focuses at boot, so QMP
+        # Since the launcher window auto-focuses at boot, QMP
         # keystrokes go to the launcher (mouse-only) and never reach
         # sh.  Routing through serial bypasses the WM input path.
         ser.sendall(b"notepad /tmp/np.txt\n")
@@ -248,7 +248,7 @@ def main():
             return 1
         print("PASS: saved file round-trips through cat")
 
-        print("\nMILESTONE 43: ALL TESTS PASSED")
+        print("\nALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

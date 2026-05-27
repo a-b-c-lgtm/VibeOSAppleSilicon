@@ -1,5 +1,5 @@
 /*
- * kernel/core/dhcp.c \u2014 milestone-54 DHCPv4 client.
+ * kernel/core/dhcp.c \u2014 DHCPv4 client.
  *
  * The minimum implementation that can hold a conversation with
  * a DHCP server: build DISCOVER, parse OFFER, build REQUEST,

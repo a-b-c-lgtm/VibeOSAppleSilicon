@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_blk.c — milestone-11 virtio-blk driver.
+ * kernel/device/virtio_blk.c — virtio-blk driver.
  *
  * What this driver does
  * ---------------------
@@ -34,7 +34,7 @@
  *  - No multi-sector transfers.  blk_read_n() would build a
  *    multi-segment data descriptor or use VIRTIO_BLK_F_SEG_MAX.
  *
- * The point of milestone 11 is to prove that the kernel can talk
+ * The point of this driver is to prove that the kernel can talk
  * to a real device on a real device tree using a real DMA-style
  * shared-memory transport.  Once that works, layering a real
  * filesystem on top is "just" code.
@@ -258,7 +258,7 @@ int virtio_blk_init(void)
      * slot it can find, the second (hd1) to the next one down,
      * and so on.  A low-to-high walk would therefore enumerate
      * the data disk before the kernel disk and break OSFS-1's
-     * "I'm always on dev 0" assumption.  See chapter 81 for the
+     * "I'm always on dev 0" assumption.  See chapter 82 for the
      * post-mortem on this trap. */
     for (int s = (int)VIRTIO_MMIO_SLOTS - 1; s >= 0; s--) {
         if (g_dev_count >= VIRTIO_BLK_MAX_DEVS) break;

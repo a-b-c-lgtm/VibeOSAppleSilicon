@@ -1,4 +1,4 @@
-/* userspace/libc/sys/time.h — chapter 132f.
+/* userspace/libc/sys/time.h — chapter 186.
  *
  * Pure compatibility shim.  All the real machinery (struct
  * timeval, gettimeofday) lives in <syscall.h> alongside the

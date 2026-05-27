@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_doom_pilot.py -- chapter 133c first doom .o
+"""scripts/test_doom_pilot.py -- chapter 193 first doom .o
 in-guest.
 
 Phase 6 of guest-gcc bring-up.  The earlier chapters proved
@@ -169,7 +169,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 133c] first doom .o files compiled in-guest")
+    print("[chapter 193] first doom .o files compiled in-guest")
     reformat_data()
     q = boot()
     s = conn()

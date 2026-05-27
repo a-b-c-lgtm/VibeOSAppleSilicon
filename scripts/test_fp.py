@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_fp.py — chapter 129 FP/SIMD-at-EL0 regression.
+"""scripts/test_fp.py — chapter 171 FP/SIMD-at-EL0 regression.
 
 Boots the kernel, waits for the shell prompt, runs the `fptest`
 binary, and looks for "all checks passed" with no FAIL lines.

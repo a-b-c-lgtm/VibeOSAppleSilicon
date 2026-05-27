@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_ld_input.py -- chapter 131f debug.
+"""scripts/_dbg_ld_input.py -- chapter 180 debug.
 
 Reproduces the test_bin_ld_ar.py failure where /bin/ld
 (GNU binutils-2.44 cross-built) reports
@@ -114,7 +114,7 @@ def send_cmd(s, cmd, timeout=15.0):
 
 
 def main():
-    print("[chapter 131f debug] /bin/ld input bfd diagnostic")
+    print("[chapter 180 debug] /bin/ld input bfd diagnostic")
     reformat_data()
     q = boot()
     s = conn()

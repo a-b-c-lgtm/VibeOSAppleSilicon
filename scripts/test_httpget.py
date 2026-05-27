@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""scripts/test_httpget.py \u2014 milestone-56 socket-syscall smoke test.
+"""scripts/test_httpget.py — socket-syscall smoke test.
 
 End-to-end exercise of the new userspace TCP client path:
 
-  1. Boot the kernel (which auto-runs its M55 TCP self-test on
-     port 8888 \u2014 we let that succeed first so we know the
+  1. Boot the kernel (which auto-runs its in-kernel TCP self-test
+     on port 8888 — we let that succeed first so we know the
      kernel side is fine).
   2. Wait for the shell prompt.
   3. Type `httpget 10.0.2.2 8888 /m56`, where the host's HTTP
@@ -16,7 +16,7 @@ Passing this test means a userspace process can:
   - call SYS_SOCKET_CONNECT and get back a real fd,
   - issue ordinary write()/read()/close() against that fd,
   - receive bytes that traveled all the way through the
-    M51\u2013M55 networking stack and into a user buffer.
+    networking stack and into a user buffer.
 """
 import http.server, os, select, socket, subprocess, sys, threading, time
 
@@ -116,12 +116,12 @@ def main():
     try:
         ser = conn()
 
-        # First, let the kernel's own M55 self-test run to completion
-        # \u2014 that proves the network stack is up and avoids racing
+        # First, let the kernel's own TCP self-test run to completion
+        # — that proves the network stack is up and avoids racing
         # against DHCP / ARP from the userspace command.
         log = wait_for(ser, b"TCP close complete", 45.0)
         if b"TCP close complete" not in log:
-            print("FAIL: kernel M55 self-test never finished")
+            print("FAIL: kernel TCP self-test never finished")
             print(log[-2000:].decode("ascii","replace")); return 1
         print("PASS: kernel TCP self-test completed")
 
@@ -150,7 +150,7 @@ def main():
             return 1
         print("PASS: httpget printed byte count summary")
 
-        print("\nMILESTONE 56 (sockets+httpget): ALL TESTS PASSED")
+        print("\nsockets+httpget: ALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

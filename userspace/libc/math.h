@@ -4,7 +4,7 @@
  * DoomGeneric's libm surface is tiny: r_main.c calls sin(),
  * tan(), atan() once each at renderer init to build finetangent
  * tables, and v_video.c calls fabs() once for a mouse-acceleration
- * dead-zone check.  See chapter 130a for the audit.
+ * dead-zone check.  See chapter 172 for the audit.
  *
  * Header-only / static-inline:
  *
@@ -157,7 +157,7 @@ static inline double atan(double x)
     return r;
 }
 
-/* Chapter 131d — `ldexp` / `frexp`.
+/* Chapter 178 — `ldexp` / `frexp`.
  *
  * Direct IEEE-754 bit-fiddling on the 11-bit biased exponent.
  * libiberty's floatformat.c is the only caller in binutils-2.44

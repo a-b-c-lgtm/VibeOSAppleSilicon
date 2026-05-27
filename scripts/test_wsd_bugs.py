@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_wsd_bugs.py — chapter 108e follow-up bug #1.
+"""scripts/test_wsd_bugs.py — chapter 118 follow-up bug #1.
 
 Regression test for the wallpaper-raise bug the user reported
 against the wsd chapter-109 work:

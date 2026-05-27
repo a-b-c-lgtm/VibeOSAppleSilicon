@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_resize_log.py -- chapter 108e resize bring-up.
+"""scripts/_dbg_resize_log.py -- chapter 118 resize bring-up.
 
 Boots, spawns notepad, drags the grip, and dumps the serial
 log so we can see whether [wsd] resize / [win_fb] resize /

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verbose serial-capture probe for chapter 114 echofs write/listdir
+"""Verbose serial-capture probe for chapter 140 echofs write/listdir
 failures.  Spawns QEMU, prints raw serial between each step.  Kept
 per debug-scripts-policy memory."""
 import os, socket, subprocess, sys, time, select

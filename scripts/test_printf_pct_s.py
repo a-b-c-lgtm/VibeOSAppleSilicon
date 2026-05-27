@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """scripts/test_printf_pct_s.py — minimal repro for the
-printf("%s\\n", ptr) truncation we hit in milestone 58.
+printf("%s\n", ptr) truncation we hit in the URL parser chapter.
 
 We boot, drop to a shell, and run two tools that exercise
 printf with %s on heap- and stack-resident strings:

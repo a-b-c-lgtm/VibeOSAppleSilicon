@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_hn_repeat.py -- chapter 106b GUI-perf repro.
+"""scripts/test_browser_hn_repeat.py -- chapter 110 GUI-perf repro.
 
 The original scripts/test_browser_hn_timings.py drives proxytest in
 its default single-fetch mode (`--once` httpd, one browser).  That

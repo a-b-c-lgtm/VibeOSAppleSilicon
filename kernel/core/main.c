@@ -1,7 +1,7 @@
 /* main.c — kernel C entry point.
  *
- * Milestone 6: DTB-driven memory discovery + 4 KiB page allocator.
- * The previous milestones reserved 16 MiB of heap statically in
+ * DTB-driven memory discovery + 4 KiB page allocator.
+ * Earlier in the book we reserved 16 MiB of heap statically in
  * the linker script.  That is fine for a smoke test but does not
  * scale: real systems learn their physical-memory layout from the
  * device tree the firmware passed to them.
@@ -77,9 +77,9 @@ static inline void irqs_enable(void)
 }
 
 /* ----------------------------------------------------------------
- * Milestone-53 net stack smoke test.
+ * Net stack smoke test.
  *
- * Replaces the milestone-52 hand-rolled ARP test.  We now have
+ * Replaces the hand-rolled ARP test from the driver chapter.  We now have
  * a real Ethernet/ARP/IPv4 stack in `kernel/core/net.{c,h}`, so
  * the test exercises THAT instead of poking the driver directly:
  *
@@ -90,7 +90,7 @@ static inline void irqs_enable(void)
  *      cache (or the budget runs out).
  *   3. Print the learned MAC.
  *
- * Once milestone 54 lands (ICMP echo) we'll go further and
+ * Once ICMP echo lands we'll go further and
  * actually `ping` the gateway over the new stack.
  * ---------------------------------------------------------------- */
 
@@ -145,7 +145,7 @@ static void net_self_test(void)
     }
 
     /* Phase 3: prove the stack works end-to-end.  ARP-resolve
-     * the gateway and report its MAC.  This is the milestone-53
+     * the gateway and report its MAC.  This is the net stack
      * self-test, run unchanged on whichever IP we ended up
      * with. */
     serial_puts("[net] self-test: ARP resolve gateway\n");
@@ -163,7 +163,7 @@ static void net_self_test(void)
     }
     serial_puts("\n[net] self-test: ARP cache populated (stack OK)\n");
 
-    /* Phase 4 (M54): ping the gateway.  SLIRP's pseudo-host
+    /* Phase 4: ping the gateway.  SLIRP's pseudo-host
      * answers ICMP echo requests addressed to itself, so this
      * exercises the full IPv4+ICMP TX/RX path through our
      * stack \u2014 not just ARP at L2. */
@@ -183,7 +183,7 @@ static void net_self_test(void)
     else
         serial_puts("[net] self-test: no ICMP reply (gateway may drop pings)\n");
 
-    /* Phase 5 (M55): exercise TCP end-to-end against an HTTP
+    /* Phase 5: exercise TCP end-to-end against an HTTP
      * server the test harness brings up on the host's port
      * 8888.  SLIRP forwards 10.0.2.2:8888 to the host's
      * 127.0.0.1:8888.  When the harness isn't running, the SYN
@@ -234,7 +234,7 @@ static void net_self_test(void)
         }
     }
 
-    /* Phase 6 (M57): exercise DNS by resolving a fixed name.
+    /* Phase 6: exercise DNS by resolving a fixed name.
      * SLIRP's built-in DNS server (10.0.2.3) forwards queries
      * to the host's resolver, so this is a real round-trip
      * through the host's DNS path.  We use "example.com" as a
@@ -257,7 +257,7 @@ static void net_self_test(void)
         serial_puts("[net] self-test: DNS resolve failed (network restricted?)\n");
     }
 
-    /* Phase 7 (chapter 103 / M92): passive open.
+    /* Phase 7 (chapter 105): passive open.
      *
      * Bring up a TCP listener on port 8088, then wait briefly
      * for an external SYN.  The test harness (scripts/
@@ -402,7 +402,7 @@ static void preemption_demo(void)
     serial_puts("[thread] all workers reaped\n\n");
 }
 
-/* Chapter 82 — OSFS-2 background flusher.
+/* Chapter 83 — OSFS-2 background flusher.
  *
  * The write-back cache lets userspace defer durability until
  * fsync(), but well-behaved apps shouldn't be the only safety
@@ -447,7 +447,7 @@ static void osfs2_flusher_start(void)
 }
 
 /*
- * userspace_demo — milestone-9 smoke test.
+ * userspace_demo — first user-program smoke test.
  *
  * The boot thread is a kernel thread; it cannot call SYS_SPAWN
  * itself.  So we hand-roll the moral equivalent here for the
@@ -456,7 +456,7 @@ static void osfs2_flusher_start(void)
  * SYS_SPAWN/SYS_WAIT to run the rest of the demo (hello, cat).
  *
  * Yields until /bin/init exits — this idle loop replaces the
- * older one-program-at-a-time helper from milestone 8.
+ * older one-program-at-a-time helper used earlier in bring-up.
  */
 static void userspace_demo(void)
 {
@@ -524,7 +524,7 @@ void kernel_main(uint64_t dtb_phys)
 
     serial_puts("\n");
     serial_puts("============================================================\n");
-    serial_puts("osdev aarch64 — milestone 38 (virtio-gpu framebuffer)\n");
+    serial_puts("osdev aarch64 — virtio-gpu framebuffer\n");
     serial_puts("============================================================\n");
 
     serial_puts("dtb_phys = ");
@@ -574,7 +574,7 @@ void kernel_main(uint64_t dtb_phys)
         serial_puts("\n");
     }
 
-    /* Chapter 95 — wall-clock subsystem.  Reads the PL031 RTC
+    /* Chapter 96 — wall-clock subsystem.  Reads the PL031 RTC
      * once and pairs it with the current tick count.  Failure is
      * non-fatal: walltime_now_us still works and counts from
      * epoch (which makes timestamps look like 1970, an obvious
@@ -679,7 +679,7 @@ void kernel_main(uint64_t dtb_phys)
     kheap_init(heap_base, HEAP_BYTES);
     serial_puts("ok\n");
 
-    /* Chapter 75 \u2014 init the per-frame refcount table used by the
+    /* Chapter 74 \u2014 init the per-frame refcount table used by the
      * COW fork.  Cover the entire DRAM extent reported by FDT so
      * any PA pmem might hand out is in-range.  Storage is ~2
      * bytes per 4 KiB frame (= 4 MiB for 8 GiB DRAM); paid out
@@ -699,7 +699,7 @@ void kernel_main(uint64_t dtb_phys)
     }
 
     serial_puts("initialising thread bookkeeping ... ");
-    /* Chapter 89 — pre-register the boot CPU's struct cpu slot
+    /* Chapter 90 — pre-register the boot CPU's struct cpu slot
      * and write TPIDR_EL1 so that thread_init() can use
      * cpu_current()->current to install the boot thread.  Without
      * this, cpu_current() dereferences a still-zero TPIDR_EL1.
@@ -709,17 +709,17 @@ void kernel_main(uint64_t dtb_phys)
     thread_init();
     serial_puts("ok\n");
 
-    /* Chapter 86 — wake the secondary CPUs.  Done before VFS so
+    /* Chapter 87 — wake the secondary CPUs.  Done before VFS so
      * the [smp] log block sits cleanly between the memory/heap
      * setup and the device probe section.  Secondaries park in
-     * WFE forever for now; chapter 89 will give them real work. */
+     * WFE forever for now; chapter 90 will give them real work. */
     smp_init_with_dtb((const void *)(uintptr_t)dtb_addr);
 
     serial_puts("initialising VFS ... ");
     vfs_init();
     serial_puts("ok\n");
 
-    /* Chapter 90 \u2014 page cache.  Sits above blk_cache (and
+    /* Chapter 91 \u2014 page cache.  Sits above blk_cache (and
      * above raw ramfs blob copies); fed lazily by the mmap
      * fault handler.  Init order: VFS first (we just announced
      * ramfs files), page cache second (so any later boot stage
@@ -736,13 +736,13 @@ void kernel_main(uint64_t dtb_phys)
         } else {
             serial_puts("none\n");
         }
-        /* Probe hd1 for OSFS-2 (writable, chapter 81+).  The
+        /* Probe hd1 for OSFS-2 (writable, chapter 82+).  The
          * driver bails harmlessly if the second virtio-blk
          * device is absent or unformatted. */
         serial_puts("mounting OSFS-2 from hd1 ... ");
         if (osfs2_init() == 0) {
             serial_puts("ok\n");
-            /* Chapter 82 — only init the write-back cache once we
+            /* Chapter 83 — only init the write-back cache once we
              * know OSFS-2 actually mounted.  Without OSFS-2 the
              * cache would never be touched, so this is purely
              * cosmetic, but it keeps the boot log honest.
@@ -766,14 +766,14 @@ void kernel_main(uint64_t dtb_phys)
     if (virtio_gpu_init() == 0) {
         serial_puts("ok\n");
         if (fb_init() == 0) {
-            /* Chapter 108b -- the TTF rasteriser is no longer in
+            /* Chapter 115 -- the TTF rasteriser is no longer in
              * the kernel; it lives in /bin/fontd, started by init.
              * The boot screen below uses the bitmap font (the same
              * font panic and title-bar paths always used).  Once
              * init brings up fontd, wm_draw_text on userspace
              * windows switches over via the kernel-side font
              * client in kernel/core/wm_font.c. */
-            /* Paint the milestone-38 boot screen.  This is the first
+            /* Paint the boot screen.  This is the first
              * graphical artifact the project produces; if it shows up
              * the whole [pmem -> virtio-gpu -> RAM-backed framebuffer
              * -> font blit -> RESOURCE_FLUSH] pipeline is working. */
@@ -789,7 +789,7 @@ void kernel_main(uint64_t dtb_phys)
             fb_fill_rect(0, 32, fb->width, 1, FB_COLOR(0x60, 0x80, 0xC0));
 
             text_draw_string(font, 12, 8, fb->width, 32,
-                             "osdev / aarch64  -  milestone 38: virtio-gpu framebuffer",
+                             "osdev / aarch64  -  virtio-gpu framebuffer",
                              FB_COLOR_WHITE, FB_COLOR_BLACK,
                              1, NULL, NULL);
 
@@ -880,7 +880,7 @@ void kernel_main(uint64_t dtb_phys)
     /* random_init() seeds the kernel CSPRNG.  Runs unconditionally:
      * if virtio-rng was found it pulls the seed from there; if not
      * it falls back to CNTVCT_EL0, prints a loud warning, and marks
-     * the CSPRNG as `not strong` so TLS code (chapter 114+) can
+     * the CSPRNG as `not strong` so TLS code (chapter 140+) can
      * refuse to start. */
     random_init();
 

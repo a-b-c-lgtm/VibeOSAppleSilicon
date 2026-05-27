@@ -1,4 +1,4 @@
-/* userspace/sigtest2/sigtest2.c — chapter 128b regression for
+/* userspace/sigtest2/sigtest2.c — chapter 166 regression for
  * raise() and the expanded SIG* table.
  *
  * Exercises:

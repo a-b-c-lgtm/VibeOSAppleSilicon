@@ -1,5 +1,5 @@
 /*
- * kernel/core/pmem_refcount.c \u2014 chapter 75 COW refcount table.
+ * kernel/core/pmem_refcount.c \u2014 chapter 74 COW refcount table.
  *
  * One uint16_t per 4 KiB DRAM frame.  Index = (pa - dram_base) /
  * PAGE_SIZE.  Sized at boot; storage comes from kheap.

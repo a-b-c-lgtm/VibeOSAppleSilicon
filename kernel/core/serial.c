@@ -33,7 +33,7 @@
 #define FR_TXFF     (1u << 5)
 #define FR_RXFE     (1u << 4)
 
-/* Chapter 86 — once a secondary CPU is awake it can also call
+/* Chapter 87 — once a secondary CPU is awake it can also call
  * serial_puts/puthex/putc.  Without serialisation, two cores'
  * boot lines would interleave per-byte and the log would be
  * unreadable.  We use a recursive lock (reclock_t) so callers in

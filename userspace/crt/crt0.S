@@ -27,7 +27,7 @@
 .section .text._user_start, "ax"
 .global _user_start
 _user_start:
-    /* ── Chapter 131f — local-exec TLS bootstrap ────────────
+    /* ── Chapter 180 — local-exec TLS bootstrap ────────────
      * Real binutils (gas, ld) uses __thread variables (e.g.
      * bfd's _bfd_error_data) and the AArch64 local-exec TLS
      * model emits `mrs xN, tpidr_el0` + `add xN, xN, #imm`
@@ -53,7 +53,7 @@ _user_start:
     ldr     x0, [sp]            /* x0 = argc                          */
     add     x1, sp, #8          /* x1 = &argv[0]                      */
 
-    /* ── Chapter 120 — global constructors ──────────────────
+    /* ── Chapter 156 — global constructors ──────────────────
      * Walk pointers in [__init_array_start, __init_array_end)
      * and call each one before main.  The linker script
      * defines both bounds via PROVIDE_HIDDEN; if no
@@ -81,7 +81,7 @@ _user_start:
     bl      main
     mov     x19, x0             /* save main's return code */
 
-    /* ── Chapter 120 — atexit chain + global destructors ────
+    /* ── Chapter 156 — atexit chain + global destructors ────
      * __cxa_finalize(NULL) walks the atexit list (LIFO) and
      * the .fini_array section.  Defined as a `.weak` no-op
      * below so binaries that never registered any handler
@@ -106,7 +106,7 @@ _user_start:
 __cxa_finalize:
     ret
 
-/* ── Chapter 77 — signal-return trampoline ──────────────────
+/* ── Chapter 76 — signal-return trampoline ──────────────────
  *
  * deliver_signal sets the user-mode LR to this address before
  * eret'ing into the user's signal handler.  When the handler
@@ -135,7 +135,7 @@ __sigreturn_trampoline:
 1:  wfe
     b       1b
 
-/* ── Chapter 116a — process-global errno slot ──────────────
+/* ── Chapter 149 — process-global errno slot ──────────────
  *
  * Defined here so every userspace binary picks it up by virtue
  * of linking crt0.o, without having to thread an extra ERRNO_OBJ
@@ -154,7 +154,7 @@ __sigreturn_trampoline:
 __errno_value:
     .skip 4
 
-/* ── Chapter 131f — TLS storage for local-exec __thread vars ─
+/* ── Chapter 180 — TLS storage for local-exec __thread vars ─
  *
  * 64 KiB zero-initialised area, 16-byte aligned.  TPIDR_EL0 is
  * set to __tls_area_start at _user_start entry (above).  The

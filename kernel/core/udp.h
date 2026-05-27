@@ -1,15 +1,15 @@
 /*
- * kernel/core/udp.h \u2014 milestone-54 UDP/IPv4 (RFC 768).
+ * kernel/core/udp.h — UDP/IPv4 (RFC 768).
  *
  * Stateless: TX is a single function call, RX is a single
  * port-keyed callback.  Eight RX bindings simultaneously, one
- * per (port, callback) pair \u2014 enough for DHCP (port 68) plus
- * a couple of user-installable services (DNS in M55, a tiny
+ * per (port, callback) pair — enough for DHCP (port 68) plus
+ * a couple of user-installable services (DNS, a tiny
  * TFTP-style protocol if we ever want one).
  *
  * No socket layer, no buffering, no in-flight retransmits.
  * Those things live in the BSD-shaped socket layer that
- * milestone 55 adds for TCP \u2014 they are deliberately NOT a
+ * TCP uses — they are deliberately NOT a
  * UDP concern.
  */
 #ifndef KERNEL_CORE_UDP_H

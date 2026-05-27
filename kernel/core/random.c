@@ -1,5 +1,5 @@
 /*
- * kernel/core/random.c — kernel CSPRNG, chapter 112.
+ * kernel/core/random.c — kernel CSPRNG, chapter 123.
  *
  * Two-layer design:
  *
@@ -9,7 +9,7 @@
  *      of stack/heap addresses — enough to keep the boot path
  *      alive in test harnesses that don't add the device, but NOT
  *      cryptographically useful.  random_is_strong() returns 0 in
- *      that case so TLS code (chapter 114+) can refuse to start.
+ *      that case so TLS code (chapter 140+) can refuse to start.
  *
  *   2. Stretching: ChaCha20 keystream.  We keep a 256-bit key, a
  *      96-bit nonce (zeroed; the counter discriminates blocks

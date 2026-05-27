@@ -1,4 +1,4 @@
-/* ipi.c — chapter 88 inter-processor interrupt implementation.
+/* ipi.c — chapter 89 inter-processor interrupt implementation.
  *
  * This file owns three pieces of mechanism:
  *
@@ -165,7 +165,7 @@ int ipi_handle(uint32_t intid)
  * `[smp-ipi] cpu=N MISS` and keep going.
  *
  * No "FAIL" / "PANIC" / "FATAL" substring on either path because
- * the test harness greps for those (chapter 86 trap).
+ * the test harness greps for those (chapter 87 trap).
  * ------------------------------------------------------------------ */
 
 void ipi_smoke_test(void)
@@ -203,7 +203,7 @@ void ipi_smoke_test(void)
         if (got) {
             serial_puts(" OK round-trip\n");
         } else {
-            /* "MISS" not "FAIL" — chapter 86 rule. */
+            /* "MISS" not "FAIL" — chapter 87 rule. */
             serial_puts(" MISS (no ack within timeout)\n");
             all_ok = 0;
         }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/test_guest_ld.py — chapter 131e smoke test.
+# scripts/test_guest_ld.py — chapter 179 smoke test.
 #
 # NOT in scripts/sweep.sh.  Host-side toolchain sanity, run
 # manually after editing the wrapper, libc, or the libiberty
@@ -15,13 +15,13 @@
 #   2.  Each of those subdir configures runs cleanly when invoked
 #       directly with our controlled env (we bypass `make
 #       configure-XXX` for the same CFLAGS-whitespace reason as
-#       chapter 131d).
+#       chapter 178).
 #
 #   3.  `make all-ld` completes and produces the cross-built
 #       `ld/ld-new` binary as an aarch64 ELF executable.
 #
 # Build artefacts under build/binutils-build-guest-ld/ (separate
-# from chapter 131d's build/binutils-build-guest/ so the two
+# from chapter 178's build/binutils-build-guest/ so the two
 # tests don't poison each other).  Wiped on every run.
 
 import os
@@ -41,7 +41,7 @@ CACHE = os.path.join(ROOT, "scripts", "aarch64-osdev-configure.cache")
 # Order matters: bfd links against libsframe.la; libctf and
 # opcodes both build on bfd; gas needs bfd + opcodes;
 # ld is the umbrella.  We build BOTH ld-new and gas/as-new
-# (chapter 131f wires them into /bin/ld and /bin/as on the OSFS
+# (chapter 180 wires them into /bin/ld and /bin/as on the OSFS
 # image).
 SUBDIRS = [
     "libiberty",
@@ -91,11 +91,11 @@ def main():
         print(f"guest_ld: SKIP — crt0.o missing (run `make` first)")
         sys.exit(0)
 
-    # Chapter 131e — vendor archives (libiberty/strdup.c,
+    # Chapter 179 — vendor archives (libiberty/strdup.c,
     # cplus-dem.c, etc.) reference `extern malloc`, `extern
     # strlen`, `extern strcmp`, etc.  Our libc keeps those as
     # `static inline` in headers, so the externs are unresolved at
-    # ld's final link.  cstring.o (chapter 131e block) supplies
+    # ld's final link.  cstring.o (chapter 179 block) supplies
     # asm-renamed strong symbols for all of them; we pass it via
     # LIBS= to the ld make invocation below.  Pre-build it here so
     # the binutils Makefile sees an up-to-date .o.
@@ -132,7 +132,7 @@ def main():
     # assert() into ((void)0), matching binutils' own release
     # convention.
     #
-    # -DOSDEV_LIBC_NO_GLOBAL_DEFS: same guard chapter 130a's
+    # -DOSDEV_LIBC_NO_GLOBAL_DEFS: same guard chapter 172's
     # Doom port uses.  Suppresses atexit.h's __cxa_finalize body
     # and env.h's `environ` definition per-TU.  Without this,
     # every one of binutils' ~150 vendor TUs that includes
@@ -142,7 +142,7 @@ def main():
     # cstring.o provides a weak `environ` slot for lexsup.c's
     # extern reference.
     #
-    # -DOSDEV_LIBC_NO_GETOPT (chapter 131f): suppresses our libc's
+    # -DOSDEV_LIBC_NO_GETOPT (chapter 180): suppresses our libc's
     # `static char *optarg` / `static int optind` and the static
     # `getopt` body in every binutils TU.  gas/as.c references
     # `optarg` via libiberty's bundled include/getopt.h (extern
@@ -153,7 +153,7 @@ def main():
     # producing strcmp(NULL,"-") at gas/as.c:658 the first time a
     # non-option argv element is seen.  Flagging this globally
     # makes optarg/optind/optopt the single shared variable
-    # libiberty's getopt.c already defines (with chapter 131e's
+    # libiberty's getopt.c already defines (with chapter 179's
     # in-file OSDEV_LIBC_NO_GETOPT guard).
     env["CFLAGS"] = ("-mcpu=cortex-a72 -DNDEBUG "
                      "-DOSDEV_LIBC_NO_GLOBAL_DEFS "
@@ -193,7 +193,7 @@ def main():
 
     # Direct sub-configures with controlled env (bypassing
     # `make configure-XXX` to dodge the CFLAGS-whitespace bug
-    # documented in chapter 131d).
+    # documented in chapter 178).
     for sub in SUBDIRS:
         print(f"guest_ld: configuring {sub}...")
         sd = os.path.join(BUILD, sub)
@@ -234,7 +234,7 @@ def main():
         # Strip `-lz` from generated Makefile.  `--with-system-zlib`
         # bakes `ZLIB = -lz` into bfd/ld; we don't ship a libz.a
         # for aarch64-osdev (zlib.h is header-only static-inline,
-        # see chapter 131e).  The actual zlib calls are unreachable
+        # see chapter 179).  The actual zlib calls are unreachable
         # in the normal link path, so dropping the library is safe.
         mf = os.path.join(sd, "Makefile")
         if os.path.exists(mf):

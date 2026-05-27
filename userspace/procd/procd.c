@@ -1,5 +1,5 @@
 /*
- * userspace/procd/procd.c — chapter 114e userspace /proc daemon.
+ * userspace/procd/procd.c — chapter 145 userspace /proc daemon.
  *
  * Replaces the kernel's chapter-99 procfs.c.  Mounts /proc via
  * the chapter-114 userfs channel and serves the same file set

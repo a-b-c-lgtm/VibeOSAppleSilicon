@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_threads_smp.py — chapter 92 SMP thread smoke test.
+"""scripts/test_threads_smp.py — chapter 93 SMP thread smoke test.
 
 Boots the kernel with -smp 2, drops to /bin/sh, runs `threadtest2`,
 and asserts that:
@@ -122,7 +122,7 @@ def main():
             print("FAIL: no worker ran on CPU 1 (timer PPI?)"); return 1
         if b"[thread2] OK" not in log:
             print("FAIL: overall thread2 marker missing"); return 1
-        print("PASS: chapter 92 SMP thread smoke test "
+        print("PASS: chapter 93 SMP thread smoke test "
               f"(CPUs seen: {sorted(cpus_seen)})")
         return 0
     finally:

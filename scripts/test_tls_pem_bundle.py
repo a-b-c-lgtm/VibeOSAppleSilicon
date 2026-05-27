@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""scripts/test_tls_pem_bundle.py -- chapter 112f PEM ingest +
+"""scripts/test_tls_pem_bundle.py -- chapter 129 PEM ingest +
 recursive chain validation.
 
-Chapter 112e shipped /mnt/ca.bundle with the BearSSL sample
+Chapter 128 shipped /mnt/ca.bundle with the BearSSL sample
 INTERMEDIATE CAs as trust anchors.  That validated the leaf
 directly: one signature check, no recursion.
 
-Chapter 112f promotes the bundle's anchors to the BearSSL sample
+Chapter 129 promotes the bundle's anchors to the BearSSL sample
 ROOT CAs (cert-root-{rsa,ec}.pem, ingested via the new --pem
 mode in scripts/mkcabundle.py).  httpsd still serves the full
 chain leaf+intermediate, so the validator must now walk two
@@ -126,8 +126,8 @@ def main():
         print(f"FAIL: bundle magic = {bundle[:4]!r}, expected b'CAB1'")
         return 1
     count = int.from_bytes(bundle[4:8], "little")
-    # Chapter 112f shipped exactly the two BearSSL sample roots
-    # (count == 2).  Chapter 112g folds the host's public CA list
+    # Chapter 129 shipped exactly the two BearSSL sample roots
+    # (count == 2).  Chapter 130 folds the host's public CA list
     # in alongside them, so count is now "at least 2".  The
     # bearssl-only minimum is what proves the 112f code path:
     # recursive chain validation against a root-only anchor list.
@@ -210,7 +210,7 @@ def main():
             return 1
         print("PASS: ECDSA leaf validated via 2-link chain walk to root anchor")
 
-        print("PASS: chapter 112f PEM ingest + recursive chain walk")
+        print("PASS: chapter 129 PEM ingest + recursive chain walk")
         return 0
     finally:
         q.kill()

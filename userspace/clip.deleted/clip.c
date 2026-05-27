@@ -1,5 +1,5 @@
 /*
- * userspace/clip/clip.c — chapter 108 CLI for the clipboard.
+ * userspace/clip/clip.c — chapter 113 CLI for the clipboard.
  *
  * Three subcommands, modelled on `xclip` / `pbcopy` / `pbpaste`:
  *
@@ -83,7 +83,7 @@ static int cmd_set_from_stdin(void)
     static char buf[CLIP_DATA_MAX];
     size_t off = 0;
     /* Read until EOF or buffer full.  read() returns 0 on EOF
-     * from a pipe (chapter 39).  No newline magic -- we forward
+     * from a pipe (chapter 38).  No newline magic -- we forward
      * bytes verbatim, including a trailing newline if the caller
      * piped one in (echo's default). */
     for (;;) {

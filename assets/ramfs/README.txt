@@ -1,4 +1,4 @@
-README — milestone 8 ramfs.
+README — ramfs.
 
 This is a second file in the ramfs, mostly here to prove the
 file table can hold more than one entry. Add new files by

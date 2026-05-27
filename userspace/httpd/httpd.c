@@ -1,13 +1,13 @@
 /*
- * userspace/httpd/httpd.c -- chapters 105 + 106a HTTP server.
+ * userspace/httpd/httpd.c -- chapters 107 + 106a HTTP server.
  *
- * Chapter 105 / M94: single-threaded accept loop on top of the
+ * Chapter 107: single-threaded accept loop on top of the
  * chapter-104 `socket_listen` / `socket_accept` syscalls.  Serves
  * arbitrary paths out of the VFS read-only: the URL
  * `GET /mnt/hello.txt` opens the kernel path `/mnt/hello.txt` and
  * streams the bytes back as the response body.
  *
- * Chapter 106a / M96: when a request comes in for a path that is
+ * Chapter 109: when a request comes in for a path that is
  * NOT a local VFS prefix (/mnt/, /data/, /proc/), httpd opens a
  * TCP connection to a configurable upstream (default
  * 10.0.2.2:8080 -- scripts/https_proxy.py on the host) and
@@ -39,11 +39,11 @@
  * `--once` exists so the regression harness can spin httpd up,
  * issue one GET, and let it tear itself down -- we don't have
  * Ctrl-C or signals from the test side yet.  Same pattern as
- * chapter 104's echod.
+ * chapter 106's echod.
  *
  * What this server intentionally does NOT do:
  *
- *   - keep-alive (chapter 105 explicitly chose HTTP/1.0 + close)
+ *   - keep-alive (chapter 107 explicitly chose HTTP/1.0 + close)
  *   - chunked transfer encoding (not needed without keep-alive)
  *   - POST / PUT / DELETE (we serve, we don't accept)
  *   - directory listings (404 on directories)
@@ -51,7 +51,7 @@
  *   - virtual hosts / Host: based routing
  *   - logging beyond a single console line per request
  *   - multiple in-flight connections (single-threaded)
- *   - response rewriting on the forward path (chapter 106a is
+ *   - response rewriting on the forward path (chapter 109 is
  *     deliberately a transparent byte pipe; rewriting belongs
  *     in scripts/https_proxy.py)
  *
@@ -67,20 +67,20 @@
 #define HTTPD_VERSION       "osdev/1.0"
 /* 4 KiB request cap -- big enough for a curl request with all
  * the default headers (User-Agent, Accept, etc.) plus a generous
- * margin.  Chapter 105 sized this at 2 KiB; chapter 106a bumped
+ * margin.  Chapter 107 sized this at 2 KiB; chapter 109 bumped
  * it because the forward path replays whatever headers the
  * client sent us, and real-world clients are chattier than our
  * own test harness. */
 #define HTTPD_REQ_CAP       4096
 #define HTTPD_PATH_CAP       512    /* path cap (RFC-style 2 KiB is
                                      * overkill for our workload)   */
-/* Per-iteration body slice for both serve_get (chapter 105) and
- * serve_forward (chapter 106a).  Chapter 105 sized this at 1 KiB
+/* Per-iteration body slice for both serve_get (chapter 107) and
+ * serve_forward (chapter 109).  Chapter 107 sized this at 1 KiB
  * because every test file fit in a single chunk and the syscall
- * overhead was invisible against the boot-time cost.  Chapter 106b
+ * overhead was invisible against the boot-time cost.  Chapter 110
  * bumped it to 16 KiB: forwarding a real HN homepage (~50 KiB
  * body) at 1 KiB/iter takes 50 read+write pairs through the
- * scheduler, which combined with chapter 106's loopback queue
+ * scheduler, which combined with chapter 108's loopback queue
  * (16 frames, drained per net_poll) was producing minute-long
  * page loads.  16 KiB matches the TCP_BUF_SIZE / 2 sweet spot --
  * one read fills half the ring, the write drains it, no
@@ -88,7 +88,7 @@
  * stack, so the bump costs 15 KiB of stack space per handler. */
 #define HTTPD_SEND_CHUNK    16384
 
-/* Chapter 106a default upstream proxy: SLIRP's gateway-of-the-
+/* Chapter 109 default upstream proxy: SLIRP's gateway-of-the-
  * guest IP, port 8080.  That's where `scripts/https_proxy.py`
  * listens on the developer's host.  Override via the
  * HTTPD_UPSTREAM env var. */
@@ -110,7 +110,7 @@ static size_t s_len(const char *s)
     size_t n = 0; while (s[n]) n++; return n;
 }
 
-/* Chapter 106a: prefix match.  Used by handle_one to decide
+/* Chapter 109: prefix match.  Used by handle_one to decide
  * whether a request goes to the local serve_get path or to
  * serve_forward.  Returns 1 on match, 0 otherwise. */
 static int s_starts_with(const char *s, const char *pre)
@@ -123,7 +123,7 @@ static int s_starts_with(const char *s, const char *pre)
 }
 
 /* Parse "A.B.C.D" into a packed BE IPv4 address.  Copy of the
- * helper in userspace/httpget/httpget.c -- chapter 106a uses it
+ * helper in userspace/httpget/httpget.c -- chapter 109 uses it
  * to interpret HTTPD_UPSTREAM=10.0.2.2:8080 without having to
  * round-trip through DNS for the common case. */
 static int s_parse_dotted(const char *s, uint32_t *out_be)
@@ -195,7 +195,7 @@ static int parse_port(const char *s, uint16_t *out)
 }
 
 /* ----------------------------------------------------------------
- * Chapter 106a: upstream proxy configuration.
+ * Chapter 109: upstream proxy configuration.
  *
  * The forward path (see serve_forward) opens a fresh outbound
  * TCP connection to (g_upstream_ip, g_upstream_port) for every
@@ -292,8 +292,8 @@ static int write_str(int fd, const char *s)
 /* ----------------------------------------------------------------
  * Content-Type sniffing.  Extension-based, in priority order: the
  * first match wins.  We bias toward the formats our in-tree
- * browser already understands (chapter 60+ html, chapter 61 css,
- * chapter 97 png) so a self-served page renders correctly.
+ * browser already understands (chapter 59+ html, chapter 60 css,
+ * chapter 98 png) so a self-served page renders correctly.
  * ---------------------------------------------------------------- */
 
 static const char *content_type_for(const char *path)
@@ -326,7 +326,7 @@ static const char *content_type_for(const char *path)
  * its request was fully received before we start streaming the
  * body back.
  *
- * Chapter 106a: the raw bytes that make up the request (from
+ * Chapter 109: the raw bytes that make up the request (from
  * the first method letter through the trailing "\r\n\r\n") are
  * preserved in the caller's `buf` and the byte count is written
  * to *raw_len_out.  The forward path replays those bytes verbatim
@@ -522,7 +522,7 @@ static long serve_get(int cfd, const char *path, char method)
     if (fd < 0) {
         /* -ENOENT is the common case; everything else falls
          * back to 500.  Both responses still travel back to
-         * the client.  Chapter 116d: read errno not -fd. */
+         * the client.  Chapter 152: read errno not -fd. */
         if (errno == ENOENT) {
             send_error(cfd, 404, "Not Found");
             return -404;
@@ -539,7 +539,7 @@ static long serve_get(int cfd, const char *path, char method)
      * be a lie. */
     if (method == 'H') { close(fd); return 0; }
 
-    /* Chapter 106b: HTTPD_SEND_CHUNK is now 16 KiB.  User stack
+    /* Chapter 110: HTTPD_SEND_CHUNK is now 16 KiB.  User stack
      * is 64 KiB; putting a 16 KiB buffer here AND another in
      * serve_forward's stack frame would push the deepest call
      * chain (main -> for -> handle_one -> serve_get) too close
@@ -560,7 +560,7 @@ static long serve_get(int cfd, const char *path, char method)
 }
 
 /* ----------------------------------------------------------------
- * Chapter 106a -- forwarding proxy ("TLS bridge").
+ * Chapter 109 -- forwarding proxy ("TLS bridge").
  *
  * Request paths that aren't a local VFS prefix get forwarded to
  * the configured upstream proxy.  The default upstream is
@@ -588,7 +588,7 @@ static long serve_get(int cfd, const char *path, char method)
  * or a negative HTTP status code if we couldn't connect to the
  * upstream at all.
  *
- * Loopback prerequisite: chapter 106 made the OUTBOUND
+ * Loopback prerequisite: chapter 108 made the OUTBOUND
  * socket_connect from inside an INBOUND handler safe even when
  * inbound and outbound share the same 4-tuple namespace.  Before
  * that change, both sides would have raced over the single
@@ -623,10 +623,10 @@ static long serve_forward(int cfd, const char *req_buf, size_t req_len)
     (void)socket_shutdown(up);
 
     /* 2. Splice response: upstream -> client until upstream
-     *    sends FIN.  Per chapter 106's vfs.c fix, read() returns
+     *    sends FIN.  Per chapter 108's vfs.c fix, read() returns
      *    0 (not -EIO) once the conn is fully closed and drained.
      *
-     * Chapter 106b: chunk is malloc'd rather than stack-allocated
+     * Chapter 110: chunk is malloc'd rather than stack-allocated
      * for the same reason as serve_get -- HTTPD_SEND_CHUNK = 16
      * KiB and the user stack is 64 KiB. */
     char *chunk = (char *)malloc(HTTPD_SEND_CHUNK);
@@ -649,7 +649,7 @@ static long serve_forward(int cfd, const char *req_buf, size_t req_len)
     }
     free(chunk);
     close(up);
-    /* Chapter 106b diag: log both upstream-read and client-written
+    /* Chapter 110 diag: log both upstream-read and client-written
      * totals.  If they diverge we know the splice failed mid-stream;
      * if they're equal but the client claims more, the kernel TCP
      * path is duplicating data. */
@@ -659,7 +659,7 @@ static long serve_forward(int cfd, const char *req_buf, size_t req_len)
 }
 
 /* ----------------------------------------------------------------
- * Chapter 110 -- cookie test endpoints.
+ * Chapter 120 -- cookie test endpoints.
  *
  * These exist so test_browser_cookies.py can exercise the cookie
  * round-trip end-to-end without depending on any external server.
@@ -806,7 +806,7 @@ static long serve_cookie_whoami(int cfd, const char *raw, size_t raw_len)
 /* Local VFS prefixes that serve_get handles directly.  Any path
  * NOT starting with one of these goes to serve_forward.  Add a
  * new mount type here when you want it reachable via httpd; the
- * VFS already dispatches by mount inside open().  Chapter 105
+ * VFS already dispatches by mount inside open().  Chapter 107
  * shipped exactly these three. */
 static int is_local_path(const char *target)
 {
@@ -850,7 +850,7 @@ static void handle_one(int cfd, uint32_t peer_ip, uint16_t peer_port)
     }
 
     if (s_starts_with(target, "/cookie/")) {
-        /* Chapter 110 test endpoints.  Dispatched before
+        /* Chapter 120 test endpoints.  Dispatched before
          * is_local_path so the strings never touch the VFS or
          * the upstream proxy. */
         long n = -404;
@@ -869,10 +869,10 @@ static void handle_one(int cfd, uint32_t peer_ip, uint16_t peer_port)
     }
 
     if (is_local_path(target)) {
-        /* Chapter 105 local-file path.  path_is_safe only matters
+        /* Chapter 107 local-file path.  path_is_safe only matters
          * here -- the forward path never calls open().
          *
-         * Chapter 109: strip the optional ?query suffix before
+         * Chapter 119: strip the optional ?query suffix before
          * validating + opening.  GET form submits round-trip
          * their inputs as query strings; without this they'd
          * always trip path_is_safe's "no ? in segments" rule
@@ -898,7 +898,7 @@ static void handle_one(int cfd, uint32_t peer_ip, uint16_t peer_port)
         int code = (n >= 0) ? 200 : (int)(-n);
         log_request(peer_ip, peer_port, "local", method, target, code, n);
     } else {
-        /* Chapter 106a forward path.  We don't validate the path:
+        /* Chapter 109 forward path.  We don't validate the path:
          * the upstream proxy is the source of truth for what
          * URLs it accepts.  We DO send the raw request bytes
          * verbatim (replay attack? sure -- but the upstream is
@@ -934,7 +934,7 @@ int main(int argc, char **argv)
         printf("httpd: listen failed: %d\n", lfd);
         return 1;
     }
-    /* Chapter 106a: pick up the optional upstream override BEFORE
+    /* Chapter 109: pick up the optional upstream override BEFORE
      * we start logging the listen line, so a misconfigured proxy
      * is visible in the serial transcript next to the bind. */
     load_upstream_from_env();

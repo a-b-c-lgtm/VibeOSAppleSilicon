@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/_dbg_capture_boot_gui.sh — chapter 81 helper.
+# scripts/_dbg_capture_boot_gui.sh — chapter 82 helper.
 # Same as _dbg_capture_boot.sh but with virtio-gpu / kbd / tablet
 # attached, so the desktop process actually has a screen and we
 # can see its OOM / chunk-buffer messages.

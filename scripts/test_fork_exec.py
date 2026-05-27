@@ -3,8 +3,8 @@
 shell prompt, verify the three checks (pure fork, fork+exec, heap
 copy isolation) all pass.
 
-Milestone 65 regression.  See book chapter 73 for what each check
-exercises and chapter 74 for the exec side."""
+Fork + exec regression.  See book chapter 72 for what each check
+exercises and chapter 73 for the exec side."""
 import os, select, socket, subprocess, sys, time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

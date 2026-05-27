@@ -1,5 +1,5 @@
 /*
- * kernel/core/dns.h — milestone-57 DNS resolver (RFC 1035, A records).
+ * kernel/core/dns.h — DNS resolver (RFC 1035, A records).
  *
  * Synchronous, blocking-via-spin-yield resolver. One outstanding
  * query at a time; the API is "give me a name, get an IPv4 address

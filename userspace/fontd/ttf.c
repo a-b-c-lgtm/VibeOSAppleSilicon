@@ -1,6 +1,6 @@
 /*
- * userspace/fontd/ttf.c — chapter 108b TTF rasteriser, ported
- * straight from kernel/device/ttf.c (chapter 102).
+ * userspace/fontd/ttf.c — chapter 115 TTF rasteriser, ported
+ * straight from kernel/device/ttf.c (chapter 104).
  *
  * Differences from the kernel version:
  *
@@ -8,7 +8,7 @@
  *      kmalloc/kfree.
  *   2. blob pointer is passed in via ttf_init_face() instead of
  *      being a fixed _binary_DejaVuSans_ttf_* extern (so fontd
- *      can choose what to embed; chapter 108c may add more
+ *      can choose what to embed; chapter 116 may add more
  *      faces).
  *   3. The face owns a per-size linked list of caches instead
  *      of a single flat array.  Lets one daemon serve glyphs
@@ -22,7 +22,7 @@
  * parser, the quadratic Bezier flattener, the scanline
  * rasteriser, the AA supersampling, the rotate-to-on-curve
  * trick — is byte-for-byte the same as kernel/device/ttf.c
- * shipped in chapter 102.  That's the entire point of the
+ * shipped in chapter 104.  That's the entire point of the
  * chapter: this is the SAME code, just at EL0.
  */
 
@@ -69,7 +69,7 @@ static __attribute__((used)) void *memset(void *dst, int c, size_t n)
 #define CACHE_FLAT_N    0x100u
 
 /* Max points/contours we will rasterise.  Big enough for any
- * BMP glyph in DejaVu Sans (chapter 102 audit). */
+ * BMP glyph in DejaVu Sans (chapter 104 audit). */
 #define MAX_POINTS    512
 #define MAX_CONTOURS  32
 #define MAX_SEGS      2048

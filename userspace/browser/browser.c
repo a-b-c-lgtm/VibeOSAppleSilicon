@@ -1,9 +1,9 @@
 /*
- * userspace/browser/browser.c — milestone-63 browser driver.
+ * userspace/browser/browser.c — browser driver.
  *
  * The capstone of Part VIII: a userspace program that fetches an
- * HTML document (from disk or via HTTP), runs the full milestone-
- * 59-through-62 pipeline, and renders the resulting paint stream
+ * HTML document (from disk or via HTTP), runs the full tokenizer
+ * through layout pipeline, and renders the resulting paint stream
  * to a character grid on stdout.  The text-mode renderer maps the
  * 800-px-wide viewport onto a fixed 8x16-px cell grid (matching
  * our kernel font), so a default page is roughly 100 cols × N rows.
@@ -54,7 +54,7 @@
  * structural boundaries, not graphical fidelity.  The GUI renderer
  * IS pixel-faithful: it walks the paint stream and issues one
  * gui_fill_rect / gui_draw_text per command, so the on-screen
- * picture matches what M64+ will get from a framebuffer renderer.
+ * picture matches what a future framebuffer renderer will produce.
  */
 #include "../libc/syscall.h"
 #include "../libc/printf.h"
@@ -80,7 +80,7 @@
 
 #include "bearssl.h"
 
-/* Chapter 112d: the in-guest trust anchor used by the native TLS
+/* Chapter 127: the in-guest trust anchor used by the native TLS
  * path.  Linked in via vendor/testcerts/test_chain.o (the same
  * sample BearSSL chain that backs /bin/httpsd's server cert and
  * /bin/tlstest's chain-mode regression).  test_server_chain[0]
@@ -88,7 +88,7 @@
  * the self-signed intermediate CA we feed to BearSSL's minimal
  * X.509 validator as the trust root.
  *
- * Chapter 112e: this remains as a build-time fallback for when
+ * Chapter 128: this remains as a build-time fallback for when
  * /mnt/ca.bundle is missing or fails to parse (e.g. when running
  * the browser binary outside a freshly-baked OSFS image).  The
  * production path is the bundle -- see g_ca_bundle below and
@@ -96,7 +96,7 @@
 extern const br_x509_certificate *const test_server_chain;
 extern const size_t                     test_server_chain_len;
 
-/* Chapter 112e: the multi-anchor trust store, loaded from the
+/* Chapter 128: the multi-anchor trust store, loaded from the
  * OSFS-backed framed CA bundle (built by scripts/mkcabundle.py
  * from BearSSL's chain-rsa.h and chain-ec.h CA certs).  Loaded
  * lazily on first https:// fetch, cached for the life of the
@@ -252,7 +252,7 @@ static char *slurp_file(const char *path, size_t *out_len)
  * buggy proxy that never sends FIN, accidental tarball URL) is
  * caught long before the userspace heap explodes.
  *
- * Chapter 106b added this after a real-world `--gui` load of
+ * Chapter 110 added this after a real-world `--gui` load of
  * news.ycombinator.com OOM'd at 256 MiB ("oom (grow 268435456)")
  * with no obvious explanation in the upstream HTML.  Without
  * the cap drain_fd kept doubling its buffer (16 KiB -> 32 KiB
@@ -262,7 +262,7 @@ static char *slurp_file(const char *path, size_t *out_len)
 #define DRAIN_FD_MAX_BYTES   (8u * 1024u * 1024u)
 
 /* ----------------------------------------------------------------
- * Chapter 112d: connection shim that lets http_fetch_one drive
+ * Chapter 127: connection shim that lets http_fetch_one drive
  * either a plain TCP socket OR a TLS-wrapped one through the
  * same write/drain/close loop.  Two backends, picked by
  * `kind`:
@@ -273,7 +273,7 @@ static char *slurp_file(const char *path, size_t *out_len)
  *   BR_CONN_TLS  -- `tls` is a heap-allocated tls_socket_t whose
  *                   underlying TCP fd lives inside; the engine
  *                   does record framing, AES-GCM, and the X.509
- *                   chain walk (chapter 112c) before any
+ *                   chain walk (chapter 126) before any
  *                   application bytes flow.  See userspace/libc
  *                   /tls_socket.{c,h}.
  *
@@ -356,16 +356,16 @@ static int br_conn_open(br_conn_t *out_c, const struct url *u, uint32_t ip4_be)
             return -1;
         }
 
-        /* Chapter 112e: prefer the on-disk multi-anchor bundle.
+        /* Chapter 128: prefer the on-disk multi-anchor bundle.
          * If /mnt/ca.bundle was loaded successfully at startup,
          * the trust store carries both BearSSL sample CAs (RSA
          * + EC), so https://localhost:8443 (RSA) AND
          * https://localhost:8444 (ECDSA) both validate from the
          * same tls_socket_t init.  Fall back to the in-binary
-         * single anchor (chapter 112d shape) when the bundle is
+         * single anchor (chapter 127 shape) when the bundle is
          * missing -- keeps the browser usable on stripped-down
          * OSFS images and gives us a noise-free regression
-         * baseline for chapter 112d's test. */
+         * baseline for chapter 127's test. */
         int init_rc;
         const char *trust_source;
         if (g_ca_bundle_buf && g_ca_bundle_len > 0) {
@@ -435,7 +435,7 @@ static char *drain_conn(br_conn_t *c, size_t *out_len)
     size_t scratch_cap = 8 * 1024;
     char  *scratch = (char *)malloc(scratch_cap);
     if (!scratch) { free(buf); printf("browser: oom (scratch)\n"); return 0; }
-    /* Chapter 106b diag: periodically log progress so a stuck or
+    /* Chapter 110 diag: periodically log progress so a stuck or
      * runaway read shows in the serial transcript with the byte
      * count, instead of just appearing as a long silence. */
     size_t next_log_threshold = 256u * 1024u;
@@ -493,7 +493,7 @@ static char *http_fetch_one(const char *raw_url, size_t *out_html_len,
         return 0;
     }
 
-    /* Chapter 112d: https:// now goes through the native TLS
+    /* Chapter 127: https:// now goes through the native TLS
      * path inside br_conn_open (BearSSL engine + chapter-112c
      * minimal X.509 validator).  Pre-112d this branch printed
      * "https:// is not yet supported"; the canonicalize_url
@@ -503,7 +503,7 @@ static char *http_fetch_one(const char *raw_url, size_t *out_html_len,
     /* Resolve. */
     uint32_t ip_be = 0;
     if (parse_dotted(u.host, &ip_be) < 0) {
-        /* Chapter 112d: short-circuit "localhost" without going
+        /* Chapter 127: short-circuit "localhost" without going
          * through SYS_RESOLVE (which would issue a real UDP/53
          * query that QEMU slirp's DNS forwarder doesn't answer
          * for the literal "localhost").  Sending the request
@@ -559,10 +559,10 @@ static char *http_fetch_one(const char *raw_url, size_t *out_html_len,
     else
         n += snprintf(req + n, req_cap - (size_t)n, "Host: %s:%u\r\n", u.host, u.port);
     n += snprintf(req + n, req_cap - (size_t)n,
-                  "User-Agent: hobbyos-browser/1.0 (M63)\r\n"
+                  "User-Agent: hobbyos-browser/1.0\r\n"
                   "Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.5\r\n"
                   "Accept-Encoding: identity\r\n");
-    /* Chapter 110: emit Cookie: from /data/cookies/<host>, filtered
+    /* Chapter 120: emit Cookie: from /data/cookies/<host>, filtered
      * by path-prefix + expiry against current wall-clock. */
     {
         char cookhdr[1536];
@@ -607,7 +607,7 @@ static char *http_fetch_one(const char *raw_url, size_t *out_html_len,
     if (ct) write(1, ct, (unsigned long)ct_len); else printf("no content-type");
     printf(", body=%lu bytes)\n", (unsigned long)resp->body_len);
 
-    /* Chapter 110: walk Set-Cookie headers (there can be more
+    /* Chapter 120: walk Set-Cookie headers (there can be more
      * than one, so http_get_header which returns only the first
      * is not enough -- iterate the parsed header table). */
     {
@@ -687,7 +687,7 @@ static char *http_fetch(const char *url0, size_t *out_html_len)
 static char *fetch(const char *src, size_t *out_len, char **out_origin_url)
 {
     *out_origin_url = 0;
-    /* Chapter 112d: http:// and https:// share the same fetch
+    /* Chapter 127: http:// and https:// share the same fetch
      * loop now -- the scheme selection (and the TLS handshake,
      * for https://) happens inside br_conn_open. */
     if (br_starts(src, "http://") || br_starts(src, "https://")) {
@@ -901,8 +901,8 @@ static char *fetch_external_stylesheets(const struct dom_node *root,
             printf("[browser] skip sheet (cannot resolve): %s\n", hrefs[i]);
             continue;
         }
-        /* Chapter 112h: drop the legacy "skip https" guard.  Since
-         * chapter 112d `http_fetch` -> `http_fetch_one` ->
+        /* Chapter 131: drop the legacy "skip https" guard.  Since
+         * chapter 127 `http_fetch` -> `http_fetch_one` ->
          * `br_conn_open` handles https:// uniformly with http://
          * (TLS handshake + chain validation happen inside
          * br_conn_open), so a stylesheet served over https now
@@ -1364,7 +1364,7 @@ static void render_grid_ansi(const struct br_grid *g)
 /* ----------------------------------------------------------------
  * GUI renderer.
  *
- * Opens a real window via the M40-era GUI syscalls and walks the
+ * Opens a real window via the GUI syscalls and walks the
  * paint stream issuing one gui_fill_rect / gui_draw_text per
  * command, translated by the current scroll offset and clipped to
  * the visible viewport.  This is the ONLY renderer in the codebase
@@ -1375,7 +1375,7 @@ static void render_grid_ansi(const struct br_grid *g)
  * Scrolling: arrow keys (16 px), space / 'b' (page), Home / End,
  * ESC or window-close to quit.  Repaint on every scroll change.
  *
- * Limitations honoured from M62:
+ * Limitations honoured from the layout chapter:
  *   - kernel font is fixed 8x16; large text reads as plain 16-px
  *     text but with the layout-defined extra spacing around it.
  *   - non-ASCII bullet glyphs (U+2022 = "\xE2\x80\xA2") are folded
@@ -1424,7 +1424,7 @@ static int copy_text_for_gui(const struct layout_paint_cmd *c,
 }
 
 /* ----------------------------------------------------------------
- * Toolbar layout (milestone-64).
+ * Toolbar layout.
  *
  * The toolbar is the strip across the top of the window.  It
  * contains, left-to-right:
@@ -1460,7 +1460,7 @@ static int copy_text_for_gui(const struct layout_paint_cmd *c,
 
 /* Render a button.  Filled rect + 1-px border + centered glyph(s).
  * `enabled` controls the foreground color so disabled buttons
- * are visibly dim.  Chapter 108d: draws directly into
+ * are visibly dim.  Chapter 117: draws directly into
  * the wsd-mapped framebuffer via draw_* primitives -- no syscall
  * per rect. */
 static void render_tb_button(struct gui_fb *fb, int x, int y,
@@ -1481,7 +1481,7 @@ static void render_tb_button(struct gui_fb *fb, int x, int y,
     draw_fill_rect(fb, x + w - 1, y, 1, (uint32_t)h, border);
     /* Center the label horizontally; vertical center fixed for a
      * 16-px-tall glyph inside a 20-px-tall button (pad ~2 above).
-     * Chapter 102 -- measure with the proportional kernel font. */
+     * Chapter 104 -- measure with the proportional kernel font. */
     int tx = x + (w - draw_measure_text(label)) / 2;
     int ty = y + (h - 16) / 2;
     if (tx < x + 1) tx = x + 1;
@@ -1570,7 +1570,7 @@ static void render_toolbar(struct gui_fb *fb, int win_w,
                    1, (uint32_t)url_field_h, url_brd);
 
     /* Visible window: scroll horizontally so the cursor stays in
-     * view. Chapter 102 -- the proportional font means we can no
+     * view. Chapter 104 -- the proportional font means we can no
      * longer compute "max visible chars" as `width / 8`. We use a
      * conservative average of ~7 px/char to pick a max-char window,
      * then rely on draw_measure_text for the actual pixel layout. */
@@ -1854,7 +1854,7 @@ static void render_gui_frame(struct gui_fb *fb, int win_w, int win_h,
             if (n <= 0) break;
             uint32_t fg = color_to_bgra(c->color);
 
-            /* Chapter 102 (TTF): the kernel font is proportional,
+            /* Chapter 104 (TTF): the kernel font is proportional,
              * so a single gui_draw_text call now advances by each
              * glyph's natural width. We trust that advance instead
              * of layout's assumed pitch (`font_size_px / 2`). Text
@@ -1890,7 +1890,7 @@ static void render_gui_frame(struct gui_fb *fb, int win_w, int win_h,
         }
         case LAY_PAINT_IMAGE: {
             /* Blit a sub-rect of the cached BGRA image at the
-             * box's clipped pixel coords.  Chapter 108d:
+             * box's clipped pixel coords.  Chapter 117:
              * writes pixels directly into the wsd-mapped
              * framebuffer through draw_blit_bgra, which takes a
              * (src, stride) pair so we can pass an interior
@@ -1992,7 +1992,7 @@ static int g_timing = 0;
     } while (0)
 
 /* ----------------------------------------------------------------
- *   M64 navigation: loaded_page, history, URL canonicalization,
+ *   Navigation: loaded_page, history, URL canonicalization,
  *   link hit-testing, and the rewritten run_gui event loop.
  * ---------------------------------------------------------------- */
 
@@ -2004,14 +2004,14 @@ static int g_timing = 0;
  * out via a HTTP proxy rather than the real internet (which
  * would need TLS we don't have).
  *
- * Chapter 106b flipped the default from the host-side proxy
+ * Chapter 110 flipped the default from the host-side proxy
  * (http://10.0.2.2:8080/, the chapter-58 scripts/https_proxy.py)
  * to the in-guest httpd on loopback.  The browser now dials a
  * stable in-guest address; httpd's chapter-106a forward path
  * splices the request out to whatever HTTPD_UPSTREAM was set
  * to when httpd was started (still 10.0.2.2:8080 by default).
  *
- * Chapter 106c then changed the default port from 8080 to 80,
+ * Chapter 111 then changed the default port from 8080 to 80,
  * matching the httpd instance init now auto-spawns at boot.
  * Out of the box the desktop is therefore ready to fetch local
  * pages (e.g. `browser http://127.0.0.1/mnt/test.html`, no
@@ -2024,7 +2024,7 @@ static int g_timing = 0;
  * Why this matters: the browser is now decoupled from QEMU's
  * networking topology.  We can change the host transport (real
  * bridge, container, hardware) by re-pointing httpd's upstream;
- * the browser keeps dialing 127.0.0.1.  See chapters 106b/106c.
+ * the browser keeps dialing 127.0.0.1.  See chapters 110/106c.
  *
  * Override at startup by setting the BROWSER_PROXY env
  * variable to something else, e.g. "http://192.168.1.5:9000/". */
@@ -2033,7 +2033,7 @@ static int g_timing = 0;
 
 static char g_proxy_prefix[160] = BR_DEFAULT_PROXY;
 
-/* Chapter 112d: did BROWSER_PROXY get set in the environment?
+/* Chapter 127: did BROWSER_PROXY get set in the environment?
  * Distinguishes "user/test deliberately wants the legacy proxy
  * rewrite path" from "default behaviour, please take the native
  * TLS path".  canonicalize_url's case (3) (https:// rewriting)
@@ -2043,12 +2043,12 @@ static char g_proxy_prefix[160] = BR_DEFAULT_PROXY;
  * behaviour for callers that still need it (proxytest et al). */
 static int g_proxy_was_set = 0;
 
-/* Chapter 106b: read BROWSER_PROXY from the env once at startup.
+/* Chapter 110: read BROWSER_PROXY from the env once at startup.
  * Called from main() BEFORE any mode dispatch so plain, ansi,
  * paint, and gui modes all share the same proxy address.  Before
- * chapter 106b this read lived inside run_gui() only, which meant
+ * chapter 110 this read lived inside run_gui() only, which meant
  * `browser https://example.com/` in plain mode never proxied --
- * fetch() saw the raw https:// and bailed.  See chapter 106b
+ * fetch() saw the raw https:// and bailed.  See chapter 110
  * "Plain mode parity" section. */
 static void load_proxy_from_env(void)
 {
@@ -2077,7 +2077,7 @@ struct br_img_cache_entry {
     struct br_img_cache_entry *next;
 };
 
-/* Chapter 106b: bumped from 16.  Real pages reference more
+/* Chapter 110: bumped from 16.  Real pages reference more
  * unique image URLs than the chapter-97 test fixtures did:
  * HN's homepage alone is ~30 unique src= values (favicons,
  * thumbnails, the s.gif spacer, plus a few decorative bits).
@@ -2106,7 +2106,7 @@ struct loaded_page {
      * been asked to render.  Borrowed pointers into these entries
      * are stuffed into layout_box::replaced_pixels by
      * br_attach_images().  free_page tears them all down.  See
-     * chapter 97 for the cap policy. */
+     * chapter 98 for the cap policy. */
     struct br_img_cache_entry *img_cache;
     int   img_cache_count;
     unsigned img_cache_bytes;
@@ -2236,7 +2236,7 @@ static int build_page_from_html(struct loaded_page *p, int viewport)
 }
 
 /* ----------------------------------------------------------------
- *   Image cache + <img> resolution (chapter 97).
+ *   Image cache + <img> resolution (chapter 98).
  *
  *   For every <img src="..."> in the rendered document we want
  *   to hand the layout box a decoded BGRA buffer to blit.  This
@@ -2324,7 +2324,7 @@ static int br_resolve_img_src(const char *page_url,
  * cache and don't re-fetch.  Returns NULL only when even the
  * sentinel insert fails (cap full or OOM).
  *
- * Chapter 106b added the sentinel path.  Before it, a `<img
+ * Chapter 110 added the sentinel path.  Before it, a `<img
  * src="s.gif">` referenced N times on the same page caused N
  * fetches per attach -- because png_decode rejects GIF, no
  * positive entry ever landed, and every walk re-tried.  HN's
@@ -2485,7 +2485,7 @@ static int br_layout_img_size_cb(const char *src, int *out_w, int *out_h,
         return -1;
     struct br_img_cache_entry *e = br_img_cache_lookup(p, abs_url);
     if (!e) return -1;
-    /* Chapter 106b: sentinel entries (negative-cache hits for
+    /* Chapter 110: sentinel entries (negative-cache hits for
      * failed fetch/decode) have w==h==0 and bgra==NULL.  Tell
      * layout we don't know a size so it falls back to its
      * 16x16 placeholder rather than collapsing the box. */
@@ -2496,7 +2496,7 @@ static int br_layout_img_size_cb(const char *src, int *out_w, int *out_h,
 }
 
 /* ----------------------------------------------------------------
- *   Direct-image navigation (chapter 98).
+ *   Direct-image navigation (chapter 99).
  *
  *   When the user navigates to an image URL the HTTP response is
  *   the raw PNG bytes, not HTML.  Without this path we would feed
@@ -2662,7 +2662,7 @@ static struct loaded_page *load_page(const char *url, int viewport)
      * fatal (the placeholder + alt-text path renders instead). */
     br_attach_images(p);
     BR_TIMING("image decode", t_stage);
-    /* Chapter 98b: if any images were decoded, re-run layout so
+    /* Chapter 100: if any images were decoded, re-run layout so
      * the intrinsic-size hook (set inside relayout_page) sizes
      * <img> boxes to their real dimensions.  The first layout
      * pass sized them at the 16x16 fallback because the cache
@@ -2717,7 +2717,7 @@ static int relayout_page(struct loaded_page *p, int viewport)
 }
 
 /* ----------------------------------------------------------------
- *   Chapter 94: parser/layout thread.
+ *   Chapter 95: parser/layout thread.
  *
  * The relayout_page() above is the heaviest synchronous work the
  * GUI loop ever does — for a page like Hacker News (~1000 DOM
@@ -2725,7 +2725,7 @@ static int relayout_page(struct loaded_page *p, int viewport)
  * of milliseconds, during which gui_poll_event() is not called
  * and the window appears frozen.
  *
- * Chapter 94 moves that work onto a second thread pinned to CPU 1.
+ * Chapter 95 moves that work onto a second thread pinned to CPU 1.
  * The GUI thread (CPU 0) keeps polling events at full speed; the
  * parser thread runs layout into LOCAL ldoc / pb structs and,
  * when done, atomically swaps them in for the page's current
@@ -2733,7 +2733,7 @@ static int relayout_page(struct loaded_page *p, int viewport)
  * blitting the OLD paint buffer — the page is one resize stale
  * but the window is fully interactive.
  *
- * The thread is spawned via thread_spawn_files() (chapter 93)
+ * The thread is spawned via thread_spawn_files() (chapter 94)
  * with CLONE_FILES set.  Today the parser thread doesn't actually
  * touch the GUI thread's fds (layout is purely in-memory work),
  * but: (a) future incremental work like "fetch a referenced
@@ -2778,7 +2778,7 @@ struct parser_state {
      * the parser pass via the parser_wait_idle() contract.
      *
      * req_page is needed so the parser can install the intrinsic-
-     * image-size hook (chapter 98b) keyed on the page's image
+     * image-size hook (chapter 100) keyed on the page's image
      * cache.  Without this, resize redraws would revert every
      * <img> with no width/height attribute to the layout's 16x16
      * placeholder. */
@@ -2800,7 +2800,7 @@ struct parser_state {
     /* Parser thread id (set by parser_spawn). */
     int tid;
 
-    /* Stats — for the --bench-resize mode and chapter 94 doc.
+    /* Stats — for the --bench-resize mode and chapter 95 doc.
      * Parser increments work_done_count after each completed
      * pass; GUI increments gui_iters_during_work each time it
      * spins through the event loop while a request is pending. */
@@ -2852,7 +2852,7 @@ static void parser_thread_main(void *arg)
          * touched here, so the GUI thread can render the OLD
          * paint buffer concurrently with no synchronisation.
          *
-         * Chapter 98b: bracket the layout call with the intrinsic-
+         * Chapter 100: bracket the layout call with the intrinsic-
          * image-size hook so <img> tags without explicit width /
          * height pick up the page's already-decoded image
          * dimensions on resize, exactly like load_page's second
@@ -2870,7 +2870,7 @@ static void parser_thread_main(void *arg)
                                            css, css_len, viewport);
             layout_set_img_size_lookup(0, 0);
             if (rc >= 0) {
-                /* Chapter 98b: wire each <img> box's bgra pointer
+                /* Chapter 100: wire each <img> box's bgra pointer
                  * BEFORE collecting paint so the published paint
                  * buffer already has IMAGE commands.  Without this
                  * the GUI thread would have to re-attach and
@@ -3000,7 +3000,7 @@ static int parser_absorb_completion(struct parser_state *ps,
      * dom must NOT have been freed since the request was
      * posted (parser_wait_idle enforces that).
      *
-     * The parser already wired image bgra pointers (chapter 98b)
+     * The parser already wired image bgra pointers (chapter 100)
      * before collecting paint, so the new paint buffer already
      * encodes IMAGE commands — no re-attach needed here. */
     if (p->pb_built)  { layout_paint_buf_destroy(&p->pb);  p->pb_built  = 0; }
@@ -3070,7 +3070,7 @@ static void parser_shutdown(struct parser_state *ps)
  *   1. /mnt/... or other absolute filesystem path: pass through.
  *   2. http://...   : pass through verbatim.
  *   3. https://...  : strip scheme, prepend BR_DEFAULT_PROXY so
- *      the M58 proxy upgrades to TLS for us.
+ *      the in-guest proxy upgrades to TLS for us.
  *   4. //host/path  : protocol-relative, treat as scheme:host/path.
  *   5. /host/path   : root-relative against current page (used for
  *      proxy-rewritten links like "/news.ycombinator.com/item?id=").
@@ -3100,7 +3100,7 @@ static char *canonicalize_url(const char *input, const char *current)
 
     /* (3) https:// -> proxy, OR native TLS passthrough.
      *
-     * Chapter 112d: the browser now speaks TLS natively (BearSSL
+     * Chapter 127: the browser now speaks TLS natively (BearSSL
      * client engine + chapter-112c minimal X.509 validator).  By
      * default we leave https:// URLs alone and let br_conn_open
      * pick the TLS transport.  When BROWSER_PROXY is set in the
@@ -3108,7 +3108,7 @@ static char *canonicalize_url(const char *input, const char *current)
      * chapter-106b rewrite so the in-guest httpd can splice the
      * request out through the host-side bridge: this preserves
      * the test_browser_hn_* harnesses, and lets early callers
-     * exercise the proxy-forward path until chapter 112e wires
+     * exercise the proxy-forward path until chapter 128 wires
      * up a real trust store. */
     if (br_starts(input, "https://")) {
         if (!g_proxy_was_set)
@@ -3156,14 +3156,14 @@ static char *canonicalize_url(const char *input, const char *current)
 
     /* (5a) Path-relative reference against an http(s):// base.
      *
-     * Chapter 112g+ : without this case a relative link like
+     * Chapter 130+ : without this case a relative link like
      * "item?id=42" on https://news.ycombinator.com/ would fall
      * through to case (6) and be treated as a bare hostname --
      * either proxy-rewritten or https-prefixed -- when what we
      * actually want is RFC 3986 §5.2.3 path merge against the
      * current page's URL.  Reuse resolve_url() which already
      * implements the merge correctly (form action handling has
-     * leaned on it since chapter 110a).
+     * leaned on it since chapter 121).
      *
      * Bare-hostname disambiguation: a hostname has either a '.'
      * (TLD) or a ':' (port) in the authority position -- before
@@ -3191,7 +3191,7 @@ static char *canonicalize_url(const char *input, const char *current)
 
     /* (6) Bare host or host/path.
      *
-     * Chapter 112g+ : default to https:// now that the browser
+     * Chapter 130+ : default to https:// now that the browser
      * speaks native TLS.  Typing "news.ycombinator.com" in the
      * URL bar becomes https://news.ycombinator.com/ -- the
      * shape every real browser produces -- and goes through
@@ -3255,7 +3255,7 @@ static const char *link_href_at(struct layout_box *root, int px, int py)
     return 0;
 }
 
-/* Chapter 111: hit-test for onclick handlers.  Walks up from the
+/* Chapter 122: hit-test for onclick handlers.  Walks up from the
  * box under the cursor looking for the deepest element with an
  * `onclick="..."` attribute, mirroring HTML's bubble semantics.
  * Returns the element on hit (with *out_src set to its onclick
@@ -3279,7 +3279,7 @@ static struct dom_node *onclick_at(struct layout_box *root,
     return NULL;
 }
 
-/* Chapter 111: evaluate one onclick handler.  Caller has already
+/* Chapter 122: evaluate one onclick handler.  Caller has already
  * located the element + source via onclick_at().  Returns 1 if a
  * relayout is required (caller invokes relayout_page+repaint), 0
  * otherwise.  Errors during eval are logged but never propagated:
@@ -3462,11 +3462,11 @@ static char *form_resolve_action_url(const char *current_url, const char *action
     return canonicalize_url(action, current_url);
 }
 
-/* Chapter 110a: resolve a form action WITHOUT applying proxy
+/* Chapter 121: resolve a form action WITHOUT applying proxy
  * canonicalisation.  The SOP rule must reason about the URL the
  * author wrote -- if the page is at http://a/ and the action is
  * "https://a/login", that's cross-origin (different scheme), even
- * though chapter 106b's proxy will rewrite both into the same
+ * though chapter 110's proxy will rewrite both into the same
  * http://127.0.0.1:80/... transport URL.  Returns a malloc'd
  * absolute URL or 0 on failure. */
 static char *form_resolve_action_url_raw(const char *current_url,
@@ -3629,7 +3629,7 @@ static char *form_build_get_url(const char *action_url,
     return out;
 }
 
-/* Chapter 109 (slice 1): submit GET forms when clicking a submit
+/* Chapter 119 (slice 1): submit GET forms when clicking a submit
  * button/input.  This intentionally ignores typed input state for
  * now and serializes name/value pairs from DOM attributes only. */
 static char *form_submit_url_at(struct loaded_page *page,
@@ -3662,7 +3662,7 @@ static char *form_submit_url_at(struct loaded_page *page,
                                               (action && action[0]) ? action : page->url);
     if (!resolved_action) return 0;
 
-    /* Chapter 110a: same-origin policy, form-submission side.
+    /* Chapter 121: same-origin policy, form-submission side.
      *
      *   - Same-origin submit:                         silent allow.
      *   - Cross-origin, author wrote an absolute URL: log + allow.
@@ -3670,14 +3670,14 @@ static char *form_submit_url_at(struct loaded_page *page,
      *
      * The third case is currently unreachable in this codebase
      * (no <base href>, no JS to mutate the action attribute), but
-     * the check is defensive: chapter 111's pocket JS could
-     * change form.action at click time, and chapter 113's VFS
+     * the check is defensive: chapter 122's pocket JS could
+     * change form.action at click time, and chapter 132's VFS
      * work might surface <base href> in static HTML.  We pay
      * the eight-line cost now so neither chapter has to remember
      * to wire SOP later.
      *
      * The compare uses the RAW (pre-proxy) URL.  The proxy from
-     * chapter 106b rewrites https://host/x into the loopback form
+     * chapter 110 rewrites https://host/x into the loopback form
      * http://127.0.0.1:80/host/x; that's a transport detail, not
      * an origin change, and the SOP must not be fooled by it. */
     if (page->url && br_starts(page->url, "http")) {
@@ -3733,7 +3733,7 @@ struct browser_state {
     /* Currently displayed page. */
     struct loaded_page *page;
 
-    /* Window geometry.  Chapter 108d: the wsd-backed
+    /* Window geometry.  Chapter 117: the wsd-backed
      * window structure carries id + mapped framebuffer pointer
      * + on-screen position; render_* functions consume win.fb. */
     struct wm_window win;
@@ -3746,7 +3746,7 @@ struct browser_state {
     int   hover_btn;      /* 0=back 1=fwd 2=reload, -1=none */
     int   dirty;
 
-    /* Chapter 94: parser/layout thread state.  Pointer (not
+    /* Chapter 95: parser/layout thread state.  Pointer (not
      * inline) so the struct stays small and the parser can be
      * stopped + restarted without resizing the page state. */
     struct parser_state *parser;
@@ -3817,7 +3817,7 @@ static void navigate_to(struct browser_state *s, const char *url, int push)
         free(abs);
         return;
     }
-    /* Chapter 94: drain any in-flight relayout before swapping
+    /* Chapter 95: drain any in-flight relayout before swapping
      * the page pointer.  The parser may still be holding
      * s->page->dom / author_css read-only. */
     if (s->parser) parser_wait_idle(s->parser, s->page);
@@ -3844,7 +3844,7 @@ static void navigate_history(struct browser_state *s, int delta)
      * existing history). */
     struct loaded_page *next = load_page(url, s->viewport_w);
     if (!next) return;
-    /* Chapter 94: drain in-flight relayout before swapping page. */
+    /* Chapter 95: drain in-flight relayout before swapping page. */
     if (s->parser) parser_wait_idle(s->parser, s->page);
     if (s->page) free_page(s->page);
     s->page     = next;
@@ -3894,7 +3894,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
 
     /* BROWSER_PROXY env override is now read once at main()
      * startup, before mode dispatch, so plain / ansi / paint
-     * modes pick up the same value as --gui.  See chapter 106b
+     * modes pick up the same value as --gui.  See chapter 110
      * for why uniform proxy handling matters: previously only
      * --gui canonicalised URLs through g_proxy_prefix, so
      * `browser https://news.ycombinator.com/` in plain mode
@@ -3927,7 +3927,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
 
     /* Title bar: stable "browser" so wsd records a short label
      * (surfaced by /bin/taskbar).
-     * chapter 108e -- RESIZABLE so wsd paints the grip and
+     * chapter 118 -- RESIZABLE so wsd paints the grip and
      * accepts grip-drags.  The handler below remaps the FB
      * via wm_window_remap_fb and re-runs layout at the new
      * viewport width. */
@@ -3945,7 +3945,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
            s.win.id, s.win_w, s.win_h, s.win_h - BR_GUI_STATUS_H,
            s.page->ldoc.doc_width_px, s.page->ldoc.doc_height_px);
 
-    /* Chapter 94: spawn the parser/layout thread on CPU 1 with
+    /* Chapter 95: spawn the parser/layout thread on CPU 1 with
      * CLONE_FILES.  We do this AFTER the initial load so the
      * first frame is fully synchronous (no race between the
      * initial paint and the parser thread coming up).  */
@@ -3972,7 +3972,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
 
     int first_frame = 1;
     for (;;) {
-        /* Chapter 94: drain any completed parser work before
+        /* Chapter 95: drain any completed parser work before
          * deciding whether to redraw.  Non-blocking; sets
          * s.dirty if a swap occurred. */
         if (s.parser && parser_absorb_completion(s.parser, s.page)) {
@@ -4007,7 +4007,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
 
         struct gui_event ev;
         if (!wm_poll_event(&ev)) {
-            /* Chapter 94 stats: count the GUI loop iterations
+            /* Chapter 95 stats: count the GUI loop iterations
              * that ran while parser work was pending.  This is
              * the number we expect to be > 0 in --bench-resize
              * mode — proof that the GUI loop kept running while
@@ -4023,7 +4023,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
 
         switch (ev.type) {
         case GUI_EVENT_CLOSE:
-            /* Chapter 94: drain the parser before tearing down
+            /* Chapter 95: drain the parser before tearing down
              * the page or its DOM.  parser_shutdown() also
              * absorbs any in-flight result so we don't leak. */
             if (s.parser) {
@@ -4043,7 +4043,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
             int new_h = (int)ev.arg1;
             if (new_w < 64) new_w = 64;
             if (new_h < 64) new_h = 64;
-            /* chapter 108e (revised by follow-up #3) -- wsd
+            /* chapter 118 (revised by follow-up #3) -- wsd
              * resized our backing FB.  Our old FB VA stays
              * valid until we call wm_window_remap_fb (the
              * kernel's lazy-unmap holds the old pages alive
@@ -4118,7 +4118,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
                     if (u) {
                         struct loaded_page *next = load_page(u, s.viewport_w);
                         if (next) {
-                            /* Chapter 94: drain parser before
+                            /* Chapter 95: drain parser before
                              * freeing the old page's dom. */
                             if (s.parser)
                                 parser_wait_idle(s.parser, s.page);
@@ -4154,7 +4154,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
                 int doc_x = x + s.scroll_x;
                 int doc_y = (y - BR_GUI_STATUS_H) + s.scroll_y;
 
-                /* Chapter 111: dispatch onclick FIRST, before
+                /* Chapter 122: dispatch onclick FIRST, before
                  * link/form navigation.  The handler can mutate
                  * attributes the link/form path then reads -- e.g.
                  * setting form.action to a different URL -- so it
@@ -4212,7 +4212,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
                 if (k == GUI_KEY_HOME)  { s.url_cursor = 0;          s.dirty = 1; break; }
                 if (k == GUI_KEY_END)   { s.url_cursor = s.url_len;  s.dirty = 1; break; }
                 char ch = (char)(k & 0xFF);
-                /* Chapter 114 -- cross-app clipboard.  Ctrl-C/X/V
+                /* Chapter 140 -- cross-app clipboard.  Ctrl-C/X/V
                  * on the URL bar open(2) /clipboard/text via the
                  * chapter-114 userfs mount.  Filtered to printable
                  * ASCII on insertion -- URLs can't contain newlines
@@ -4323,7 +4323,7 @@ static int run_gui(const char *initial_url, int initial_viewport)
                     s.dirty = 1;
                 }
                 else if (c == 0x1B || c == 'q') {
-                    /* Chapter 94: same drain-parser dance as
+                    /* Chapter 95: same drain-parser dance as
                      * GUI_EVENT_CLOSE. */
                     if (s.parser) {
                         parser_wait_idle(s.parser, s.page);
@@ -4381,7 +4381,7 @@ static void usage(void)
     printf("  viewport                    layout width in px (default 800)\n");
 }
 
-/* Chapter 94: headless parser-thread benchmark.
+/* Chapter 95: headless parser-thread benchmark.
  *
  * Loads the page synchronously, spawns the parser thread, posts a
  * relayout request to a different viewport, and spins polling for
@@ -4459,8 +4459,8 @@ int main(int argc, char **argv)
     int mode_gui   = 0;
     int viewport   = 800;
     int bench_new_w = 0;       /* nonzero => --bench-resize mode */
-    int mode_check_sop = 0;    /* chapter 110a: --check-sop debug mode */
-    int mode_check_js  = 0;    /* chapter 111:  --check-js  debug mode */
+    int mode_check_sop = 0;    /* chapter 121: --check-sop debug mode */
+    int mode_check_js  = 0;    /* chapter 122:  --check-js  debug mode */
     const char *src = 0;
     const char *sop_action = 0;
 
@@ -4482,7 +4482,7 @@ int main(int argc, char **argv)
             i++; continue;
         }
         if (br_streq(argv[i], "--check-sop")) {
-            /* Chapter 110a: headless SOP policy check.  Used by
+            /* Chapter 121: headless SOP policy check.  Used by
              * scripts/test_browser_sop.py to exercise the
              * cross-origin form-submit decision without spinning
              * up a window server, virtio-tablet, or the network.
@@ -4492,7 +4492,7 @@ int main(int argc, char **argv)
             continue;
         }
         if (br_streq(argv[i], "--check-js")) {
-            /* Chapter 111: headless pocketjs eval.  One positional
+            /* Chapter 122: headless pocketjs eval.  One positional
              * arg follows: the expression source.  Bindings match
              * onclick (alert, console, document) but `this` is
              * undefined and `document.getElementById` returns
@@ -4522,12 +4522,12 @@ int main(int argc, char **argv)
         src = argv[i++];
     }
 
-    /* Chapter 110a: --check-sop is a no-network policy probe.  The
+    /* Chapter 121: --check-sop is a no-network policy probe.  The
      * second positional arg is the raw <form action=...> string
      * (relative or absolute); src is the page URL.  An optional
      * third arg overrides the resolved URL -- this lets the test
      * exercise the "blocked" branch by simulating what <base href>
-     * (chapter 113+) would do: a relative action that resolves
+     * (chapter 132+) would do: a relative action that resolves
      * cross-origin.  Without the override the third branch is
      * unreachable in today's codebase.  Print one of three
      * deterministic lines and exit -- the regression test greps
@@ -4566,7 +4566,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    /* Chapter 111: --check-js evaluates a single pocketjs
+    /* Chapter 122: --check-js evaluates a single pocketjs
      * expression with browser-style globals (alert, console,
      * document) bound but no DOM loaded.  Prints one line of the
      * form `JS: <type>=<value>` on success, or `JS: error <msg>`
@@ -4644,7 +4644,7 @@ int main(int argc, char **argv)
            mode_gui   ? "gui"   :
            (mode_ansi ? "ansi" : "plain"));
 
-    /* Chapter 106b: load BROWSER_PROXY once for every mode.  See
+    /* Chapter 110: load BROWSER_PROXY once for every mode.  See
      * load_proxy_from_env() near g_proxy_prefix for the rationale
      * (plain-mode parity with --gui). */
     load_proxy_from_env();
@@ -4654,11 +4654,11 @@ int main(int argc, char **argv)
     if (mode_gui)
         return run_gui(src, viewport);
 
-    /* Chapter 94 headless benchmark. */
+    /* Chapter 95 headless benchmark. */
     if (bench_new_w)
         return run_bench_resize(src, viewport, bench_new_w);
 
-    /* Chapter 106b: route the input URL through the same
+    /* Chapter 110: route the input URL through the same
      * canonicalisation pipeline as --gui so https:// rewrites,
      * bare-host shortcuts, and protocol-relative refs all work
      * in plain / ansi / paint modes too.  src may point at

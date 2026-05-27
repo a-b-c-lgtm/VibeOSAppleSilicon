@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """scripts/_dbg_ld_argv.py -- Diagnose /bin/ld argv corruption.
 
-Chapter 131f bring-up: scripts/test_bin_ld_ar.py passes 8/12.
+Chapter 180 bring-up: scripts/test_bin_ld_ar.py passes 8/12.
 /bin/ld receives a corrupted `-o` argument and reports
 'cannot open output file <garbage>: Read-only file system'.
 

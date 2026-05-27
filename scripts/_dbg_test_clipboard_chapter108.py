@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_clipboard.py -- chapter 108 / M90b clipboard test.
+"""scripts/test_clipboard.py -- chapter 113 clipboard test.
 
 Boots the kernel headless, waits for the shell prompt, and
 drives the /bin/clip CLI through a full set/get/gen/clear
@@ -8,19 +8,19 @@ in-guest; no host listener, no SLIRP hostfwd, no virtio-net
 chatter in the test path.
 
 This exercises:
-  - chapter 108 daemon: /bin/clipboardd binds /srv/clipboard,
+  - chapter 113 daemon: /bin/clipboardd binds /srv/clipboard,
     serves SET/GET/GEN/CLEAR operations one-shot per conn.
-  - chapter 108 client: /bin/clip uses the libc helpers
+  - chapter 113 client: /bin/clip uses the libc helpers
     (clip_set / clip_get / clip_generation / clip_clear).
-  - chapter 108 supervisor: init.c's supervise() table started
+  - chapter 113 supervisor: init.c's supervise() table started
     /bin/clipboardd before the shell prompt -- the very fact
     that `clip set ...` succeeds on the first try proves the
     bind happened ahead of the user-facing prompt.
-  - chapter 107 underneath: every clip operation is one
+  - chapter 112 underneath: every clip operation is one
     SYS_SRV_CONNECT + write + read + close on a /srv conn,
     so this test re-exercises the IPC machinery too.
 
-The script writes "Hello chapter 108", reads it back via
+The script writes "Hello chapter 113", reads it back via
 `clip get`, verifies byte-for-byte, then bumps the value to
 "world" and asserts the generation counter advanced.  Eight
 positive assertions, ~10 s wall.
@@ -132,7 +132,7 @@ def main():
         print("PASS: clipboardd is up and bound to /srv/clipboard")
 
         # 3. clip set: write a known phrase.
-        ser.sendall(b"clip set Hello chapter 108\n")
+        ser.sendall(b"clip set Hello chapter 113\n")
         log = wait_for(ser, b"[clipboardd] SET gen=1", 10.0)
         if b"[clipboardd] SET gen=1" not in log:
             print("FAIL: clipboardd did not log the first SET")
@@ -143,12 +143,12 @@ def main():
         # 4. clip get: read it back.  Expect exactly the joined
         #    argv on a single line.
         ser.sendall(b"clip get\n")
-        log = wait_for(ser, b"Hello chapter 108", 10.0)
-        if b"Hello chapter 108" not in log:
+        log = wait_for(ser, b"Hello chapter 113", 10.0)
+        if b"Hello chapter 113" not in log:
             print("FAIL: clip get did not return the stored payload")
             print(log[-2000:].decode("ascii", "replace"))
             return 1
-        print("PASS: clip get returned 'Hello chapter 108' verbatim")
+        print("PASS: clip get returned 'Hello chapter 113' verbatim")
 
         # 5. clip gen: should print "1" alone on a line.
         ser.sendall(b"clip gen\n")
@@ -189,7 +189,7 @@ def main():
             return 1
         print("PASS: clip clear bumped generation to 3 and emptied payload")
 
-        print("\nMILESTONE 90b (clipboard daemon): ALL TESTS PASSED")
+        print("\nclipboard daemon: ALL TESTS PASSED")
         return 0
     finally:
         try:

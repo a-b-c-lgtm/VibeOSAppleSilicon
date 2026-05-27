@@ -1,4 +1,4 @@
-/* userspace/libc/locale.h — chapter 131e minimal POSIX <locale.h>.
+/* userspace/libc/locale.h — chapter 179 minimal POSIX <locale.h>.
  *
  * binutils 2.44 bfd/sysdep.h includes this unconditionally even with
  * --disable-nls, and ld/ldmain.c calls setlocale().  We don't have a

@@ -9,11 +9,11 @@
 # to this checkout.  Re-run the install target after `make
 # clean-binutils` or after moving the checkout.
 #
-# Chapter 131b background:  we don't yet have an aarch64-osdev-gcc
+# Chapter 176 background:  we don't yet have an aarch64-osdev-gcc
 # (that's chapter 132).  Until then we synthesise one by wrapping
 # the host's aarch64-elf-gcc with these overrides:
 #
-#   1.  -B build/toolchain/bin/   — adds our chapter 131a toolchain
+#   1.  -B build/toolchain/bin/   — adds our chapter 175 toolchain
 #       dir to gcc's program-and-library search path.  Symlinks in
 #       that dir point the unprefixed names `as` and `ld` at our
 #       real aarch64-osdev-as / aarch64-osdev-ld.
@@ -25,7 +25,7 @@
 #       wrapper compile/link path still goes through brew's
 #       binutils.  That's fine because brew's binutils is the same
 #       binutils-2.44 we built ours from in 131a, so the output
-#       bytes are identical (the chapter 131b smoke test proves
+#       bytes are identical (the chapter 176 smoke test proves
 #       this end-to-end).  When chapter 132 builds a real
 #       aarch64-osdev-gcc, it gets configured with --with-as=our
 #       binutils and --with-ld=our binutils, and the routing
@@ -33,7 +33,7 @@
 #       symlinks are forward-compatible scaffolding.
 #
 #   2.  -isystem $ROOT/userspace/libc — surface our header-only
-#       libc (chapters 116-128) ahead of aarch64-elf-gcc's bundled
+#       libc (chapters 148-164) ahead of aarch64-elf-gcc's bundled
 #       newlib.  We deliberately do NOT pass -nostdinc here:
 #         (a) gcc-internal headers (stdint.h, stdarg.h, stddef.h,
 #             float.h) must stay reachable;
@@ -54,7 +54,7 @@
 #       (the Makefile) are unaffected (the flag is idempotent).
 #
 #   4.  -D__OSDEV_LIBC__  — identifies the in-flight TU as one
-#       compiled against osdev libc.  Used by the chapter 131d
+#       compiled against osdev libc.  Used by the chapter 178
 #       libiberty patch to ELIDE_CODE in getopt.c (libiberty's
 #       getopt would otherwise duplicate-define optarg/optind/
 #       optopt/opterr/getopt that already come from
@@ -142,7 +142,7 @@ if [ "$mode" = link ]; then
     if [ "$needs_script" = true ]; then
         extra_post="$extra_post -Wl,-T,$OSDEV_ROOT/userspace/linker_user.ld"
     fi
-    # Chapter 132e: pull libc extern wrappers (memcpy / memset /
+    # Chapter 185: pull libc extern wrappers (memcpy / memset /
     # memmove / malloc / strerror / ...) from libosdevc.a in the
     # xgcc sysroot so autoconf link tests in cross-builds of gmp,
     # mpfr, mpc, and gcc itself resolve their references.  Archive
@@ -162,7 +162,7 @@ if [ "$mode" = link ]; then
     extra_pre="-nostdlib -nostartfiles"
 fi
 
-# ---- C vs C++ dispatch (chapter 132f) ----
+# ---- C vs C++ dispatch (chapter 186) ----
 # This single wrapper file serves both `aarch64-osdev-cc` (C
 # compiler) and `aarch64-osdev-CC` (C++ compiler).  We can't ship
 # two distinct files on a case-insensitive APFS volume — they

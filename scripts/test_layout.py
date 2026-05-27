@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_layout.py — milestone-62 driver.
+"""scripts/test_layout.py — layout engine driver.
 
 Boots the kernel, waits for the shell prompt, and runs the
 /bin/layout test driver against /mnt/test_layout.html with a
@@ -217,9 +217,9 @@ def main():
         # h1 font-size 32 -> fixed line-box height 32*1.4 ~= 44 OR
         # the line-height we use (line_height_px or fs*1.4).
     # h1 paints should use fs=32, fw=700 (bold-by-default), navy color
-    h1_paints = [p for p in paints if p.get("text") == "M62"]
+    h1_paints = [p for p in paints if p.get("text") == "Layout"]
     need("h1-text-paint-fs-32", any(p.get("fs") == 32 for p in h1_paints),
-         f"M62 paints={h1_paints}")
+         f"Layout paints={h1_paints}")
     need("h1-text-paint-fw-700", any(p.get("fw") == 700 for p in h1_paints))
     need("h1-text-paint-color-navy",
          any(p["color"] == "#FF000080" for p in h1_paints),
@@ -352,7 +352,7 @@ def main():
             print("---- output (first 6 KiB) ----", file=sys.stderr)
             print(text[idx:idx + 6144], file=sys.stderr)
         return 1
-    print("PASS: layout engine milestone-62 — all checks green")
+    print("PASS: layout engine — all checks green")
     return 0
 
 

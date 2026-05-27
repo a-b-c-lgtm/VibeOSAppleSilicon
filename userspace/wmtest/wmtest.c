@@ -1,5 +1,5 @@
 /*
- * userspace/wmtest/wmtest.c — chapter 108d smoke client for
+ * userspace/wmtest/wmtest.c — chapter 117 smoke client for
  * /srv/wm.
  *
  * One-shot CLI invoked from the shell.  Each invocation
@@ -8,7 +8,7 @@
  * "[wmtest] PASS ..." or "[wmtest] FAIL reason=..." line so
  * scripts/test_wsd_hello.py can grep for the result.
  *
- * Chapter 108d built the test incrementally: initial
+ * Chapter 117 built the test incrementally: initial
  * HELLO + LIST, then full window-lifecycle (CREATE/DESTROY),
  * then MAP_FB (per-window backing-FB + SYS_WIN_FB_MAP),
  * then DAMAGE (compositor path: client paints → wsd blits
@@ -162,7 +162,7 @@ static int do_create(int fd, uint32_t w, uint32_t h, uint32_t flags,
         return -1;
     }
     *id_out = rep.a;
-    /* Chapter 108d — rep.b/rep.c are the cascade-assigned
+    /* Chapter 117 — rep.b/rep.c are the cascade-assigned
      * scanout position.  Early wsd builds would leave these 0,
      * which is also a legal position so we don't gate the
      * test on "nonzero"; we just record what came back. */
@@ -203,7 +203,7 @@ static int do_destroy(int fd, uint32_t id)
     return 0;
 }
 
-/* Chapter 108d — ask wsd for the per-window FB id and geometry,
+/* Chapter 117 — ask wsd for the per-window FB id and geometry,
  * then call SYS_WIN_FB_MAP locally to install the same
  * physical pages into our AS at a fresh VA.  Fills *va_out
  * and *stride_out so the caller can write pixels. */
@@ -272,7 +272,7 @@ static int do_map_fb(int fd, uint32_t win_id,                     uint64_t *va_o
     return 0;
 }
 
-/* Chapter 108d — send a WM_WIN_MOVE to reposition the window
+/* Chapter 117 — send a WM_WIN_MOVE to reposition the window
  * on the scanout to (nx, ny) and verify wsd ACKs.  The
  * move itself doesn't paint anything; the very next damage
  * lands at the new position. */
@@ -308,7 +308,7 @@ static int do_move(int fd, uint32_t win_id, uint32_t nx, uint32_t ny)
     return 0;
 }
 
-/* Chapter 108d — send a WM_WIN_DAMAGE for the given rect and
+/* Chapter 117 — send a WM_WIN_DAMAGE for the given rect and
  * verify wsd ACKs with WM_OK.  The actual compose work and
  * the scanout-readback verification happen inside wsd's
  * handle_damage; from the client side this is a fire-and-
@@ -357,7 +357,7 @@ static int do_damage(int fd, uint32_t win_id,
  * (leaving one window alive so the next invocation can prove GC
  * ran).
  *
- * chapter 108d: boot auto-launches three wsd clients
+ * chapter 117: boot auto-launches three wsd clients
  * (desktop, taskbar, launcher) before any test runs, so the
  * LIST count is non-zero on entry.  We assert relative deltas
  * (initial vs initial+2 vs initial+1) instead of pinning the
@@ -389,7 +389,7 @@ static int run_default(int fd)
         return 1;
     }
 
-    /* Chapter 108d — map id1's FB and round-trip a magic pixel.
+    /* Chapter 117 — map id1's FB and round-trip a magic pixel.
      * Magic value chosen so each BGRA byte is distinct and
      * non-zero — catches any byte-order swap or partial
      * mapping defect. */
@@ -429,7 +429,7 @@ static int run_default(int fd)
                (unsigned long)rb);
     }
 
-    /* Chapter 108d — move id1 to a known scanout position
+    /* Chapter 117 — move id1 to a known scanout position
      * BEFORE the DAMAGE, so the test can pin both src and
      * dst coords in wsd's log.  Picked (100, 50) because
      * it's distinct from the cascade default (100, 100):
@@ -439,7 +439,7 @@ static int run_default(int fd)
      * position on the 1280x800 scanout. */
     if (do_move(fd, id1, 100, 50) < 0) return 1;
 
-    /* Chapter 108d — send a minimal DAMAGE that names the
+    /* Chapter 117 — send a minimal DAMAGE that names the
      * four pixels we just wrote at offset 0 (BGRA bytes
      * 0x11 0x22 0x33 0xFF).  Damage coords are WINDOW-LOCAL:
      * wsd translates to scanout coords by adding the window's

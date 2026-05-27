@@ -7,7 +7,7 @@
  *   - PSTATE  = EL1h, DAIF masked, MMU off, caches off, little-endian
  *   - SP      = undefined — we set it ourselves before any C call
  *
- * Sequence (milestone 1):
+ * Sequence:
  *   1. Save the DTB pointer (x0) into a callee-saved register.
  *   2. Set up the boot stack from the linker-script `stack_top` symbol.
  *   3. Zero the BSS so uninitialised globals read as 0 per the C spec.
@@ -19,7 +19,7 @@
  *      MAIR/TCR/TTBR0 from the static l1_pgtable in
  *      kernel/arch/page_tables.c, invalidates the TLBs, then sets
  *      SCTLR_EL1.{M,C,I}. After this returns, normal C with stack
- *      frames is safe (the milestone-0 stp/ldp issue is gone).
+ *      frames is safe (the early stp/ldp issue is gone).
  *   6. Hand the DTB pointer to kernel_main as the first argument.
  *
  * If kernel_main ever returns we drop into the wfe-loop below.
@@ -77,7 +77,7 @@ _hang:
     b       _hang
 
 /* ----------------------------------------------------------------
- * secondary_start — chapter 86 PSCI secondary CPU entry.
+ * secondary_start — chapter 87 PSCI secondary CPU entry.
  *
  * Entered when CPU 0 issues PSCI_CPU_ON for this core.  Per
  * PSCI spec sec. 5.1.4 the secondary lands here with:
@@ -101,7 +101,7 @@ _hang:
  *      this returns, the secondary's view of memory matches CPU 0's
  *      kernel mapping exactly — same identity-mapped low RAM, same
  *      MMIO mapping, same heap.  User mappings are absent because
- *      the secondary is never going to enter user mode in chapter 86.
+ *      the secondary is never going to enter user mode in chapter 87.
  *   7. Set TPIDR_EL1 = struct cpu * so cpu_current() works in C.
  *   8. Tail-call secondary_main(self).  Never returns.
  * ---------------------------------------------------------------- */

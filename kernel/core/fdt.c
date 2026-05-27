@@ -1,7 +1,7 @@
 /*
  * kernel/core/fdt.c — minimal flat-device-tree walker.
  *
- * Implements the slice of libfdt we need for milestone 6:
+ * Implements the slice of libfdt we need for early bring-up:
  *
  *   - validate the FDT header magic and bounds
  *   - walk the structure block, decoding BEGIN_NODE / END_NODE /
@@ -219,7 +219,7 @@ size_t fdt_read_memory(const void *blob, struct fdt_memory_map *out)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 86 additions: PSCI conduit + cpu enumeration.
+ * Chapter 87 additions: PSCI conduit + cpu enumeration.
  *
  * Both walkers reuse the same token-cursor pattern as
  * fdt_read_memory above; the only differences are which node names
@@ -416,7 +416,7 @@ size_t fdt_read_cpus(const void *blob, uint64_t *out_mpidrs, size_t max)
     return count;
 }
 
-/* Chapter 95 — find a node whose `compatible` property contains
+/* Chapter 96 — find a node whose `compatible` property contains
  * the NUL-terminated string "arm,pl031" and return its first
  * 64-bit `reg` cell as the MMIO base.
  *

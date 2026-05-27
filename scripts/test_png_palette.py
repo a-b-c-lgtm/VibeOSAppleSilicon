@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""scripts/test_png_palette.py — chapter 98 extended-decoder smoke test.
+"""scripts/test_png_palette.py — chapter 99 extended-decoder smoke test.
 
-Chapter 97 shipped a PNG decoder that only handled colour types
+Chapter 98 shipped a PNG decoder that only handled colour types
 2 (RGB) and 6 (RGBA).  Real-world PNGs frequently use:
 
   * colour type 0 — grayscale  (1 / 2 / 4 / 8-bit)
   * colour type 3 — palette / indexed (1 / 2 / 4 / 8-bit)
   * colour type 4 — grayscale + alpha (8-bit)
 
-Chapter 98 extends the decoder to all of these.  This test
+Chapter 99 extends the decoder to all of these.  This test
 covers the two new sister PNGs baked by make_test_png.py:
 
   /mnt/icon_palette.png — 16x16, colour type 3, 4-entry palette.
@@ -137,7 +137,7 @@ def main():
             print(f"PASS [{label}]: pngdec {path} -> {w}x{h}, "
                   f"sum={sm}, opaque={op}")
 
-        print("PASS: chapter 98 extended PNG decoder smoke test")
+        print("PASS: chapter 99 extended PNG decoder smoke test")
         return 0
     finally:
         q.terminate()

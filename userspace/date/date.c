@@ -1,4 +1,4 @@
-/* userspace/date/date.c — chapter 95: print wall-clock time.
+/* userspace/date/date.c — chapter 96: print wall-clock time.
  *
  * Reads SYS_GETTIMEOFDAY and prints "YYYY-MM-DD HH:MM:SS UTC"
  * to stdout.  No flags today (no -u / -R / +%FORMAT).  When we

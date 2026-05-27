@@ -1,5 +1,5 @@
 /*
- * kernel/core/srv.h — chapter 107 named-IPC service bus.
+ * kernel/core/srv.h — chapter 112 named-IPC service bus.
  *
  * A `/srv/<name>` endpoint is the cross-process equivalent of
  * a TCP listening socket: a long-running service `bind`s a

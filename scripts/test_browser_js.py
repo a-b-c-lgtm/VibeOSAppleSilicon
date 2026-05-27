@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_js.py -- chapter 111 pocketjs evaluator.
+"""scripts/test_browser_js.py -- chapter 122 pocketjs evaluator.
 
 Drives `browser --check-js <expr>` from the in-guest shell to
 exercise every shape of expression the engine handles.

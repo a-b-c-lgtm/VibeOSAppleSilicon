@@ -1,19 +1,19 @@
-/* userspace/tlstest/tlstest.c — chapters 112a + 112b + 112c.
+/* userspace/tlstest/tlstest.c — chapters 124 + 112b + 112c.
  *
  * Three modes, picked by argv:
  *
- *   tlstest                          -- chapter 112a SHA-256 KAT
+ *   tlstest                          -- chapter 124 SHA-256 KAT
  *                                       (no TLS, no sockets).  Just
  *                                       proves libbearssl.a links
  *                                       and br_sha256 computes the
  *                                       right answer.
  *
- *   tlstest --handshake HOST PORT    -- chapter 112b TLS handshake
+ *   tlstest --handshake HOST PORT    -- chapter 125 TLS handshake
  *                                       against an in-guest httpsd.
  *                                       Validates with knownkey
  *                                       (pins on leaf cert pubkey).
  *
- *   tlstest --handshake-ca HOST PORT -- chapter 112c TLS handshake
+ *   tlstest --handshake-ca HOST PORT -- chapter 126 TLS handshake
  *                                       with REAL chain validation
  *                                       against the sample
  *                                       intermediate CA + wall-clock
@@ -83,7 +83,7 @@ static int eq32(const unsigned char *a, const unsigned char *b)
 }
 
 /* --------------------------------------------------------------
- * Mode A: chapter 112a SHA-256 KAT.
+ * Mode A: chapter 124 SHA-256 KAT.
  * -------------------------------------------------------------- */
 
 static int run_sha256_kat(void)
@@ -115,9 +115,9 @@ static int run_sha256_kat(void)
 /* --------------------------------------------------------------
  * Modes B/C: TLS handshake against in-guest httpsd.
  *
- *   mode = 0 : chapter 112b knownkey -- pin on the leaf cert's
+ *   mode = 0 : chapter 125 knownkey -- pin on the leaf cert's
  *              public key, no chain walk, no time check.
- *   mode = 1 : chapter 112c chain    -- real X.509 chain walk
+ *   mode = 1 : chapter 126 chain    -- real X.509 chain walk
  *              against the intermediate CA cert, with notBefore/
  *              notAfter checked against wall-clock from
  *              SYS_GETTIMEOFDAY.
@@ -313,8 +313,8 @@ static int run_handshake_mode(const char *host_str, const char *port_str,
     }
     free(t);
 
-    printf("tls handshake: PASS chapter 112%s end-to-end\n",
-           mode == 1 ? "c" : "b");
+    printf("tls handshake: PASS chapter %s end-to-end\n",
+           mode == 1 ? "126" : "125");
     return 0;
 }
 

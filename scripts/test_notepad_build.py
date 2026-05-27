@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_notepad_build.py -- chapter 127 smoke test.
+"""scripts/test_notepad_build.py -- chapter 163 smoke test.
 
 Validates the Notepad Build button (Ctrl-B):
 
@@ -14,9 +14,9 @@ Validates the Notepad Build button (Ctrl-B):
      "M127-BUILD-OK" and exit code 0.
 
 This is the chapter-XVII "apps use OS features" deliverable:
-the in-guest compiler (chapter 121-123), the in-guest
-build driver (chapter 126), and the in-guest editor
-(chapter 32 + chapter 84) all wired together end-to-end.
+the in-guest compiler (chapter 157-159), the in-guest
+build driver (chapter 162), and the in-guest editor
+(chapter 31 + chapter 85) all wired together end-to-end.
 """
 import json, os, select, socket, subprocess, sys, tempfile, time
 
@@ -120,7 +120,7 @@ def wait_for(s, needle, timeout):
     return buf
 
 def main():
-    print("[chapter 127] notepad Build button smoke test")
+    print("[chapter 163] notepad Build button smoke test")
     passes, fails = 0, 0
     def p(ok, msg):
         nonlocal passes, fails

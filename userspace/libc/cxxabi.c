@@ -1,4 +1,4 @@
-/* userspace/libc/cxxabi.c — chapter 132f
+/* userspace/libc/cxxabi.c — chapter 186
  *
  * Minimal Itanium-C++-ABI stubs needed to LINK programs that have
  * static local C++ objects (cc1 / cc1plus / xgcc).  These end up
@@ -64,7 +64,7 @@ void *__dso_handle = (void *)&__dso_handle;
  * group also discards that malloc, breaking unrelated callers.
  * Funnelling through extern malloc/free here means there's
  * always one canonical malloc symbol (defined in cstring.c via
- * the __asm__("malloc") rename).  See chapter 132f notes.  */
+ * the __asm__("malloc") rename).  See chapter 186 notes.  */
 typedef unsigned long __cxxabi_size_t;
 extern void *malloc(__cxxabi_size_t);
 extern void  free(void *);

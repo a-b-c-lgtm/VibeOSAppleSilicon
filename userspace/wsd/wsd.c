@@ -1,14 +1,14 @@
 /*
- * userspace/wsd/wsd.c — chapter 108d, window-server daemon.
+ * userspace/wsd/wsd.c — chapter 117, window-server daemon.
  *
- * Chapter 108d built this daemon in stages: the initial
+ * Chapter 117 built this daemon in stages: the initial
  * scanout claim (SYS_FB_MAP_SCANOUT) and /srv/wm bus setup,
  * then per-window framebuffer allocation (SYS_WIN_FB_ALLOC +
  * WM_WIN_MAP_FB), then damage-driven composition
  * (WM_WIN_DAMAGE + compose_all), then position tracking and
  * WM_WIN_MOVE, and finally the full app cutover — all GUI
  * apps ported to wmclient (/srv/wm), the kernel compositor
- * retired.  Chapter 108e layered decorations, resize, and
+ * retired.  Chapter 118 layered decorations, resize, and
  * the compose-based cursor model on top.
  *
  * Concurrency model
@@ -65,12 +65,12 @@
 #include "../libc/wm_proto.h"
 #include "../libgui/draw.h"
 
-/* chapter 108e -- decoration geometry.  Title bar above each
+/* chapter 118 -- decoration geometry.  Title bar above each
  * decorated window, no left/right/bottom border for now (a 1-px
  * border looked gappy at the launcher's gray background and would
  * just be more pixels for the same UX).
  *
- * chapter 108e -- two title-bar buttons, both inset 2 px from
+ * chapter 118 -- two title-bar buttons, both inset 2 px from
  * the bar edges:
  *   - close    (rightmost)  : red X, kills the window via
  *                             GUI_EVENT_CLOSE delivery.
@@ -81,7 +81,7 @@
  * Body origin (the pixel where the client's FB starts on the
  * scanout) is (w->x, w->y + deco_top_h(w)).  An undecorated
  * window has deco_top_h == 0, so wsd-without-decoration
- * behaviour is byte-identical to chapter 108d for
+ * behaviour is byte-identical to chapter 117 for
  * panels (taskbar, desktop wallpaper, notify popups). */
 #define WSD_TITLE_H        24u
 #define WSD_CLOSE_BTN_W    20u
@@ -89,7 +89,7 @@
 #define WSD_BTN_GAP         2u   /* gap between minimize and close */
 #define WSD_BTN_INSET       2u
 
-/* chapter 108e -- resize.  The grip is a 12x12 square in the
+/* chapter 118 -- resize.  The grip is a 12x12 square in the
  * bottom-right corner of decorated, RESIZABLE-flagged
  * windows.  Painted as three diagonal hairlines so it's
  * visually distinct from the close/minimize buttons up top.
@@ -160,7 +160,7 @@ static void wait_for_fb_then_map(struct fb_map_args *out)
  * at 2^32 in theory, never in practice (boot lifetime). */
 static uint32_t g_next_session_id = 1u;
 
-/* Chapter 108d — scanout state, cached after wait_for_fb_then_map.
+/* Chapter 117 — scanout state, cached after wait_for_fb_then_map.
  * Used by handle_damage as the destination of every blit.
  * g_scanout_va==0 means "FB not yet up" — any compose op
  * answered while in that state replies WM_ERR_NOTIMPL (a
@@ -191,7 +191,7 @@ struct wm_window {
     uint32_t w;               /* requested width  in pixels */
     uint32_t h;               /* requested height in pixels */
     uint32_t flags;           /* WM_WF_* bitmask */
-    /* Per-window shareable FB (chapter 108d).  Allocated at
+    /* Per-window shareable FB (chapter 117).  Allocated at
      * CREATE, freed at DESTROY / gc.  fb_id == 0 means "no
      * backing yet"; the only reason that can be true today
      * is a WIN_FB_ALLOC failure during CREATE (we still
@@ -201,7 +201,7 @@ struct wm_window {
     uint32_t fb_stride;       /* bytes per row (= fb_w*4) */
     uint32_t fb_size;         /* total mapped bytes (page-aligned) */
     uint64_t fb_va;           /* wsd-side VA (for future compose) */
-    /* chapter 108e -- the FB is allocated ONCE at CREATE
+    /* chapter 118 -- the FB is allocated ONCE at CREATE
      * for fb_w x fb_h pixels and never reallocated.  The
      * logical w/h above can shrink within that envelope on
      * resize and grow back up to (fb_w, fb_h) but never
@@ -211,7 +211,7 @@ struct wm_window {
      * the browser. */
     uint32_t fb_w;
     uint32_t fb_h;
-    /* Scanout-relative origin (chapter 108d).  Assigned at
+    /* Scanout-relative origin (chapter 117).  Assigned at
      * CREATE via cascade; mutated by WM_WIN_MOVE.  Used by
      * handle_damage to translate window-local source
      * coords into scanout destination coords. */
@@ -222,7 +222,7 @@ struct wm_window {
      * via WM_WIN_TITLE; empty string if the client never
      * called WM_WIN_TITLE.  NUL-terminated. */
     char     title[64];
-    /* chapter 108e -- kernel-WM "input shadow" id, set by
+    /* chapter 118 -- kernel-WM "input shadow" id, set by
      * WM_WIN_BIND_KERNEL.  -1 means "not bound" (no shadow
      * == no input routing, e.g. for output-only notify
      * popups).  Used by:
@@ -235,7 +235,7 @@ struct wm_window {
      * never destroys the shadow; the client's process exit
      * tears down the shadow via wm_destroy_owner. */
     int32_t  kernel_id;
-    /* chapter 108e -- minimize state.  Set when the user
+    /* chapter 118 -- minimize state.  Set when the user
      * clicks the minimize button (or WM_WIN_RESTORE is
      * called with the opposite intent).  Hidden windows are
      * skipped from compose (no pixels), from hit-test (no
@@ -247,7 +247,7 @@ struct wm_window {
 };
 static struct wm_window g_windows[WM_MAX_WINDOWS];
 
-/* chapter 108e -- explicit wsd-side z-order.  Each entry is a
+/* chapter 118 -- explicit wsd-side z-order.  Each entry is a
  * slot index into g_windows[]; the array is bottom-to-top, so
  * g_z_order[0] is the backmost in-use window and
  * g_z_order[g_z_count - 1] is the topmost.  Maintained by:
@@ -332,7 +332,7 @@ static int z_raise(int slot)
     return 1;
 }
 
-/* Chapter 108d — one big mutex around every handler.  Now that
+/* Chapter 117 — one big mutex around every handler.  Now that
  * each accepted connection runs on its own worker thread
  * (via thread_spawn_files so the cfd is shared), every read/
  * write of g_windows[], the cascade counters, the scanout
@@ -350,7 +350,7 @@ static int z_raise(int slot)
  *     itself the blocking point, not the handler) */
 static mutex_t g_wsd_lock = MUTEX_INIT;
 
-/* Chapter 108d — auto-position cascade.  Each CREATE picks up
+/* Chapter 117 — auto-position cascade.  Each CREATE picks up
  * the current (g_cascade_x, g_cascade_y) and advances by 40
  * px on each axis; if the next position would push the
  * incoming window off the scanout, the cascade wraps back
@@ -375,7 +375,7 @@ static uint32_t g_next_win_id = 1u;
  * cfd (for write() target) and the session id assigned by
  * the conn's WM_HELLO.  session_id stays 0 until HELLO
  * succeeds; CREATE before HELLO is treated as a protocol
- * error so a future ACL layer (chapter 113+) has somewhere
+ * error so a future ACL layer (chapter 132+) has somewhere
  * to hook in. */
 struct wm_conn {
     int      cfd;
@@ -412,7 +412,7 @@ static void blit_full_window(const struct wm_window *w);
  * close the cfd, so any stale window state can't outlive
  * the client.  Logs a one-liner if anything was reaped so
  * a leak (client forgot DESTROY before exit) is visible in
- * boot logs.  Also frees any per-window FB (chapter 108d) so
+ * boot logs.  Also frees any per-window FB (chapter 117) so
  * the kernel's win_fb table doesn't accumulate orphans. */
 static void gc_conn_windows(int cfd)
 {
@@ -424,7 +424,7 @@ static void gc_conn_windows(int cfd)
                 g_windows[i].fb_id = 0;
             }
             g_windows[i].in_use = 0;
-            /* chapter 108e -- yank this slot from the z-order
+            /* chapter 118 -- yank this slot from the z-order
              * so subsequent hit-tests + composes don't index it. */
             z_remove((int)i);
             reaped++;
@@ -465,7 +465,7 @@ static void handle_hello(struct wm_conn *c, const struct wm_msg *req)
     write(c->cfd, &rep, sizeof(rep));
 }
 
-/* Handle one WM_LIST request.  Chapter 108d: walks g_windows[]
+/* Handle one WM_LIST request.  Chapter 117: walks g_windows[]
  * and packs an entry per in-use slot directly after the
  * reply header in the same datagram.  Chapter-107 IPC is
  * datagram-oriented, so the whole reply (header + payload)
@@ -492,7 +492,7 @@ static void handle_list(struct wm_conn *c, const struct wm_msg *req)
         descs[n].owner_session = g_windows[i].owner_session;
         descs[n].w             = g_windows[i].w;
         descs[n].h             = g_windows[i].h;
-        /* chapter 108e -- expose the minimized state to
+        /* chapter 118 -- expose the minimized state to
          * WM_LIST clients (notably the taskbar) by ORing in
          * GUI_WIN_FLAG_MINIMIZED.  The wsd-side hidden bit
          * IS the source of truth -- the kernel's bit (set via
@@ -561,7 +561,7 @@ static uint32_t create_window_impl(struct wm_conn *c,
     g_windows[slot].fb_stride     = 0;
     g_windows[slot].fb_size       = 0;
     g_windows[slot].fb_va         = 0;
-    /* chapter 108e -- fb_w/fb_h are the immutable allocation
+    /* chapter 118 -- fb_w/fb_h are the immutable allocation
      * dimensions.  Set them to the create-time w/h up front
      * so resize can cap against them even if win_fb_alloc
      * below fails (it then stays a no-op cap because
@@ -573,12 +573,12 @@ static uint32_t create_window_impl(struct wm_conn *c,
      * freestanding C; manual loop. */
     for (uint32_t t = 0; t < sizeof(g_windows[slot].title); t++)
         g_windows[slot].title[t] = 0;
-    /* chapter 108e -- no kernel shadow bound until the client
+    /* chapter 118 -- no kernel shadow bound until the client
      * calls WM_WIN_BIND_KERNEL.  Output-only popups (notify)
      * never bind, and that's fine; their close path stays
      * "client exits, gc reaps". */
     g_windows[slot].kernel_id     = -1;
-    /* chapter 108e -- created visible.  Minimize button (or
+    /* chapter 118 -- created visible.  Minimize button (or
      * an explicit WM_WIN_RESTORE with hide intent in the
      * future) sets this. */
     g_windows[slot].hidden        = 0;
@@ -609,7 +609,7 @@ static uint32_t create_window_impl(struct wm_conn *c,
         g_windows[slot].fb_stride = fa.stride;
         g_windows[slot].fb_size   = fa.size;
         g_windows[slot].fb_va     = fa.va;
-        /* chapter 108e -- fb_w/fb_h track the CURRENT
+        /* chapter 118 -- fb_w/fb_h track the CURRENT
          * allocation (not a fixed cap).  Resize grows them
          * via win_fb_resize. */
         g_windows[slot].fb_w      = w;
@@ -619,7 +619,7 @@ static uint32_t create_window_impl(struct wm_conn *c,
                (unsigned)w, (unsigned)h, r);
     }
 
-    /* chapter 108e -- newly created windows go to the top of
+    /* chapter 118 -- newly created windows go to the top of
      * the wsd z-order so they're visible above existing ones,
      * matching every WIMP convention.  Subsequent click-to-
      * raise reorders this further. */
@@ -715,7 +715,7 @@ static void handle_destroy(struct wm_conn *c, const struct wm_msg *req)
         (void)win_fb_free(w->fb_id);
         w->fb_id = 0;
     }
-    /* chapter 108e -- find the slot index and pull it out of
+    /* chapter 118 -- find the slot index and pull it out of
      * the z-order BEFORE clearing in_use, so z_remove can
      * still locate the slot by direct address arithmetic
      * (g_windows is a contiguous array; slot = w - g_windows). */
@@ -771,7 +771,7 @@ static void handle_map_fb(struct wm_conn *c, const struct wm_msg *req)
     write(c->cfd, &rep, sizeof(rep));
 }
 
-/* Chapter 108d — blit `rw` x `rh` pixels from `src` (BGRA,
+/* Chapter 117 — blit `rw` x `rh` pixels from `src` (BGRA,
  * stride `src_stride`) into the scanout at (`dx`, `dy`).
  * Both buffers are mapped into wsd's AS (the scanout via
  * SYS_FB_MAP_SCANOUT, the source via SYS_WIN_FB_ALLOC). Byte-by-byte copy because freestanding
@@ -799,7 +799,7 @@ static uint32_t blit_to_scanout(const uint8_t *src, uint32_t src_stride,
          | ((uint32_t)first[3] << 24);
 }
 
-/* Chapter 108d — solid-colour wallpaper.  Chosen distinct from
+/* Chapter 117 — solid-colour wallpaper.  Chosen distinct from
  * any window's magic colour the tests use (hellowsd's
  * 0xff7755aa, wmtest's 0xff332211) so a screenshot test
  * could later distinguish "wallpaper" from "wsd-painted
@@ -816,7 +816,7 @@ static void paint_wallpaper(void)
     for (uint32_t i = 0; i < n_px; i++) p[i] = WSD_WALLPAPER_BGRA;
 }
 
-/* chapter 108e -- build a transient gui_fb over the scanout so
+/* chapter 118 -- build a transient gui_fb over the scanout so
  * we can call libgui/draw.h primitives (draw_fill_rect,
  * draw_text, draw_blit_bgra) to paint decoration.  Cheap to
  * construct; lives on the stack of each compose call so wsd
@@ -833,12 +833,12 @@ static struct gui_fb scanout_fb(void)
     return fb;
 }
 
-/* chapter 108e -- the cursor sprite, an 11x18 X11-style left-
+/* chapter 118 -- the cursor sprite, an 11x18 X11-style left-
  * pointer arrow.  '.' transparent, 'X' black border, '#' white
  * fill.  Hotspot is (0, 0): the tip of the arrow corresponds
  * to the actual pointer position the kernel reports.
  *
- * chapter 108e -- to keep cursor movement smooth, wsd does NOT
+ * chapter 118 -- to keep cursor movement smooth, wsd does NOT
  * full-recompose on every pixel-of-motion.  Instead it uses a
  * compose-based cursor: cursor_move_only re-composes just the
  * union of (old, new) cursor rects from window/wallpaper
@@ -878,7 +878,7 @@ static int32_t  g_cursor_x = -1;
 static int32_t  g_cursor_y = -1;
 static uint32_t g_cursor_btn = 0;
 
-/* chapter 108e -- compose-based cursor model.
+/* chapter 118 -- compose-based cursor model.
  *
  * Prior versions used a "save-under" buffer that captured the
  * pixels behind the sprite before painting and restored them
@@ -966,14 +966,14 @@ static void cursor_move_only(int32_t new_x, int32_t new_y);
 
 /* Paint the title bar + close button for a decorated window.
  * Title text comes from w->title (set via WM_WIN_TITLE, used by
- * every wmclient app since chapter 108d).  Title bar bg
+ * every wmclient app since chapter 117).  Title bar bg
  * picks the "active" colour when the window is the topmost
  * non-pinned one in slot order (rough proxy for focus until we
  * grow real focus tracking), idle otherwise.  Close button is
  * a solid red rect with a 2-px white X drawn via two diagonal
  * line passes.
  *
- * chapter 108e follow-up -- the (cx, cy, cw, ch) clip rect
+ * chapter 118 follow-up -- the (cx, cy, cw, ch) clip rect
  * confines every paint to its intersection with the clip
  * rect, in scanout coords.  This matters when compose_rect
  * re-decorates a BACK window during a partial redraw: without
@@ -1138,7 +1138,7 @@ static void paint_decoration_clipped(const struct wm_window *w,
         }
     }
 
-    /* chapter 108e -- resize grip in the bottom-right corner
+    /* chapter 118 -- resize grip in the bottom-right corner
      * of the WINDOW (not the title bar) for RESIZABLE windows.
      * Lives outside the bar so we evaluate it independently
      * of bar_visible. */
@@ -1178,7 +1178,7 @@ static void paint_decoration(const struct wm_window *w, int is_focused)
  * no backing FB (e.g. a CREATE whose WIN_FB_ALLOC failed
  * but that returned a slot for later DESTROY).
  *
- * chapter 108e -- decorated windows place their body at
+ * chapter 118 -- decorated windows place their body at
  * (w->x, w->y + WSD_TITLE_H); the title bar covers
  * (w->x, w->y) ... (w->x + w->w, w->y + WSD_TITLE_H).
  * Decoration paint is delegated to paint_decoration so
@@ -1217,11 +1217,11 @@ static void wsd_compose_all(void)
     paint_wallpaper();
     int painted = 0;
 
-    /* chapter 108e -- paint in explicit z-order (back to
+    /* chapter 118 -- paint in explicit z-order (back to
      * front) so the topmost wsd window is the last drawn and
      * therefore visually wins.  Focused = topmost decorated
      * window in z-order.
-     * chapter 108e -- hidden (minimized) windows are skipped
+     * chapter 118 -- hidden (minimized) windows are skipped
      * for both focus-selection and paint -- they contribute
      * nothing visually until WM_WIN_RESTORE flips hidden off. */
     int focused_slot = -1;
@@ -1241,7 +1241,7 @@ static void wsd_compose_all(void)
         paint_decoration(&g_windows[s], s == focused_slot);
         painted++;
     }
-    /* chapter 108e -- cursor sprite floats above every
+    /* chapter 118 -- cursor sprite floats above every
      * window.  Painted last so it's never occluded.  The
      * compose-based model means no save-under buffer is
      * maintained here -- the next cursor_move_only will
@@ -1257,7 +1257,7 @@ static void wsd_compose_all(void)
     printf("[wsd] compose_all painted=%d\n", painted);
 }
 
-/* chapter 108e -- z-order-respecting partial compose.  Paints
+/* chapter 118 -- z-order-respecting partial compose.  Paints
  * the wallpaper, then every in-use window in z-order back-to-
  * front, all clipped to the rect (rx, ry, rw, rh).  Used by
  * handle_damage so a background window updating its body
@@ -1303,13 +1303,13 @@ static void compose_rect(int32_t rx, int32_t ry, int32_t rw, int32_t rh)
      *    FB to the scanout.  Then if the window is decorated,
      *    repaint the title bar with the dirty rect as a clip
      *    so the bar paint never spills outside the damaged
-     *    region (chapter 108e follow-up fix: without the clip,
+     *    region (chapter 118 follow-up fix: without the clip,
      *    a back window's full-bar repaint would overwrite
      *    foreground-window pixels that the per-window body
      *    blit -- properly clipped to the damage rect -- never
      *    gets a chance to repair, leaving the back bar
      *    visible "on top of" the foreground body).
-     *    chapter 108e -- hidden (minimized) windows contribute
+     *    chapter 118 -- hidden (minimized) windows contribute
      *    nothing visually; skip them entirely so the wallpaper
      *    fill (step 1) stays visible where they used to be. */
     int focused_slot = -1;
@@ -1379,7 +1379,7 @@ static void compose_rect(int32_t rx, int32_t ry, int32_t rw, int32_t rh)
     }
 }
 
-/* chapter 108e -- cursor-only repaint, COMPOSE-BASED.
+/* chapter 118 -- cursor-only repaint, COMPOSE-BASED.
  *
  * Reconstructs the background under the union of (old, new)
  * cursor rects from the actual window FBs + wallpaper (via
@@ -1447,7 +1447,7 @@ static void cursor_move_only(int32_t new_x, int32_t new_y)
     g_cursor_x = new_x;
     g_cursor_y = new_y;
 
-    /* chapter 108e -- present the FULL scanout.
+    /* chapter 118 -- present the FULL scanout.
      *
      * We could (and previously did) present just the union
      * rect.  But the QEMU cocoa display backend on macOS
@@ -1513,12 +1513,12 @@ static void handle_damage(struct wm_conn *c, const struct wm_msg *req)
     uint32_t rw = WM_DAMAGE_W(req->d);
     uint32_t rh = WM_DAMAGE_H(req->d);
 
-    /* Chapter 108d — req.b/req.c are WINDOW-LOCAL source
+    /* Chapter 117 — req.b/req.c are WINDOW-LOCAL source
      * offsets into w's per-window FB; the destination on
      * the scanout is (w->x + req.b, w->y + req.c).  This
      * matches libgui's gui_window_dirty(fb, x, y, w, h)
      * shape, so wmclient can wire the call straight through.
-     * Earlier in chapter 108d, req.b/req.c were treated as
+     * Earlier in chapter 117, req.b/req.c were treated as
      * scanout coords directly; that was only equivalent when
      * the window sat at the origin. */
     uint32_t sx = dx;
@@ -1535,7 +1535,7 @@ static void handle_damage(struct wm_conn *c, const struct wm_msg *req)
     if (sx + rw > w->w) rw = w->w - sx;
     if (sy + rh > w->h) rh = w->h - sy;
 
-    /* Translate to scanout coords.  chapter 108e -- shift
+    /* Translate to scanout coords.  chapter 118 -- shift
      * by deco_top_h so the body lands below the title bar
      * for decorated windows; undecorated (panels) keep
      * the chapter-108d pixel-perfect mapping. */
@@ -1551,7 +1551,7 @@ static void handle_damage(struct wm_conn *c, const struct wm_msg *req)
     if (scan_x + rw > g_scanout_w) rw = g_scanout_w - scan_x;
     if (scan_y + rh > g_scanout_h) rh = g_scanout_h - scan_y;
 
-    /* chapter 108e -- compose just the dirty rect using the
+    /* chapter 118 -- compose just the dirty rect using the
      * z-order-aware compose_rect.  This replaces the earlier
      * chapter-108d direct-blit, which wrote a background window's pixels
      * straight to scanout even when foreground windows
@@ -1562,7 +1562,7 @@ static void handle_damage(struct wm_conn *c, const struct wm_msg *req)
      * affects the parts of the rect that are actually
      * visible.  Decoration (title bar) is repainted by
      * compose_rect for any window whose bar overlaps the
-     * rect.  chapter 108e -- the rect we expand to include
+     * rect.  chapter 118 -- the rect we expand to include
      * the title bar if any part of the body was damaged
      * (some apps paint just a body line; we still want the
      * bar to refresh for focus tracking when raise happens). */
@@ -1598,7 +1598,7 @@ static void handle_damage(struct wm_conn *c, const struct wm_msg *req)
         crect_h = (int32_t)rh;
     }
 
-    /* chapter 108e -- compose-based cursor.  Just compose
+    /* chapter 118 -- compose-based cursor.  Just compose
      * the damage rect (which paints fresh window/wallpaper
      * content there), then overlay the sprite if the cursor
      * overlaps the rect.  No save buffer to maintain.  If
@@ -1634,7 +1634,7 @@ static void handle_damage(struct wm_conn *c, const struct wm_msg *req)
                 + (size_t)scan_y * g_scanout_stride
                 + (size_t)scan_x * 4u));
 
-    /* chapter 108e -- present the FULL scanout.  See the
+    /* chapter 118 -- present the FULL scanout.  See the
      * detailed comment in cursor_move_only for why we don't
      * present partial rects: cocoa display dropped/coalesced
      * small flushes, leaving stale tiles visible even though
@@ -1647,7 +1647,7 @@ static void handle_damage(struct wm_conn *c, const struct wm_msg *req)
     write(c->cfd, &rep, sizeof(rep));
 }
 
-/* Chapter 108d — WM_WIN_MOVE.  Reposition a window on the
+/* Chapter 117 — WM_WIN_MOVE.  Reposition a window on the
  * scanout.  Owner-only (cross-conn moves get NOTOWNER).
  * Position must be within the scanout (-EINVAL via
  * WM_ERR_PROTO if x >= scanout_w or y >= scanout_h --
@@ -1694,7 +1694,7 @@ static void handle_move(struct wm_conn *c, const struct wm_msg *req)
     wsd_compose_all();
 }
 
-/* Chapter 108d — handle one WM_WIN_TITLE.  Wire format: req
+/* Chapter 117 — handle one WM_WIN_TITLE.  Wire format: req
  * header followed immediately by `title_len` payload bytes
  * (max WM_TITLE_MAX-1 ascii chars, NOT including a
  * terminating NUL the sender doesn't have to send).  We
@@ -1740,7 +1740,7 @@ static void handle_title(struct wm_conn *c, const struct wm_msg *req)
     write(c->cfd, &rep, sizeof(rep));
 }
 
-/* chapter 108e -- WM_WIN_BIND_KERNEL.  Records the kernel-WM
+/* chapter 118 -- WM_WIN_BIND_KERNEL.  Records the kernel-WM
  * "input shadow" id in the wsd window so the input poller
  * can:
  *   - call SYS_GUI_MOVE_WINDOW to keep the shadow's
@@ -1780,7 +1780,7 @@ static void handle_bind_kernel(struct wm_conn *c, const struct wm_msg *req)
                               (int32_t)w->x,
                               (int32_t)w->y + (int32_t)WSD_TITLE_H);
     }
-    /* chapter 108e -- turn on input passthrough on the kernel
+    /* chapter 118 -- turn on input passthrough on the kernel
      * shadow.  After this call, the kernel's hit-tester
      * ignores this window entirely; wsd routes ALL pointer
      * events (DOWN/UP/MOVE) to it via gui_deliver_event,
@@ -1796,7 +1796,7 @@ static void handle_bind_kernel(struct wm_conn *c, const struct wm_msg *req)
                    (int)w->kernel_id, pr);
         }
     }
-    /* chapter 108e -- on bind, raise the wsd window to the
+    /* chapter 118 -- on bind, raise the wsd window to the
      * top of wsd's z-order so the newly-bound client is the
      * front-most candidate for input.  Mirror to kernel by
      * calling gui_raise_window so keyboard focus follows. */
@@ -1820,7 +1820,7 @@ static void handle_bind_kernel(struct wm_conn *c, const struct wm_msg *req)
     wsd_compose_all();
 }
 
-/* chapter 108e -- WM_WIN_RESTORE.  Counterpart to the
+/* chapter 118 -- WM_WIN_RESTORE.  Counterpart to the
  * minimize-button click (which is an internal poller path).
  * Called by the taskbar when the user clicks a minimized
  * window's cell to bring it back.  Clears the wsd-side
@@ -1830,7 +1830,7 @@ static void handle_bind_kernel(struct wm_conn *c, const struct wm_msg *req)
  * restored window paints immediately.  Idempotent: a no-op
  * if the window is already visible.
  *
- * chapter 108e follow-up -- the "no-op when visible" branch
+ * chapter 118 follow-up -- the "no-op when visible" branch
  * caused taskbar clicks on a non-minimized window's cell to
  * do nothing.  The taskbar dispatches WM_WIN_RESTORE on
  * every cell click (it doesn't track minimize state itself
@@ -1965,7 +1965,7 @@ static void handle_notimpl(struct wm_conn *c, const struct wm_msg *req)
  * conn on the first protocol error (short read) keeps us
  * from looping on a stream of junk.
  *
- * Chapter 108d — this runs on a worker thread spawned per
+ * Chapter 117 — this runs on a worker thread spawned per
  * accept (via thread_spawn_files).  Multiple instances run
  * concurrently, one per live client; each dispatch call
  * takes g_wsd_lock so the shared window table stays
@@ -2028,7 +2028,7 @@ static void conn_thread(void *arg)
     exit(0);
 }
 
-/* ── chapter 108e — input poller ─────────────────────────────
+/* ── chapter 118 — input poller ─────────────────────────────
  *
  * Spawned once at startup (after the FB is mapped, before
  * accept).  Polls the kernel-WM pointer state at ~60 Hz, and
@@ -2104,7 +2104,7 @@ static int point_in_close_button(const struct wm_window *w,
         && py >= cb_y && py < cb_y + cb_h;
 }
 
-/* chapter 108e -- minimize button sits immediately to the
+/* chapter 118 -- minimize button sits immediately to the
  * left of the close button (separated by WSD_BTN_GAP).
  * Geometry MUST match paint_decoration above; both functions
  * use the same anchor (right edge of bar - inset) so the hit
@@ -2127,7 +2127,7 @@ static int point_in_minimize_button(const struct wm_window *w,
         && py >= mb_y && py < mb_y + mb_h;
 }
 
-/* chapter 108e -- resize grip hit-test.  Grip is the
+/* chapter 118 -- resize grip hit-test.  Grip is the
  * bottom-right WSD_GRIP_SIZE x WSD_GRIP_SIZE square of the
  * window's body (NOT the title bar).  Only present on
  * RESIZABLE-flagged windows; everything else returns 0 so
@@ -2158,7 +2158,7 @@ static int point_in_body(const struct wm_window *w,
 
 /* Walk wsd's z-order top-to-bottom, return the first slot
  * whose body/titlebar covers (px, py).  -1 = wallpaper.
- * chapter 108e -- hidden (minimized) windows are skipped:
+ * chapter 118 -- hidden (minimized) windows are skipped:
  * the user can't click into them, and the cursor sees them
  * as if they weren't there. */
 static int hit_test_topmost(int32_t px, int32_t py)
@@ -2183,7 +2183,7 @@ static int32_t g_drag_off_x    = 0;
 static int32_t g_drag_off_y    = 0;
 static uint32_t g_prev_btn     = 0;
 
-/* chapter 108e -- resize state.  -1 means "nobody being
+/* chapter 118 -- resize state.  -1 means "nobody being
  * resized".  The anchor is the cursor position at drag start;
  * orig_w/orig_h are the window's logical dims at drag start.
  * On each tick the new (w, h) = orig + (cursor - anchor),
@@ -2195,14 +2195,14 @@ static int32_t g_resize_anchor_y = 0;
 static uint32_t g_resize_orig_w  = 0;
 static uint32_t g_resize_orig_h  = 0;
 
-/* chapter 108e -- the slot whose body is the current "press
+/* chapter 118 -- the slot whose body is the current "press
  * target" between left-DOWN and the matching left-UP.  Used to
  * route the UP to the same window as the DOWN, even if the
  * user dragged the cursor off that window between press and
  * release.  -1 if no left button is held down on a body. */
 static int     g_press_slot    = -1;
 
-/* chapter 108e -- the slot the cursor was OVER on the last
+/* chapter 118 -- the slot the cursor was OVER on the last
  * tick (or -1 if cursor was over wallpaper / a title bar).
  * Tracked separately from g_press_slot so we can deliver a
  * "leave" MOUSE_MOVE to the previous body when the cursor
@@ -2239,7 +2239,7 @@ static void inject_pointer(const struct wm_window *w, uint32_t type,
     (void)gui_deliver_event(w->kernel_id, &ev);
 }
 
-/* chapter 108e -- apply a target (new_w, new_h) to window w
+/* chapter 118 -- apply a target (new_w, new_h) to window w
  * with clamping.  Calls the kernel's SYS_WIN_FB_RESIZE to
  * reallocate the backing pages, then re-maps to discover
  * wsd's new owner-VA, then delivers a coalesced
@@ -2405,7 +2405,7 @@ static void poller_tick(void)
     int moved   = (x != g_cursor_x) || (y != g_cursor_y);
     int rising  = ((btn & GUI_BTN_LEFT) && !(g_prev_btn & GUI_BTN_LEFT));
     int falling = (!(btn & GUI_BTN_LEFT) && (g_prev_btn & GUI_BTN_LEFT));
-    /* chapter 108e follow-up -- right-button edges.  Right-click
+    /* chapter 118 follow-up -- right-button edges.  Right-click
      * is used by apps for context-menu / colour-cycle gestures
      * (paint's palette cycle, future text-area context menu,
      * etc).  We never raise/focus/drag on right-button, just
@@ -2430,7 +2430,7 @@ static void poller_tick(void)
             printf("[wsd] drag end win-slot=%d\n", g_drag_slot);
         }
         g_drag_slot = -1;
-        /* chapter 108e -- also end any active resize.  We've
+        /* chapter 118 -- also end any active resize.  We've
          * been live-applying new dims each tick, so there's
          * nothing to commit on release; just clear the slot
          * so the next click starts fresh. */
@@ -2474,7 +2474,7 @@ static void poller_tick(void)
         }
     }
 
-    /* chapter 108e -- resize in progress.  Mirror of the
+    /* chapter 118 -- resize in progress.  Mirror of the
      * drag block above, but for the grip.  new_w/new_h are
      * (orig + cursor_delta), clamped inside resize_apply.
      * Triggers a full recompose so the body and grip stay
@@ -2518,7 +2518,7 @@ static void poller_tick(void)
      *   title bar      -> raise + start drag
      *   body           -> raise + inject MOUSE_DOWN
      *   wallpaper      -> do nothing (focus stays put)
-     * chapter 108e: also calls gui_raise_window so the kernel
+     * chapter 118: also calls gui_raise_window so the kernel
      * focuses the same window for keyboard input. */
     if (rising && g_drag_slot < 0) {
         int hit = hit_test_topmost(x, y);
@@ -2534,7 +2534,7 @@ static void poller_tick(void)
                            (unsigned)w->id, (int)w->kernel_id);
                 }
             } else if (point_in_minimize_button(w, x, y)) {
-                /* chapter 108e -- minimize click.  Mark the
+                /* chapter 118 -- minimize click.  Mark the
                  * wsd-side hidden bit and tell the kernel WM
                  * to drop keyboard focus from this window.
                  * Then full-recompose so the now-hidden
@@ -2563,7 +2563,7 @@ static void poller_tick(void)
                        (unsigned)w->id, hit,
                        (int)g_drag_off_x, (int)g_drag_off_y);
             } else if (point_in_resize_grip(w, x, y)) {
-                /* chapter 108e -- grip-press.  Grip is in the
+                /* chapter 118 -- grip-press.  Grip is in the
                  * window's BODY rect, so this check has to run
                  * before point_in_body below; otherwise the
                  * body branch would steal the click and inject
@@ -2586,7 +2586,7 @@ static void poller_tick(void)
                        (unsigned)w->w, (unsigned)w->h,
                        (int)x, (int)y);
             } else if (point_in_body(w, x, y)) {
-                /* chapter 108e follow-up -- PIN_BOTTOM windows
+                /* chapter 118 follow-up -- PIN_BOTTOM windows
                  * (the wallpaper) are click-transparent for
                  * focus/raise purposes.  Without this skip,
                  * clicking through to the wallpaper would call
@@ -2629,7 +2629,7 @@ static void poller_tick(void)
      * Skipped during a title-bar drag so the dragged window
      * doesn't see phantom moves.
      *
-     * chapter 108e -- ALSO synthesize a "leave" MOUSE_MOVE
+     * chapter 118 -- ALSO synthesize a "leave" MOUSE_MOVE
      * to the previously-hovered window when the cursor exits
      * its body.  Without this, hover-on-mouse-move apps
      * (launcher buttons, browser toolbar buttons) stay stuck
@@ -2642,7 +2642,7 @@ static void poller_tick(void)
      * detect (new_hover != g_hover) branch the app already
      * has.
      *
-     * chapter 108e follow-up #3 -- also skip during a resize
+     * chapter 118 follow-up #3 -- also skip during a resize
      * drag.  Without this, every poller tick injects a phantom
      * MOUSE_MOVE on top of the GUI_EVENT_RESIZE, leaving an
      * interleaved [RESIZE, MOVE, RESIZE, MOVE, ...] ring that
@@ -2702,7 +2702,7 @@ static void poller_tick(void)
     }
     if (falling) g_press_slot = -1;
 
-    /* chapter 108e follow-up -- right-button DOWN/UP.  Routed
+    /* chapter 118 follow-up -- right-button DOWN/UP.  Routed
      * to the topmost decorated window under the cursor (which
      * is wsd's notion of "focused", same as the focused_slot
      * compose_all picks).  Does NOT raise, does NOT focus, does
@@ -2774,7 +2774,7 @@ static void input_poller_thread(void *arg)
     printf("[wsd] input poller alive\n");
     for (;;) {
         poller_tick();
-        /* chapter 108e -- the kernel scheduler tick is 100 ms
+        /* chapter 118 -- the kernel scheduler tick is 100 ms
          * (TICK_INTERVAL_MS), so sleep_ms() with anything less
          * than 100 actually sleeps a full quantum -- the
          * resulting 10 Hz cursor polling is what made the
@@ -2794,7 +2794,7 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
 
-    printf("[wsd] starting (chapter 108d)\n");
+    printf("[wsd] starting (chapter 117)\n");
 
     struct fb_map_args fb = {0};
     wait_for_fb_then_map(&fb);
@@ -2846,14 +2846,14 @@ int main(int argc, char **argv)
         /* Paint the wallpaper and flush to GPU
          * so the screen isn't whatever garbage the BIOS or
          * the previous kernel-WM-driven compose left in
-         * scanout RAM.  Until chapter 108d the kernel WM did
+         * scanout RAM.  Until chapter 117 the kernel WM did
          * this implicitly on its first event; now wsd owns
          * it.  No windows yet so compose_all is just
          * wallpaper + fb_present. */
         wsd_compose_all();
     }
 
-    /* chapter 108e -- spawn the input poller now (after FB is
+    /* chapter 118 -- spawn the input poller now (after FB is
      * mapped, before accept).  The poller needs the scanout
      * cached so its first compose_all draws the cursor.
      * Spawning *before* accept means the poller is alive
@@ -2874,7 +2874,7 @@ int main(int argc, char **argv)
         }
     }
 
-    /* Chapter 108d — one worker thread per accepted connection.
+    /* Chapter 117 — one worker thread per accepted connection.
      * Threads share our fd table via thread_spawn_files so
      * the cfd we just accepted is usable from the worker.
      * Each worker calls exit(0) when its conn EOFs; the

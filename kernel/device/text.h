@@ -1,5 +1,5 @@
 /*
- * Text rendering — Chapter 23.
+ * Text rendering — Chapter 22.
  *
  * Built on top of:
  *   - font.h          (struct bitmap_font, font_get_bitmap, font_glyph)
@@ -27,7 +27,7 @@
  *
  * Everything here is synchronous and stateless: no caches, no dirty
  * tracking, no off-screen buffers. That all arrives later in the
- * compositor (Chapter 29). For now the framebuffer *is* the surface.
+ * compositor (Chapter 28). For now the framebuffer *is* the surface.
  */
 
 #ifndef KERNEL_DEVICE_TEXT_H

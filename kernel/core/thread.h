@@ -14,7 +14,7 @@
  *   - thread_exit() terminates the calling thread; the scheduler
  *     reclaims its stack.
  *
- * In milestone 5 the timer ISR also calls schedule(), giving us
+ * The timer ISR also calls schedule(), giving us
  * preemption "for free" because both code paths use the same
  * cswitch_to primitive and the same exception-frame format.
  */
@@ -69,7 +69,7 @@ struct thread {
     char               name[THREAD_NAME_MAX];
     struct thread     *next;          /* runqueue link (NULL when off rq) */
     struct thread     *all_next;      /* link in global "all threads" list */
-    /* Chapter 93 — refcounted, possibly-shared fd table.  Each
+    /* Chapter 94 — refcounted, possibly-shared fd table.  Each
      * thread holds exactly one reference; vfs_close_all on
      * thread exit drops it.  CLONE_FILES (SYS_CLONE3) bumps
      * the refcount instead of allocating a fresh table.  See
@@ -118,7 +118,7 @@ struct thread {
      * console reads, where it short-circuits the read with
      * -EINTR so the dispatcher can see it. */
     uint32_t           sig_pending;
-    /* Per-signal disposition table (chapter 77).
+    /* Per-signal disposition table (chapter 76).
      *   sig_handlers[s] == 0  : SIG_DFL — terminate with 128+s.
      *   sig_handlers[s] == 1  : SIG_IGN — drop silently.
      *   any other value       : EL0 user function pointer.
@@ -133,16 +133,16 @@ struct thread {
      * first sys_sigaction call; zero means "no trampoline yet,
      * caller must register one before catching signals." */
     uint64_t           sig_restorer;
-    /* Chapter 92 — CPU affinity ("home CPU").  Set at create
+    /* Chapter 93 — CPU affinity ("home CPU").  Set at create
      * time to the CPU the thread is destined to run on.  Wakes
      * (thread_wake_blocked, the sleeper-walk in yield) route
      * the thread back to home_cpu's runqueue regardless of
      * which CPU is doing the waking, so a CPU-0 thread that
      * gets woken by a CPU-1 unlock still resumes on CPU 0.
-     * Pre-chapter 92, every thread implicitly had home_cpu=0
+     * Pre-chapter 93, every thread implicitly had home_cpu=0
      * because user threads never ran anywhere else. */
     uint32_t           home_cpu;
-    /* Chapter 100 — per-thread syscall-tracer ring.  NULL when
+    /* Chapter 102 — per-thread syscall-tracer ring.  NULL when
      * not traced (the common case; the dispatcher branch is
      * cheap).  Allocated lazily by sys_trace_me; freed in the
      * two reap sites via strace_release().  Not inherited
@@ -175,10 +175,10 @@ struct thread *thread_create(thread_entry_fn entry,
                              void *arg,
                              const char *name);
 
-/* Chapter 89 — spawn a kernel thread on a SPECIFIC CPU.  The new
+/* Chapter 90 — spawn a kernel thread on a SPECIFIC CPU.  The new
  * thread is placed on `cpu_id`'s runqueue and an IPI_RESCHED is
  * sent so an idle target wakes from WFI promptly.  `cpu_id` must
- * be < SMP_MAX_CPUS; out-of-range returns NULL.  In chapter 89
+ * be < SMP_MAX_CPUS; out-of-range returns NULL.  In chapter 90
  * threads do not migrate after creation: the chosen CPU is the
  * one the thread will run on for life.  Returns NULL on OOM. */
 struct thread *thread_create_on(uint32_t cpu_id,
@@ -186,7 +186,7 @@ struct thread *thread_create_on(uint32_t cpu_id,
                                 void *arg,
                                 const char *name);
 
-/* Chapter 89 — initialise the calling CPU's idle thread record.
+/* Chapter 90 — initialise the calling CPU's idle thread record.
  *
  * Called once from secondary_main on each CPU N >= 1.  Allocates
  * a bare `struct thread` (no heap stack — the idle thread runs on
@@ -214,7 +214,7 @@ struct thread *user_thread_create(uint64_t user_entry_va,
                                   const char *name,
                                   struct address_space *as);
 
-/* Chapter 91 — spawn a thread that shares an existing AS.  Bumps
+/* Chapter 92 — spawn a thread that shares an existing AS.  Bumps
  * the AS's refcount internally (caller does NOT need to bump it
  * first).  The new thread's first user-mode register file has
  * x0 = arg, SP_EL0 = user_sp_top, ELR_EL1 = user_entry_va, and
@@ -228,7 +228,7 @@ struct thread *user_thread_create_shared(uint64_t user_entry_va,
                                          uint64_t arg,
                                          uint64_t tls);
 
-/* Chapter 92 — same as user_thread_create_shared but lets the
+/* Chapter 93 — same as user_thread_create_shared but lets the
  * caller pin the new thread to a specific CPU.  cpu_id is the
  * absolute CPU number (0..SMP_MAX_CPUS-1) the thread will run on
  * for its lifetime; pass -1 to inherit the creating CPU (the
@@ -244,11 +244,11 @@ struct thread *user_thread_create_shared_on(uint64_t user_entry_va,
                                             uint64_t tls,
                                             int cpu_id);
 
-/* Chapter 93 — same as user_thread_create_shared_on plus an
+/* Chapter 94 — same as user_thread_create_shared_on plus an
  * extra `share_fdt` knob.  When non-zero the new thread adopts
  * the calling thread's fd_table by reference (CLONE_FILES);
  * when zero the new thread gets a fresh private table (same
- * behaviour as the chapter 92 entry point above).  Used by
+ * behaviour as the chapter 93 entry point above).  Used by
  * sys_clone3. */
 struct thread *user_thread_create_shared_files_on(uint64_t user_entry_va,
                                                    uint64_t user_sp_top,
@@ -265,7 +265,7 @@ void yield(void);
 
 /* Voluntarily run the scheduler.  Same as yield() except for the
  * intent: schedule() is also what the IRQ-driven preemption path
- * calls in milestone 5. */
+ * calls. */
 void schedule(void);
 
 /* Terminate the calling thread with the given exit code.  Marks it
@@ -313,7 +313,7 @@ void thread_sleep_ms(uint64_t ms);
  * but unlikely with our single-CPU scheduler). */
 void thread_block_on(void *token);
 
-/* Chapter 114f — like thread_block_on but with an absolute
+/* Chapter 146 — like thread_block_on but with an absolute
  * deadline (monotonic ms).  Returns early when:
  *   - someone calls thread_wake_blocked(token), OR
  *   - the wall clock reaches deadline_ms, OR
@@ -330,7 +330,7 @@ void thread_block_on_until(void *token, uint64_t deadline_ms);
  * runqueue; clears blocked_on. */
 void thread_wake_blocked(void *token);
 
-/* Chapter 92 — cross-CPU-safe block primitive used by the
+/* Chapter 93 — cross-CPU-safe block primitive used by the
  * futex slow path.
  *
  * Pattern:
@@ -421,7 +421,7 @@ void thread_inherit_fds(struct thread *child, struct thread *parent);
  * with truncation to THREAD_NAME_MAX-1 source bytes. */
 void thread_rename(struct thread *t, const char *new_name);
 
-/* Chapter 99 — /proc snapshot record.  Designed to be cheap to
+/* Chapter 101 — /proc snapshot record.  Designed to be cheap to
  * fill from inside the g_all_lock-held iteration loop in
  * thread_snapshot() so callers can release the lock before any
  * expensive formatting work.  All scalar; no pointers into
@@ -454,7 +454,7 @@ int thread_snapshot(struct thread_snap *out, int max);
  * return. */
 int thread_snapshot_pid(int pid, struct thread_snap *out);
 
-/* Chapter 100 — render /proc/<pid>/trace into `out[cap]` and
+/* Chapter 102 — render /proc/<pid>/trace into `out[cap]` and
  * drain the target thread's tracer ring.  Holds g_all_lock for
  * the duration of the render so the target thread cannot be
  * freed underneath the formatter.  Returns the byte length

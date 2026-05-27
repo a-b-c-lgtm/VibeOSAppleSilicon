@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_virtio_net.py — milestone-52 smoke test.
+"""scripts/test_virtio_net.py — virtio-net smoke test.
 
 Boots fully headless with QEMU SLIRP user-mode networking attached
 to a virtio-net device on the virtio-mmio bus.  Verifies the
@@ -15,12 +15,12 @@ Passing this test means:
     transmitted ARP frame reached SLIRP and SLIRP's reply made
     it back into our RX ring)
 
-Note: the in-kernel self-test was rewritten in milestone 53 to go
+Note: the in-kernel self-test was rewritten to go
 through the new `kernel/core/net.{c,h}` stack (Ethernet + ARP +
 IPv4 framing) rather than hand-rolling the 42-byte ARP frame.
 The on-the-wire behaviour is identical, so this test still
-exercises the milestone-52 driver end-to-end — it just greps for
-the milestone-53 log lines now.
+exercises the virtio-net driver end-to-end — it just greps for
+the net-stack log lines now.
 """
 import os, select, socket, subprocess, sys, time
 
@@ -113,7 +113,7 @@ def main():
             return 1
         print("PASS: shell prompt reached after net init")
 
-        print("\nMILESTONE 52: ALL TESTS PASSED")
+        print("\nALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

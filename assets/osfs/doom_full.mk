@@ -1,11 +1,14 @@
-# doom_full.mk -- chapter 133d in-guest doom full vendor compile.
+# doom_full.mk -- chapter 194 in-guest doom full vendor compile.
 #
-# Compiles the 77 canonical DoomGeneric vendor sources to .o
-# files using /bin/gcc + /bin/make.  The set is the host
-# Makefile's SRC_DOOM minus doomgeneric_xlib.o (we replace
-# the X11 backend with our own osdev shim, shipped separately).
+# Compiles the 81 canonical DoomGeneric vendor sources (plus
+# dummy.o) to .o files using /bin/gcc + /bin/make, producing
+# the same 82-object set the host cross-build produces and
+# /bin/doom_link.args expects.  The set is the host Makefile's
+# DOOM_VENDOR_SRCS minus the SDL/X11/Allegro/etc. platform
+# backends (we replace them with our own osdev shim, shipped
+# separately as libdoomrt.a).
 #
-# Like chapter 133c's doom_pilot.mk, this fixture uses
+# Like chapter 193's doom_pilot.mk, this fixture uses
 # ABSOLUTE paths everywhere because /bin/sys_spawn does not
 # propagate cwd to children.
 #
@@ -16,7 +19,15 @@
 #   /bin/make -f /bin/doom_full.mk
 
 CC = /bin/gcc
-CFLAGS = -O0 -DNORMALUNIX -I /data/src
+# -DOSDEV_LIBC_NO_GLOBAL_DEFS mirrors the host
+# DOOM_VENDOR_CFLAGS: without it, every vendor TU that
+# transitively includes userspace/libc/atexit.h or env.h emits
+# its own copy of __cxa_finalize / environ, and the subsequent
+# /bin/make -f /bin/doom_link.mk drowns in "multiple definition
+# of `__cxa_finalize'" / "multiple definition of `environ'"
+# errors.  cstring.o inside /bin/libdoomrt.a provides the
+# canonical single defs the suppressed TUs link against.
+CFLAGS = -O0 -DNORMALUNIX -DOSDEV_LIBC_NO_GLOBAL_DEFS -I /data/src
 
 DIR = /data/src
 
@@ -35,8 +46,10 @@ OBJS = $(DIR)/dummy.o \
        $(DIR)/f_finale.o \
        $(DIR)/f_wipe.o \
        $(DIR)/g_game.o \
+       $(DIR)/gusconf.o \
        $(DIR)/hu_lib.o \
        $(DIR)/hu_stuff.o \
+       $(DIR)/icon.o \
        $(DIR)/info.o \
        $(DIR)/i_cdmus.o \
        $(DIR)/i_endoom.o \

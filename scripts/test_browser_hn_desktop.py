@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_hn_desktop.py -- chapter 106b "in desktop" repro.
+"""scripts/test_browser_hn_desktop.py -- chapter 110 "in desktop" repro.
 
 The 30-40 s GUI-browser HN-fetch slowdown the user is seeing
 does NOT reproduce when proxytest is run against a quiet kernel
@@ -283,7 +283,7 @@ def main():
         print(f"PASS: HTTPD_UPSTREAM=10.0.2.2:{args.proxy_port}")
 
         # 3. From the kernel sh on SERIAL, background httpd
-        # (chapter 79b gave us `&`).  We deliberately want httpd
+        # (chapter 79 gave us `&`).  We deliberately want httpd
         # running as a peer of the desktop, not as a child of any
         # gui_term -- that way the kernel sh is free to spawn the
         # foreground gui_term next.
@@ -297,7 +297,7 @@ def main():
         wait_for(ser, b"$ ", 2.0, transcript)
         print("PASS: httpd 8080 backgrounded by /bin/sh on serial")
 
-        # 3b. Chapter 106c: the browser default proxy is now
+        # 3b. Chapter 111: the browser default proxy is now
         # 127.0.0.1:80 (init's auto-spawned local-file httpd
         # with no upstream).  Re-point it at our forwarding
         # 8080 instance so HTTPS-to-HN goes through the bridge.

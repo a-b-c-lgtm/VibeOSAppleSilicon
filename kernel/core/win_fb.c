@@ -1,5 +1,5 @@
 /*
- * kernel/core/win_fb.c — chapter 108d.
+ * kernel/core/win_fb.c — chapter 117.
  *
  * See win_fb.h for the design.  This file is the implementation
  * of the table + the three syscalls + the exit-time hook.
@@ -45,7 +45,7 @@
 #define WIN_FB_MAX_W        4096u
 #define WIN_FB_MAX_H        4096u
 
-/* chapter 108e follow-up #3 — lazy-unmap of stale FB pages across
+/* chapter 118 follow-up #3 — lazy-unmap of stale FB pages across
  * a resize.  Background:
  *
  *   The old sys_win_fb_resize was synchronous from any one caller's
@@ -181,7 +181,7 @@ static void free_backing_pages(struct win_fb *fb)
     fb->n_pages = 0;
 }
 
-/* ---- stale-generation helpers (chapter 108e follow-up #3) ---- */
+/* ---- stale-generation helpers (chapter 118 follow-up #3) ---- */
 
 /* Free the PA array AND tracking struct for one stale generation.
  * Caller must already have uninstalled every VA that referenced
@@ -336,7 +336,7 @@ static void destroy_fb(struct win_fb *fb, struct address_space *skip_as)
 
     free_backing_pages(fb);
 
-    /* chapter 108e follow-up #3 \u2014 free any remaining stale gens.
+    /* chapter 118 follow-up #3 \u2014 free any remaining stale gens.
      * Every mapping that still pointed at them was just dropped by
      * uninstall_all_mappings (which also decremented ref_counts and
      * freed any gen that hit 0), so all remaining in-use stale gens
@@ -425,7 +425,7 @@ long sys_win_fb_alloc(long args_uptr)
         fb->mappings[i].pid       = 0;
         fb->mappings[i].stale_idx = -1;
     }
-    /* chapter 108e follow-up #3 \u2014 init lazy-unmap state. */
+    /* chapter 118 follow-up #3 \u2014 init lazy-unmap state. */
     for (uint32_t i = 0; i < WIN_FB_MAX_STALE_GEN; i++) {
         fb->stale[i].in_use    = 0;
         fb->stale[i].pages     = NULL;
@@ -480,7 +480,7 @@ long sys_win_fb_map(long args_uptr)
      * the cached VA.  Saves a re-install round-trip when an
      * app calls MAP_FB twice.
      *
-     * chapter 108e follow-up #3: if the existing mapping is
+     * chapter 118 follow-up #3: if the existing mapping is
      * STALE (was lazy-kept across a sys_win_fb_resize so the
      * mapper didn't translation-fault mid-render), refresh
      * it now \u2014 uninstall the stale VA, install a fresh one
@@ -629,7 +629,7 @@ long sys_win_fb_free(long id_arg)
 
 /* Syscall: resize ----------------------------------------------- */
 
-/* chapter 108e (revised by follow-up #3) \u2014 owner-only resize with
+/* chapter 118 (revised by follow-up #3) \u2014 owner-only resize with
  * lazy-unmap of mappers.
  *
  * Visible from the OWNER's PoV:
@@ -743,7 +743,7 @@ long sys_win_fb_resize(long id_arg, long new_w_arg, long new_h_arg)
         }
     }
 
-    /* Phase 3 (chapter 108e follow-up #3): lazy-unmap mappers.
+    /* Phase 3 (chapter 118 follow-up #3): lazy-unmap mappers.
      *
      * Instead of synchronously uninstalling each mapper's VA against
      * the old pages \u2014 which would translation-fault the mapper if it
@@ -896,7 +896,7 @@ void win_fb_release_pid(uint64_t pid)
          * fb->pages, the owner will free them on its own
          * exit or via SYS_WIN_FB_FREE).
          *
-         * chapter 108e follow-up #3: if the mapping was stale
+         * chapter 118 follow-up #3: if the mapping was stale
          * (lazy-kept across a resize), drop its ref on the
          * stale generation \u2014 the gen's pages get freed when
          * the last referent goes.  Without this an exiting

@@ -1,6 +1,6 @@
-/* userspace/mmaptest/mmaptest.c — chapter 90 mmap smoke test.
+/* userspace/mmaptest/mmaptest.c — chapter 91 mmap smoke test.
  *
- * Exercises both flavours that chapter 90 supports:
+ * Exercises both flavours that chapter 91 supports:
  *
  *   1. Anonymous MAP_PRIVATE | MAP_ANONYMOUS, PROT_READ | PROT_WRITE
  *      \u2014 the malloc-replacement use case.  Pages are allocated
@@ -26,9 +26,9 @@
  *   - We rely on /motd being present in ramfs (it has been since
  *     chapter 8).  If the chapter-90 floor ever extends to
  *     /mnt/<file> mmaps, swap the file path here.
- *   - We deliberately do NOT call fork().  Chapter 90 floor:
+ *   - We deliberately do NOT call fork().  Chapter 91 floor:
  *     mmaps don't survive fork.  See chapter doc for the
- *     rationale and the fix sketch for chapter 91+.
+ *     rationale and the fix sketch for chapter 92+.
  */
 
 #include "../libc/syscall.h"

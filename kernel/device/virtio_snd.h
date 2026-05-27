@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_snd.h — chapter 96 virtio-snd driver.
+ * kernel/device/virtio_snd.h — chapter 97 virtio-snd driver.
  *
  * The narrowest possible audio output: ONE PCM stream, mono S16
  * at a fixed 44_100 Hz, blocking submission, no event-queue
@@ -45,7 +45,7 @@
  * configure and start one mono S16/44_100 Hz output stream.
  *
  * Returns 0 on success or -1 on absent / failed init.  Safe to
- * call when no virtio-sound device is present (chapter 96 floor:
+ * call when no virtio-sound device is present (chapter 97 floor:
  * the driver is optional, tests that don't add the QEMU
  * argument won't see any of its log lines).
  */

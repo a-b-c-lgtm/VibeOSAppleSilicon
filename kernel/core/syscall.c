@@ -10,13 +10,13 @@
  *
  * Handlers are deliberately tiny.  SYS_WRITE only supports fd 1 (a
  * synonym for "the kernel console") and copies the bytes verbatim
- * with serial_putc.  When milestone 8 introduces a real VFS,
+ * with serial_putc.  Once a real VFS arrives,
  * SYS_WRITE will start dispatching by descriptor.
  *
  * Security note: SYS_WRITE blindly trusts the user pointer.  In a
  * real OS we would copy_from_user with bounds-checking against the
- * process's address space.  Until milestone 7 introduces real
- * per-process address spaces this is a known shortcut and the
+ * process's address space.  Until real per-process address spaces
+ * arrive this is a known shortcut and the
  * comments below flag the spots that need to grow validation.
  */
 
@@ -128,7 +128,7 @@ static long sys_write(long fd, long buf_ptr, long len)
         }
         if (e->in_use && e->kind == FD_SOCKET) {
             if (e->socket_cid < 0) return -EBADF;
-            /* Chapter 106b: bumped from 512 bytes to 4 KiB.  At
+            /* Chapter 110: bumped from 512 bytes to 4 KiB.  At
              * 512 a single 16 KiB httpd write (HTTPD_SEND_CHUNK)
              * became 32 copy_from_user + tcp_send pairs, each
              * tcp_send appending a tiny slice to the 32 KiB
@@ -165,12 +165,12 @@ static long sys_write(long fd, long buf_ptr, long len)
             }
             return total;
         }
-        /* Chapter 104: listening sockets are not writable.
+        /* Chapter 106: listening sockets are not writable.
          * Symmetric with the read-side guard in vfs_read. */
         if (e->in_use && e->kind == FD_SOCKET_LISTEN) {
             return -EINVAL_VFS;
         }
-        /* Chapter 107: named-IPC.  Connected fds carry length-
+        /* Chapter 112: named-IPC.  Connected fds carry length-
          * prefixed datagrams — each sys_write enqueues exactly
          * one message.  Listen fds are write-rejected (the only
          * non-close op is SYS_SRV_ACCEPT). */
@@ -195,7 +195,7 @@ static long sys_write(long fd, long buf_ptr, long len)
             return w;
         }
         if (e->in_use && e->kind == FD_USERFS_FILE) {
-            /* Chapter 114: a userfs file write hands the bytes
+            /* Chapter 140: a userfs file write hands the bytes
              * to the userspace daemon over the channel.  Stream
              * in 256-byte chunks so a 1 MiB write doesn't need
              * a 1 MiB kmalloc.  P9_MAX_PAYLOAD inside the
@@ -425,7 +425,7 @@ static long sys_spawn(long name_ptr, long args_ptr)
     if (!t) { address_space_destroy(as); return -ENOMEM_VFS; }
 
     /* Inherit the parent's fd table into the child (POSIX
-     * fork+exec semantics).  Chapter 79b: when /bin/sh is itself
+     * fork+exec semantics).  Chapter 79: when /bin/sh is itself
      * running with fd 0/1/2 wired to a pty slave (because it was
      * spawned by gui_term), every command the shell runs must see
      * the same pty — otherwise `uptime` writes its bytes to the
@@ -573,7 +573,7 @@ static int dup_parent_fd_into_child(struct thread *parent, int pfd,
     if (!src->in_use) return -EBADF;
 
     /* Tear down any pre-existing object in the child's target
-     * slot before we overwrite — chapter 79b made sys_spawn_pipe
+     * slot before we overwrite — chapter 79 made sys_spawn_pipe
      * call thread_inherit_fds first, which may have planted a
      * pty slave (or another pipe end) at cfd that we must not
      * leak. */
@@ -584,7 +584,7 @@ static int dup_parent_fd_into_child(struct thread *parent, int pfd,
         else if (dst->kind == FD_PTY_MASTER && dst->pty) pty_close_master(dst->pty);
         else if (dst->kind == FD_PTY_SLAVE  && dst->pty) pty_close_slave(dst->pty);
         else if (dst->kind == FD_USERFS_FILE && dst->userfs_ch) {
-            /* Chapter 114 — only decrement the counter; we're
+            /* Chapter 140 — only decrement the counter; we're
              * dropping the slot's reference but the daemon-
              * facing handle stays open via the new fd we're
              * about to install (or via a sibling fd that
@@ -612,7 +612,7 @@ static int dup_parent_fd_into_child(struct thread *parent, int pfd,
         dst->pty->s2m->w_refs++;
     }
     else if (dst->kind == FD_USERFS_FILE && dst->userfs_ch) {
-        /* Chapter 114 — mirror thread_inherit_fds: every
+        /* Chapter 140 — mirror thread_inherit_fds: every
          * additional fd entry that points at the channel must
          * bump open_fds so the eventual close decrement is
          * balanced. */
@@ -689,7 +689,7 @@ static long sys_spawn_pipe(long name_ptr, long args_ptr,
 
     /* Inherit parent's fd table first (so fd 2 / fd 3+ flow into
      * the child).  Then override fd 0 / fd 1 with the requested
-     * pipe ends.  Chapter 79b: without the inherit step a piped
+     * pipe ends.  Chapter 79: without the inherit step a piped
      * command run under gui_term would write its diagnostics
      * (stderr) to the raw serial UART instead of the pty
      * slave. */
@@ -752,7 +752,7 @@ static long sys_wait(long code_out_ptr)
 }
 
 /*
- * sys_waitpid(int pid, int *code_out, int options) — chapter 78.
+ * sys_waitpid(int pid, int *code_out, int options) — chapter 77.
  * Generalised reaper: filter by specific pid, optional WNOHANG.
  * See SYS_WAITPID doc in syscall.h for the contract.  We only
  * write *code_out when we actually reap (return > 0), to keep
@@ -815,7 +815,7 @@ static long sys_sbrk(long inc)
 }
 
 /*
- * sys_mmap(addr, len, prot, flags, fd, offset) — chapter 90.
+ * sys_mmap(addr, len, prot, flags, fd, offset) — chapter 91.
  *
  * Supports the floor described in mmap_uapi.h:
  *
@@ -868,14 +868,14 @@ static long sys_mmap(long addr_unused, long len, long prot, long flags,
         return (long)va;
     }
 
-    /* File-backed.  Chapter 90: PROT_READ only, ramfs only. */
+    /* File-backed.  Chapter 91: PROT_READ only, ramfs only. */
     if (prot & PROT_WRITE) return -EINVAL_VFS;
     if (fd < 0 || fd >= FD_TABLE_SIZE) return -EBADF;
     struct fd_entry *e = &t->fdt->fds[fd];
     if (!e->in_use) return -EBADF;
     if (e->kind != FD_FILE) return -EINVAL_VFS;
     /* FD_FILE distinguishes ramfs vs osfs by osfs_size != 0.
-     * Chapter 90 supports ramfs only. */
+     * Chapter 91 supports ramfs only. */
     if (e->osfs_size != 0) return -EINVAL_VFS;
     if (e->ramfs_index < 0) return -EBADF;
 
@@ -892,7 +892,7 @@ static long sys_munmap(long addr, long len)
 {
     struct thread *t = thread_current();
     if (!t || !t->as) return -EINVAL_VFS;
-    (void)len;       /* chapter 90 only supports whole-vma unmap */
+    (void)len;       /* chapter 91 only supports whole-vma unmap */
     if (((uint64_t)addr) & (PAGE_SIZE - 1)) return -EINVAL_VFS;
     if (address_space_munmap(t->as, (uint64_t)addr) != 0)
         return -EINVAL_VFS;
@@ -900,7 +900,7 @@ static long sys_munmap(long addr, long len)
 }
 
 /* ============================================================
- * Chapter 91 — userspace threads (SYS_CLONE) and futex.
+ * Chapter 92 — userspace threads (SYS_CLONE) and futex.
  *
  * Mental model:
  *
@@ -919,7 +919,7 @@ static long sys_munmap(long addr, long len)
  *     causes only spurious wakes (the awoken thread re-checks
  *     the predicate and goes back to sleep).
  *
- * Race story: with chapter 89 SMP, user threads are pinned to
+ * Race story: with chapter 90 SMP, user threads are pinned to
  * CPU 0.  The only thing that can preempt a futex syscall is a
  * timer IRQ on the same CPU 0.  We close the wait/wake race by
  * masking IRQs from "predicate check" through "state =
@@ -974,11 +974,11 @@ static long sys_clone(long entry, long arg, long stack_top, long tls)
  * -EAGAIN immediately.  Spurious wakes allowed; the user-space
  * caller (e.g. mutex_lock) is expected to loop and re-check.
  *
- * Chapter 92 update: the chapter 91 implementation closed the
+ * Chapter 93 update: the chapter 92 implementation closed the
  * wait/wake race by masking IRQs around (predicate, state-set).
  * That worked because user threads were pinned to CPU 0 (chapter
  * 89 invariant) so the only thing that could preempt was a
- * same-CPU timer IRQ.  Once chapter 92 puts user threads on CPU
+ * same-CPU timer IRQ.  Once chapter 93 puts user threads on CPU
  * 1, an unlocker on the OTHER CPU is no longer blocked by our
  * IRQ disable — it can race the gap freely.  We close it with a
  * spinlock instead: thread_global_lock takes g_all_lock, which
@@ -1033,14 +1033,14 @@ static long sys_futex_wait(long uaddr, long expected)
  *
  * Wake threads currently blocked on this AS's `uaddr` queue.
  *
- * Chapter 91 floor: `n` is currently treated as "wake all"
+ * Chapter 92 floor: `n` is currently treated as "wake all"
  * regardless of value (for n >= 1).  thread_wake_blocked is the
  * existing pipe-style wake primitive — it walks g_all_head and
  * marks every BLOCKED thread with a matching token READY.
  * Returns 1 if at least one wake was attempted, 0 if n == 0.
  *
  * The thundering-herd cost from "wake all" only matters once
- * a futex has many waiters; the chapter 91 mutex with 4
+ * a futex has many waiters; the chapter 92 mutex with 4
  * threads is fine.  Bounding `n` honestly would require
  * exposing g_all_head walk through a new helper; deferred.
  */
@@ -1061,7 +1061,7 @@ static long sys_futex_wake(long uaddr, long n)
 /*
  * sys_clone2(entry, arg, stack_top, tls, cpu_id) -> tid / -errno
  *
- * Chapter 92 — same contract as sys_clone but with explicit CPU
+ * Chapter 93 — same contract as sys_clone but with explicit CPU
  * placement.  cpu_id == -1 means "current CPU" (identical to
  * SYS_CLONE).  cpu_id in [0, SMP_MAX_CPUS) pins the new thread
  * to that absolute CPU; out-of-range values are -EINVAL.
@@ -1106,7 +1106,7 @@ static long sys_clone2(long entry, long arg, long stack_top,
 /*
  * sys_clone3(struct clone_args *uargs) -> tid / -errno
  *
- * Chapter 93 — clone with extended argument struct and per-clone
+ * Chapter 94 — clone with extended argument struct and per-clone
  * "what to share" flags.  Argument is a USER pointer to a
  * struct clone_args; we copy_from_user into a kernel-side
  * buffer before validating any field, so a hostile user
@@ -1166,7 +1166,7 @@ static long sys_clone3(long uargs)
 /*
  * sys_getcpu() -> cpu_id
  *
- * Chapter 92 — return the CPU id the calling thread is currently
+ * Chapter 93 — return the CPU id the calling thread is currently
  * running on.  For chapter-92 user threads, home_cpu pinning
  * means this value is stable across the syscall return — the
  * caller will land back on the same CPU.  Used by tests to
@@ -1219,7 +1219,7 @@ static long sys_uptime_ms(void)
 }
 
 /*
- * sys_gettimeofday(struct timeval *out) — chapter 95.
+ * sys_gettimeofday(struct timeval *out) — chapter 96.
  *
  * Pulls the current wall-clock time from walltime_now_us (which
  * derives from a single boot-time PL031 RTC read plus the live
@@ -1251,7 +1251,7 @@ static long sys_gettimeofday(uintptr_t out_ptr)
 }
 
 /*
- * sys_beep(uint32_t freq_hz, uint32_t duration_ms) — chapter 96.
+ * sys_beep(uint32_t freq_hz, uint32_t duration_ms) — chapter 97.
  *
  * Synthesises a square wave at `freq_hz` for `duration_ms` and
  * streams it through the virtio-sound driver.  Blocks the
@@ -1272,7 +1272,7 @@ static long sys_beep(uintptr_t freq_hz, uintptr_t duration_ms)
 }
 
 /*
- * sys_getrandom(void *buf, size_t len, unsigned flags) — chapter 112.
+ * sys_getrandom(void *buf, size_t len, unsigned flags) — chapter 123.
  *
  * Fills the user buffer with cryptographically-random bytes
  * sourced from kernel/core/random.c (which ultimately pulls its
@@ -1317,7 +1317,7 @@ static long sys_getrandom(uintptr_t buf_ptr, size_t len, unsigned flags)
 }
 
 /*
- * sys_mounts(struct mount_info *out, int max) — chapter 113.
+ * sys_mounts(struct mount_info *out, int max) — chapter 132.
  *
  * Snapshot of the kernel's mount table.  Returns the number of
  * entries written (clamped to `max`).  Userspace uses this to
@@ -1359,7 +1359,7 @@ static long sys_mounts(long out_uptr, long max_l)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 114e — kernel state snapshots for /bin/procd.
+ * Chapter 145 — kernel state snapshots for /bin/procd.
  *
  * Layout MUST match userspace/libc/proc_stat.h.  We don't include
  * the user header from kernel space; instead we redeclare the
@@ -1489,7 +1489,7 @@ static long sys_strace_render(long pid_l, long buf_uptr, long cap_l)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 114 — userspace filesystem servers.
+ * Chapter 140 — userspace filesystem servers.
  *
  * sys_mount(prefix, fds_out[2]) installs a fresh userfs mount.
  * Allocates the channel + two pipes, registers g_userfs_ops in
@@ -1680,11 +1680,11 @@ static size_t s_len(const char *s)
 /*
  * sys_chdir(const char *path) — change current working directory.
  *
- * Our namespace is flat (chapter 12 ramfs + chapter 13 OSFS), so
+ * Our namespace is flat (chapter 11 ramfs + chapter 12 OSFS), so
  * the only "real" directories are:
  *   "/"      — root (motd, README)
  *   "/mnt"   — OSFS mount point
- *   "/bin"   — alias for OSFS (chapter 13)
+ *   "/bin"   — alias for OSFS (chapter 12)
  *
  * Anything else returns -ENOENT.  Trailing slashes are stripped
  * and "//" → "/" collapse is applied via a single normalization
@@ -1984,7 +1984,7 @@ static long sys_pipe(long fds_user_ptr)
 /*
  * sys_openpty(int *master_out, int *slave_out) -> 0 / -errno
  *
- * Chapter 79b.  Allocates a pty (two pipes + a foreground-pid
+ * Chapter 79.  Allocates a pty (two pipes + a foreground-pid
  * field) and installs two new fds in the calling thread:
  *   - *master_out: FD_PTY_MASTER, intended for the controlling
  *     app (gui_term).  Read drains the slave's output ring;
@@ -2049,7 +2049,7 @@ static long sys_openpty(long master_uptr, long slave_uptr)
 /*
  * sys_fsync(int fd) -> 0 / -errno
  *
- * Chapter 82 \u2014 force every dirty cache block backing `fd` to
+ * Chapter 83 \u2014 force every dirty cache block backing `fd` to
  * disk synchronously.  Returns only after the underlying
  * virtio-blk writes ack.
  *
@@ -2122,8 +2122,8 @@ static long sys_dup2(long oldfd, long newfd)
  *
  * Removes a name from a writable filesystem.  Today two prefixes
  * are accepted:
- *   /tmp/<name>   — in-memory tmpfs (chapter 32+).
- *   /data/<name>  — on-disk OSFS-2 (chapter 81+).
+ *   /tmp/<name>   — in-memory tmpfs (chapter 31+).
+ *   /data/<name>  — on-disk OSFS-2 (chapter 82+).
  *
  * Returns 0 on success, or a negative errno (-ENOENT, -EFAULT,
  * -EINVAL).
@@ -2140,7 +2140,7 @@ static long sys_unlink(long path_uptr)
     long n = copy_string_from_user(path, (uint64_t)path_uptr, sizeof(path));
     if (n < 0) return n;
 
-    /* Chapter 113 — try the mount-table vtable first.  Any
+    /* Chapter 132 — try the mount-table vtable first.  Any
      * filesystem ported to fs_ops that implements `unlink`
      * handles its own removal here. */
     {
@@ -2169,7 +2169,7 @@ static long sys_unlink(long path_uptr)
 /*
  * sys_mkdir(const char *path) -> int
  *
- * Chapter 85.  Creates a directory at `path`.  Currently only the
+ * Chapter 86.  Creates a directory at `path`.  Currently only the
  * /data/ mount (writable OSFS-2) supports directories \u2014 the
  * /tmp/ tmpfs is intentionally flat (we'd need a separate path
  * walker for it; out of scope).  The path may have any number of
@@ -2181,7 +2181,7 @@ static long sys_mkdir(long path_uptr)
     long n = copy_string_from_user(path, (uint64_t)path_uptr, sizeof(path));
     if (n < 0) return n;
 
-    /* Chapter 113 — vtable dispatch.  Only mounts that implement
+    /* Chapter 132 — vtable dispatch.  Only mounts that implement
      * `mkdir` accept directory creation; today that's just
      * osfs2_fs_ops at /data.  MOUNT_RO mounts return EROFS — and
      * because the RO check fires BEFORE we look at the op
@@ -2201,7 +2201,7 @@ static long sys_mkdir(long path_uptr)
 }
 
 /*
- * Chapter 117 -- sys_stat / sys_fstat.  Thin marshaling on top
+ * Chapter 153 -- sys_stat / sys_fstat.  Thin marshaling on top
  * of vfs_stat_path / vfs_fstat; the real work lives in vfs.c.
  *
  *   sys_stat (const char *path, struct kstat *out) -> 0 / -errno
@@ -2239,7 +2239,7 @@ static long sys_fstat(long fd, long out_uptr)
  *                size_t cap, uint32_t *size_out,
  *                uint32_t *type_out) -> int
  *
- * Chapter 85.  Walks one directory by absolute path \u2014 unlike
+ * Chapter 86.  Walks one directory by absolute path \u2014 unlike
  * sys_listdir which folds every mount into a single linear
  * namespace.  Path "/data/" or "/data" returns the OSFS-2 root;
  * "/data/notes" returns the contents of the notes subdirectory.
@@ -2276,7 +2276,7 @@ static long sys_listdir_at(long path_uptr, long idx, long name_ptr,
         if (plen > 1 && path[plen - 1] == '/') path[plen - 1] = '\0';
     }
 
-    /* Chapter 113 — try the mount-table vtable first.  Any
+    /* Chapter 132 — try the mount-table vtable first.  Any
      * filesystem that has been ported to fs_ops AND implements
      * `listdir` handles its own enumeration here; the legacy
      * prefix ladders are now gone.
@@ -2462,7 +2462,7 @@ static long sys_kill(long pid, long sig)
  * succeeds; pid is not validated (a stale pid means the signal
  * just goes nowhere).  Returns the previous foreground pid.
  *
- * Auto-routing (chapter 79b): if the calling thread's fd 0 is a
+ * Auto-routing (chapter 79): if the calling thread's fd 0 is a
  * pty slave, we update the pty's fg_pid field instead of the
  * global console fg_pid.  This lets /bin/sh's existing
  * set_fg_pid(child) calls work transparently when sh is run
@@ -2487,7 +2487,7 @@ static long sys_set_fg_pid(long pid)
     return (long)prev;
 }
 
-/* ── Milestone 65 — fork + exec ───────────────────────────────
+/* ── fork + exec ───────────────────────────────
  *
  * The "real" Unix process model.  Until now spawn(path, args)
  * was the only way to create a user thread; it baked the
@@ -2516,7 +2516,7 @@ static long sys_fork(struct exception_frame *frame)
     struct thread *parent = thread_current();
     if (!parent || !parent->as) return -EINVAL_VFS;
 
-    /* Clone the parent's address space.  Chapter 75 switched
+    /* Clone the parent's address space.  Chapter 74 switched
      * this from address_space_clone (eager full copy) to the
      * COW variant: the child shares every page with the parent
      * read-only, and writes are resolved lazily in the page-
@@ -2679,7 +2679,7 @@ static long sys_exec(struct exception_frame *frame,
     return 0;
 }
 
-/* ── Chapter 77 — Catchable signals ─────────────────────────
+/* ── Chapter 76 — Catchable signals ─────────────────────────
  *
  * The kernel-side delivery flow is:
  *
@@ -2833,7 +2833,7 @@ static long sys_sigreturn(struct exception_frame *frame, long uptr)
     return (long)sf.x[0];
 }
 
-/* ── Milestone 56 — sockets ─────────────────────────────────
+/* ── Sockets ─────────────────────────────────
  *
  * Three syscalls cover the active-open client side:
  *   SYS_SOCKET_CONNECT(ip4_be32, port) -> fd        (creates fd)
@@ -2903,14 +2903,14 @@ static long sys_socket_shutdown(long fd)
     return tcp_close(e->socket_cid);
 }
 
-/* ── Chapter 104 / M93 — passive-open syscalls ──────────────
+/* ── Chapter 106 — passive-open syscalls ──────────────
  *
  * SYS_SOCKET_LISTEN(port, backlog) -> fd
  *   Wraps tcp_listen().  `backlog` is parsed but ignored --
  *   the kernel uses a fixed TCP_ACCEPT_QCAP for now.  Real
  *   userspace code should still pass a sensible value (4-8)
  *   so the call site stays correct when we eventually honour
- *   it (chapter 105+).
+ *   it (chapter 107+).
  *
  * SYS_SOCKET_ACCEPT(listen_fd, peer_ip_out, peer_port_out) -> fd
  *   Wraps tcp_accept().  Polls + yields until the listener's
@@ -2942,13 +2942,13 @@ static long sys_socket_accept(long listen_fd, long peer_ip_uptr, long peer_port_
      * NIC, so without the explicit poll the accept queue would
      * never fill on a quiescent system.
      *
-     * Chapter 106b note: we tried spinning 1024 iters between
+     * Chapter 110 note: we tried spinning 1024 iters between
      * yields here as an "optimisation" and it hurt the proxy
      * splice -- the accepter (httpd) starves the dialer
      * (browser) of CPU.  Yield every iteration; the scheduler
      * tax is negligible compared to cross-thread latency.
      *
-     * Chapter 106b — signal interruption.  Without the
+     * Chapter 110 — signal interruption.  Without the
      * sig_pending check below, a SIGTERM sent to a thread
      * camped in accept() (e.g. the long-lived httpd that
      * proxytest --repeat>1 needs to tear down between tests)
@@ -2995,7 +2995,7 @@ static long sys_socket_accept(long listen_fd, long peer_ip_uptr, long peer_port_
     return fd;
 }
 
-/* ── Chapter 107 — named-IPC service bus ──────────────────
+/* ── Chapter 112 — named-IPC service bus ──────────────────
  *
  *   SYS_SRV_BIND(const char *path) -> fd / -errno
  *     Register the calling thread as the listener for
@@ -3090,7 +3090,7 @@ static long sys_srv_connect(long path_uptr)
     return fd;
 }
 
-/* ── Milestone 57 — DNS ─────────────────────────────────────
+/* ── DNS ─────────────────────────────────────
  *
  *   SYS_RESOLVE(const char *name, uint32_t *out_ip4_be) -> 0/-errno
  *
@@ -3126,7 +3126,7 @@ static long sys_resolve(long name_uptr, long out_uptr)
     return 0;
 }
 
-/* ── Milestone 40 — GUI ──────────────────────────────────────
+/* ── GUI ──────────────────────────────────────
  *
  * The argument structs for the multi-parameter GUI calls live in
  * user memory; we copy them out with copy_from_user before passing
@@ -3150,7 +3150,7 @@ struct gui_draw_text_args_k {
     int32_t  transparent;
 };
 
-/* Milestone 47 — extended create.  Six fields, passed via a single
+/* Extended create.  Six fields, passed via a single
  * user-memory struct so we don't run out of x0..x3 dispatcher slots. */
 struct gui_create_window_ex_args_k {
     uint32_t w, h;
@@ -3189,7 +3189,7 @@ static long sys_gui_raise_window(long id)
     return wm_raise_window((uint64_t)thread_current()->id, (int32_t)id);
 }
 
-/* Milestone 51 — toggle a window's minimized state.  on != 0
+/* Toggle a window's minimized state.  on != 0
  * hides; on == 0 restores (and raises + focuses, like a click on
  * the taskbar entry). */
 static long sys_gui_set_minimized(long id, long on)
@@ -3254,7 +3254,7 @@ static long sys_gui_draw_text(long args_uptr)
                         a.fg_bgra, a.bg_bgra, a.transparent);
 }
 
-/* Chapter 102 -- measure text width in the kernel's default font.
+/* Chapter 104 -- measure text width in the kernel's default font.
  * Lets userspace position carets, centre labels, and truncate to
  * fit without assuming a fixed 8-px glyph pitch (no longer true
  * with the TTF font). */
@@ -3263,7 +3263,7 @@ static long sys_gui_measure_text(long s_uptr)
     return wm_measure_text((const char *)(uintptr_t)s_uptr);
 }
 
-/* Chapter 108a \u2014 userspace pixel-buffer mapping.  Both arg-pack
+/* Chapter 114 \u2014 userspace pixel-buffer mapping.  Both arg-pack
  * structs live in user memory; layout MUST match
  * userspace/libc/syscall.h. */
 struct gui_map_window_args_k {
@@ -3316,12 +3316,12 @@ static long sys_gui_poll_event(long out_uptr)
                          (struct gui_event *)(uintptr_t)out_uptr);
 }
 
-/* Chapter 101 — friendly stack-overflow diagnostic.
+/* Chapter 103 — friendly stack-overflow diagnostic.
  *
  * Called from svc_dispatch when a data abort from EL0 lands on
  * a page tagged DESC_SW_GUARD (i.e. the one-page guard sitting
  * immediately below the user stack base).  The forensic dance
- * that chapter 27's postscript described — match ESR EC=0x24,
+ * that chapter 26's postscript described — match ESR EC=0x24,
  * eyeball FAR against the stack base, suspect runaway recursion
  * — is now a single message printed at fault time.
  *
@@ -3383,7 +3383,7 @@ void svc_dispatch(struct exception_frame *frame)
         uint64_t far;
         __asm__ volatile("mrs %0, far_el1" : "=r"(far));
 
-        /* Chapter 101 — guard-page check FIRST.  An access to a
+        /* Chapter 103 — guard-page check FIRST.  An access to a
          * page tagged DESC_SW_GUARD presents as a translation
          * fault from EL0 (DFSC 0x04..0x07), which would
          * otherwise fall through to the mmap/COW path.  Both of
@@ -3405,7 +3405,7 @@ void svc_dispatch(struct exception_frame *frame)
             }
         }
 
-        /* Chapter 75 \u2014 if this is a data abort from EL0 caused
+        /* Chapter 74 \u2014 if this is a data abort from EL0 caused
          * by a write to a permission-faulting page, give the COW
          * handler a chance to resolve it before we kill the
          * thread.  EC 0x24 = data abort from a lower EL.  ISS bit
@@ -3415,7 +3415,7 @@ void svc_dispatch(struct exception_frame *frame)
          * level 0 = 0x0C.  We accept any of those four because
          * the actual fault granule is whatever the walk produced.
          *
-         * Chapter 90 \u2014 also handle translation faults (DFSC
+         * Chapter 91 \u2014 also handle translation faults (DFSC
          * 0x04..0x07) by routing through the mmap fault handler.
          * That's the lazy fault-in path: a vma covering the
          * faulting VA causes us to allocate (or page-cache-load)
@@ -3471,7 +3471,7 @@ void svc_dispatch(struct exception_frame *frame)
     long a4   = (long)frame->x[4];
     long a5   = (long)frame->x[5];
 
-    /* Chapter 100 — syscall tracer.  Reserve a ring slot before
+    /* Chapter 102 — syscall tracer.  Reserve a ring slot before
      * the dispatch so the entry's `args` reflect the values the
      * handler is about to see.  The pointer is NULL when the
      * calling thread isn't traced (the common case — strace_enter
@@ -3521,28 +3521,28 @@ void svc_dispatch(struct exception_frame *frame)
     case SYS_TTY_RAW: ret = sys_tty_raw(a0);         break;
     case SYS_KILL:   ret = sys_kill(a0, a1);         break;
     case SYS_SET_FG_PID: ret = sys_set_fg_pid(a0);   break;
-    /* Milestone 65 — fork + exec.  Both need direct access to
+    /* fork + exec.  Both need direct access to
      * the saved trap frame, so they take `frame` instead of the
      * unpacked a0..a3 args. */
     case SYS_FORK:   ret = sys_fork(frame);          break;
     case SYS_EXEC:   ret = sys_exec(frame, a0, a1);  break;
 
-    /* Chapter 77 — Catchable signals.  sigreturn also needs
+    /* Chapter 76 — Catchable signals.  sigreturn also needs
      * direct frame access (it overwrites it from the user's
      * saved sigframe). */
     case SYS_SIGACTION: ret = sys_sigaction(a0, a1, a2);   break;
     case SYS_SIGRETURN: ret = sys_sigreturn(frame, a0);    break;
 
-    /* Chapter 78 — SIGCHLD + waitpid (generalised reaper). */
+    /* Chapter 77 — SIGCHLD + waitpid (generalised reaper). */
     case SYS_WAITPID:   ret = sys_waitpid(a0, a1, a2);     break;
 
-    /* Chapter 79b — pty allocation. */
+    /* Chapter 79 — pty allocation. */
     case SYS_OPENPTY:   ret = sys_openpty(a0, a1);         break;
 
-    /* Chapter 82 — durability for OSFS-2 (no-op for other fds). */
+    /* Chapter 83 — durability for OSFS-2 (no-op for other fds). */
     case SYS_FSYNC:     ret = sys_fsync(a0);                break;
 
-    /* Chapter 85 — directory namespace. */
+    /* Chapter 86 — directory namespace. */
     case SYS_MKDIR:        ret = sys_mkdir(a0);                       break;
     case SYS_LISTDIR_AT:   ret = sys_listdir_at(a0, a1, a2, a3, a4, a5); break;
 
@@ -3586,7 +3586,7 @@ void svc_dispatch(struct exception_frame *frame)
         ret = sys_gui_measure_text(a0);
         break;
 
-    /* Chapter 108a \u2014 userspace pixel-buffer access. */
+    /* Chapter 114 \u2014 userspace pixel-buffer access. */
     case SYS_GUI_MAP_WINDOW:
         ret = sys_gui_map_window(a0);
         break;
@@ -3617,7 +3617,7 @@ void svc_dispatch(struct exception_frame *frame)
         ret = sys_socket_accept(a0, a1, a2);
         break;
 
-    /* Chapter 107 — named-IPC service bus. */
+    /* Chapter 112 — named-IPC service bus. */
     case SYS_SRV_BIND:
         ret = sys_srv_bind(a0);
         break;
@@ -3628,12 +3628,12 @@ void svc_dispatch(struct exception_frame *frame)
         ret = sys_srv_connect(a0);
         break;
 
-    /* Chapter 108d — userspace WSD foundation. */
+    /* Chapter 117 — userspace WSD foundation. */
     case SYS_FB_MAP_SCANOUT:
         ret = sys_fb_map_scanout(a0);
         break;
 
-    /* Chapter 108d — per-window shareable FB. */
+    /* Chapter 117 — per-window shareable FB. */
     case SYS_WIN_FB_ALLOC:
         ret = sys_win_fb_alloc(a0);
         break;
@@ -3643,17 +3643,17 @@ void svc_dispatch(struct exception_frame *frame)
     case SYS_WIN_FB_FREE:
         ret = sys_win_fb_free(a0);
         break;
-    /* chapter 108e -- in-place resize of an existing win_fb. */
+    /* chapter 118 -- in-place resize of an existing win_fb. */
     case SYS_WIN_FB_RESIZE:
         ret = sys_win_fb_resize(a0, a1, a2);
         break;
 
-    /* Chapter 108d — userspace-driven GPU flush. */
+    /* Chapter 117 — userspace-driven GPU flush. */
     case SYS_FB_PRESENT:
         ret = sys_fb_present(a0, a1, a2, a3);
         break;
 
-    /* chapter 108e -- userspace decorations + cursor. */
+    /* chapter 118 -- userspace decorations + cursor. */
     case SYS_POINTER_STATE:
         ret = wm_pointer_state((int32_t *)(uintptr_t)a0,
                                (int32_t *)(uintptr_t)a1,
@@ -3666,7 +3666,7 @@ void svc_dispatch(struct exception_frame *frame)
         ret = wm_deliver_event((int32_t)a0,
                                (const struct gui_event *)(uintptr_t)a1);
         break;
-    /* chapter 108e -- toggle wsd-routed input passthrough. */
+    /* chapter 118 -- toggle wsd-routed input passthrough. */
     case SYS_GUI_SET_INPUT_PASSTHROUGH:
         ret = wm_set_input_passthrough((int32_t)a0, (int)a1);
         break;
@@ -3678,7 +3678,7 @@ void svc_dispatch(struct exception_frame *frame)
         ret = sys_munmap(a0, a1);
         break;
 
-    /* Chapter 91 — userspace threads + futex. */
+    /* Chapter 92 — userspace threads + futex. */
     case SYS_CLONE:
         ret = sys_clone(a0, a1, a2, a3);
         break;
@@ -3689,7 +3689,7 @@ void svc_dispatch(struct exception_frame *frame)
         ret = sys_futex_wake(a0, a1);
         break;
 
-    /* Chapter 92 — clone with explicit CPU placement + getcpu. */
+    /* Chapter 93 — clone with explicit CPU placement + getcpu. */
     case SYS_CLONE2:
         ret = sys_clone2(a0, a1, a2, a3, a4);
         break;
@@ -3697,35 +3697,35 @@ void svc_dispatch(struct exception_frame *frame)
         ret = sys_getcpu();
         break;
 
-    /* Chapter 93 — clone3: extended-args clone with optional
+    /* Chapter 94 — clone3: extended-args clone with optional
      * CLONE_FILES (shared fd table). */
     case SYS_CLONE3:
         ret = sys_clone3(a0);
         break;
 
-    /* Chapter 95 — wall-clock time via PL031 RTC. */
+    /* Chapter 96 — wall-clock time via PL031 RTC. */
     case SYS_GETTIMEOFDAY:
         ret = sys_gettimeofday(a0);
         break;
 
-    /* Chapter 96 — virtio-snd boot chime / SYS_BEEP. */
+    /* Chapter 97 — virtio-snd boot chime / SYS_BEEP. */
     case SYS_BEEP:
         ret = sys_beep(a0, a1);
         break;
 
-    /* Chapter 112 — entropy source.  Backed by virtio-rng +
+    /* Chapter 123 — entropy source.  Backed by virtio-rng +
      * ChaCha20 CSPRNG.  Three args: (buf, len, flags); flags
      * must currently be zero. */
     case SYS_GETRANDOM:
         ret = sys_getrandom((uintptr_t)a0, (size_t)a1, (unsigned)a2);
         break;
 
-    /* Chapter 113 — mount-table snapshot. */
+    /* Chapter 132 — mount-table snapshot. */
     case SYS_MOUNTS:
         ret = sys_mounts((long)a0, (long)a1);
         break;
 
-    /* Chapter 114 — userspace filesystem servers. */
+    /* Chapter 140 — userspace filesystem servers. */
     case SYS_MOUNT:
         ret = sys_mount((long)a0, (long)a1, (long)a2);
         break;
@@ -3733,7 +3733,7 @@ void svc_dispatch(struct exception_frame *frame)
         ret = sys_umount((long)a0);
         break;
 
-    /* Chapter 114e — kernel state for /bin/procd. */
+    /* Chapter 145 — kernel state for /bin/procd. */
     case SYS_KSTAT:
         ret = sys_kstat((long)a0);
         break;
@@ -3744,7 +3744,7 @@ void svc_dispatch(struct exception_frame *frame)
         ret = sys_strace_render((long)a0, (long)a1, (long)a2);
         break;
 
-    /* Chapter 100 — enable per-thread syscall tracing on self.
+    /* Chapter 102 — enable per-thread syscall tracing on self.
      * Idempotent: a second call is a no-op.  Cannot be revoked
      * (yet) — the ring lives until the thread exits.  No args. */
     case SYS_TRACE_ME:
@@ -3761,7 +3761,7 @@ void svc_dispatch(struct exception_frame *frame)
 
     frame->x[0] = (uint64_t)ret;
 
-    /* Chapter 100 — stamp the tracer slot we reserved on entry.
+    /* Chapter 102 — stamp the tracer slot we reserved on entry.
      * The slot pointer is stable across the dispatch because the
      * traced thread is the only writer to its own ring and is
      * mid-SVC (cannot re-enter).  Concurrent readers from
@@ -3800,7 +3800,7 @@ void svc_dispatch(struct exception_frame *frame)
                 uint64_t h = t->sig_handlers[s];
                 if (h == 1) continue;                 /* SIG_IGN */
                 if (h == 0) {                         /* SIG_DFL */
-                    /* Chapter 78: SIGCHLD's POSIX default is
+                    /* Chapter 77: SIGCHLD's POSIX default is
                      * "ignore".  Without this special-case, every
                      * existing program that doesn't catch SIGCHLD
                      * (i.e. all of them, pre-chapter-78) would be

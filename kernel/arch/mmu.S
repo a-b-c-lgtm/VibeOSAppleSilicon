@@ -72,7 +72,7 @@ mmu_enable:
     msr     sctlr_el1, x1
     isb
 
-    /* Chapter 129 — enable FP/SIMD access at EL0 and EL1.
+    /* Chapter 171 — enable FP/SIMD access at EL0 and EL1.
      *
      * CPACR_EL1.FPEN [21:20]:
      *   0b00 : every FP/SIMD instruction at EL0 or EL1 traps to EL1
@@ -99,7 +99,7 @@ mmu_enable:
     ret
 
 /* mmu_disable — symmetric inverse, used only by debug/teardown.
- * Not called from the milestone-1 boot path. Lives here so the
+ * Not called from the boot path. Lives here so the
  * pair stays in one place. */
 .global mmu_disable
 mmu_disable:

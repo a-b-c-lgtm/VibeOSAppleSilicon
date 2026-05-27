@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/fetch_gcc_prereqs.sh — vendor GMP / MPFR / MPC.
 #
-# Chapter 132b.  These three libraries are GCC's link-time
+# Chapter 182.  These three libraries are GCC's link-time
 # dependencies for arbitrary-precision arithmetic (used by
 # the constant folder, the front-end for `__builtin_…` math,
 # and the diagnostic for overflow in integer constants).

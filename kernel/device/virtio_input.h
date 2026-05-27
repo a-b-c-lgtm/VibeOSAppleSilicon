@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_input.h — milestone-39 virtio-input keyboard.
+ * kernel/device/virtio_input.h — virtio-input keyboard.
  *
  * The QEMU `virt` machine has no PS/2 controller.  To accept keyboard
  * input from a graphical window (Cocoa, GTK, ...) we attach a
@@ -23,9 +23,9 @@
  * Polling vs IRQ
  * --------------
  * We poll the used ring lazily from inside `console_in_try_getc`
- * (called from the shell's read(0) loop).  This keeps milestone 39
- * tiny and side-steps GIC SPI registration.  When the WM lands in
- * milestone 40 we will register a real GIC handler so the
+ * (called from the shell's read(0) loop).  This keeps the driver
+ * tiny and side-steps GIC SPI registration.  Once the WM lands
+ * we register a real GIC handler so the
  * compositor wakes on input even when no thread is polling.
  *
  * ASCII translation
@@ -35,7 +35,7 @@
  * control codes (Backspace, Tab, Enter, Esc) and shift-state
  * tracking for the modifier keys.  Cursor keys arrive as the
  * standard ANSI escape sequences (ESC `[A`/`B`/`C`/`D`) so the
- * existing readline editor in /bin/sh (milestones 35/36) sees
+ * existing readline editor in /bin/sh sees
  * them unchanged.
  */
 

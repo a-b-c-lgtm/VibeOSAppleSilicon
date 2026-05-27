@@ -1,5 +1,5 @@
 /*
- * userspace/libgui/wmclient.c — chapter 108d
+ * userspace/libgui/wmclient.c — chapter 117
  * implementation of the /srv/wm client.
  *
  * State model
@@ -15,7 +15,7 @@
  * Wire I/O discipline
  * -------------------
  *
- * Chapter 107's read/write semantics are atomic-datagram:
+ * Chapter 112's read/write semantics are atomic-datagram:
  * one write delivers one whole message, one read consumes
  * exactly one whole message.  Short writes / short reads
  * mean "protocol error, conn is now poisoned" -- we mark
@@ -292,7 +292,7 @@ static int wm_create_window_impl(uint32_t w, uint32_t h, uint32_t flags,
      * compose is stubbed); it exists purely as an input
      * sink. */
     if (title != NULL) {
-        /* chapter 108e -- strip GUI_WIN_FLAG_RESIZABLE before
+        /* chapter 118 -- strip GUI_WIN_FLAG_RESIZABLE before
          * passing flags to the kernel shadow.  Resize lives
          * entirely in wsd (grip paint + hit-test +
          * SYS_WIN_FB_RESIZE call), and the kernel WM rejects
@@ -316,7 +316,7 @@ static int wm_create_window_impl(uint32_t w, uint32_t h, uint32_t flags,
             out->kernel_id = kid;
             printf("[wmclient] kernel shadow id=%d for wsd id=%u\n",
                    kid, (unsigned)id);
-            /* chapter 108e -- tell wsd which kernel shadow this
+            /* chapter 118 -- tell wsd which kernel shadow this
              * wsd window is attached to.  Lets wsd drive title-
              * bar drag (SYS_GUI_MOVE_WINDOW on the shadow) and
              * close-button click (SYS_GUI_DELIVER_EVENT into
@@ -463,7 +463,7 @@ int wm_window_dirty(struct wm_window *win,
     if (rep.op != WM_WIN_DAMAGE || rep.status != WM_OK) {
         /* DAMAGE replies can return -ENOTIMPL (wsd scanout not
          * ready) or -EBUSY transients during heavy disk I/O
-         * (chapter 133e diagnostic).  Apps already check the
+         * (chapter 195 diagnostic).  Apps already check the
          * return code; print once per process so the serial
          * channel stays usable during long-running ops like
          * a 6 MB tar extract. */
@@ -498,7 +498,7 @@ int wm_window_move(struct wm_window *win, uint32_t x, uint32_t y)
     return 0;
 }
 
-/* chapter 108e — restore a window by id (not by struct
+/* chapter 118 — restore a window by id (not by struct
  * wm_window*).  The taskbar doesn't OWN the windows it
  * lists — it just sees them in WM_LIST — so it has no
  * wm_window struct to hand back, only the win_id.  Sends
@@ -555,7 +555,7 @@ int wm_window_minimize_id(uint32_t win_id)
     return 0;
 }
 
-/* chapter 108e (revised by follow-up #3) -- re-establish our
+/* chapter 118 (revised by follow-up #3) -- re-establish our
  * win_fb mapping after a wsd-driven resize.  When the user
  * drags the bottom-right grip wsd calls SYS_WIN_FB_RESIZE
  * which:

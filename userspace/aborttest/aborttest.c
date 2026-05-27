@@ -1,4 +1,4 @@
-/* userspace/aborttest/aborttest.c — chapter 128b regression for
+/* userspace/aborttest/aborttest.c — chapter 166 regression for
  * abort().  Must terminate with exit code 134 (128 + SIGABRT).
  *
  * The test harness runs us via the shell and then checks $?,

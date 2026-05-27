@@ -41,7 +41,7 @@
  *   4. PAINT.  Emits a flat array of `struct paint_cmd` in
  *      back-to-front order.  Each command is either a filled
  *      rectangle (background / border / list bullet) or a text run.
- *      The browser binary in M63 will play this list against the
+ *      The browser binary will play this list against the
  *      GUI server.
  *
  * What we do NOT model (yet):
@@ -76,7 +76,7 @@
 #include "css.h"
 
 /* ============================================================
- *   Intrinsic-size hook for replaced elements (chapter 98b)
+ *   Intrinsic-size hook for replaced elements (chapter 100)
  *
  *   When an <img> has no width=""/height="" attribute the layout
  *   pass historically defaulted to a 16x16 placeholder so the
@@ -119,7 +119,7 @@ static inline void layout_set_img_size_lookup(lay_img_size_fn fn, void *ud)
  * INLINE (the CSS default).  TABLE / TABLE_ROW / TABLE_CELL are
  * placeholders: we accept the keywords from CSS but currently lay
  * them out as BLOCK (no real table algorithm).  Recording them
- * separately lets a future M63+ chapter add table layout without
+ * separately lets a future chapter add table layout without
  * touching the parser. */
 enum layout_display {
     LAY_DISPLAY_INLINE       = 0,    /* the CSS initial value */
@@ -1605,7 +1605,7 @@ static inline void layout_box_free_recursive(struct layout_box *b)
      * a valid heap allocation (the user heap lives well above this).
      * Skip the free instead of crashing — paranoia in case a future
      * change reintroduces a use-after-free pattern like the one
-     * fixed in M63 (REPLACED items dangling after pre-loop cleanup
+     * fixed earlier (REPLACED items dangling after pre-loop cleanup
      * in layout_inline_format). */
     if (b->text && (uintptr_t)b->text >= 0x10000u) free(b->text);
     if (b->replaced_alt && (uintptr_t)b->replaced_alt >= 0x10000u)
@@ -2078,7 +2078,7 @@ static inline struct layout_box *layout_build_subtree(struct layout_doc *d,
          * The combined buffer lives on the heap rather than the
          * stack because layout_build_subtree recurses to the depth
          * of the DOM tree and the user thread stack is only 16 KiB
-         * (chapter 11) — a 1 KiB stack array per frame quickly
+         * (chapter 10) — a 1 KiB stack array per frame quickly
          * overflows on real-world pages. */
         char *inline_buf = (char *)malloc(1024);
         const char *inline_css = inline_buf
@@ -2188,7 +2188,7 @@ static inline struct layout_box *layout_build_subtree(struct layout_doc *d,
          *      HTML element.  Win immediately if both present.
          *
          *   2. Intrinsic size from the browser's image cache via
-         *      the layout_set_img_size_lookup hook (chapter 98b).
+         *      the layout_set_img_size_lookup hook (chapter 100).
          *      Used when an attribute is missing AND the browser
          *      has pre-decoded the image.
          *
@@ -2268,7 +2268,7 @@ static inline struct layout_box *layout_build_subtree(struct layout_doc *d,
  * ============================================================ */
 
 /* Font metrics.  Our renderer ships only the kernel's 8x16 fixed
- * cell font (chapter 23).  For larger font-sizes we scale glyph
+ * cell font (chapter 22).  For larger font-sizes we scale glyph
  * width and advance proportionally — this is a simplification
  * (real fonts have per-glyph metrics and aren't square-scalable)
  * but it lets the layout pass produce visibly different sizes for
@@ -2569,7 +2569,7 @@ static inline int layout_inline_format(struct layout_box *container,
      * content_w with aspect ratio preserved.  That was a hack
      * for the era before horizontal scrolling — without it a
      * 288-px image inside a 244-px cell stomped its sibling.
-     * Now that M63 supports horizontal scroll, we let the image
+     * Now that the renderer supports horizontal scroll, we let the image
      * keep its natural pixel width: real browsers overflow in
      * this case and the user can scroll to see the rest. */
 
@@ -3124,7 +3124,7 @@ static inline int layout_container_children(struct layout_box *container,
                  *      cell's natural width and let the row
                  *      OVERFLOW its parent.  Real browsers do
                  *      this: the page becomes horizontally
-                 *      scrollable.  M63's renderer supports
+                 *      scrollable.  Our renderer supports
                  *      horizontal scroll, so overflow is the
                  *      user-visible-correct behaviour for a
                  *      fixed-layout site like
@@ -3331,7 +3331,7 @@ static inline int layout_block(struct layout_box *box,
      * We honour explicit widths LITERALLY, even when they exceed
      * the parent's available space.  Real browsers do the same:
      * `width: 320px` is 320 px regardless of the viewport, and the
-     * page becomes horizontally scrollable.  M63's GUI renderer
+     * page becomes horizontally scrollable.  Our GUI renderer
      * supports horizontal scrolling, so a fixed-width column on
      * a site like plaintextworld.com (three 320-px tables in a
      * row, total ~960 px) keeps its columns the right shape and
@@ -3480,7 +3480,7 @@ static inline int layout_run(struct layout_doc *d)
      * of any laid-out box.  Boxes with explicit pixel widths can
      * exceed the viewport, in which case the document is wider
      * than the window and the renderer needs to surface that to
-     * the user (horizontal scrollbar in M63).  Walk the box tree
+     * the user (horizontal scrollbar).  Walk the box tree
      * iteratively to keep the user-stack budget under control on
      * deeply nested HTML4 table layouts. */
     int max_right = d->viewport_px;

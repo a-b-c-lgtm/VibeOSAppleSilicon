@@ -1,13 +1,13 @@
 /*
- * kernel/core/tcp.h -- milestone-55 TCPv4 (RFC 793, with the
- * usual modern simplifications).  Chapter 103 added passive-
+ * kernel/core/tcp.h -- TCPv4 (RFC 793, with the
+ * usual modern simplifications).  Chapter 105 added passive-
  * open: tcp_listen() / tcp_accept() and the LISTEN /
  * SYN_RECEIVED states.
  *
  * Client side: `tcp_connect()` to a remote endpoint, `tcp_send` /
  * `tcp_recv` arbitrary bytes, `tcp_close` cleanly.
  *
- * Server side (chapter 103): `tcp_listen(port)` returns a
+ * Server side (chapter 105): `tcp_listen(port)` returns a
  * "listener" cid in state TCP_LISTEN.  When a SYN arrives at
  * that port the kernel allocates a child slot in TCP_SYN_RECEIVED,
  * sends SYN+ACK, and -- once the peer's final ACK lands --
@@ -27,7 +27,7 @@
  *   - Nagle (we always push), delayed ACK (we always ACK)
  *   - PMTU discovery (we use a single 1460-byte MSS)
  *   - SYN cookies (we drop new SYNs when the accept backlog is
- *     full -- see chapter 103's discussion)
+ *     full -- see chapter 105's discussion)
  *   - Sophisticated RTO; we retransmit on a coarse poll budget.
  */
 #ifndef KERNEL_CORE_TCP_H
@@ -68,9 +68,9 @@ struct __attribute__((packed)) tcp_hdr {
 
 enum tcp_state {
     TCP_CLOSED       = 0,
-    TCP_LISTEN       = 1,   /* chapter 103: passive open, waiting for SYN */
+    TCP_LISTEN       = 1,   /* chapter 105: passive open, waiting for SYN */
     TCP_SYN_SENT     = 2,
-    TCP_SYN_RECEIVED = 3,   /* chapter 103: SYN+ACK sent, waiting for ACK */
+    TCP_SYN_RECEIVED = 3,   /* chapter 105: SYN+ACK sent, waiting for ACK */
     TCP_ESTABLISHED  = 4,
     TCP_FIN_WAIT_1   = 5,
     TCP_FIN_WAIT_2   = 6,
@@ -89,7 +89,7 @@ enum tcp_state {
  * reaches TCP_ESTABLISHED before sending data. */
 int tcp_connect(const uint8_t dst_ip[NET_IPV4_LEN], uint16_t dst_port);
 
-/* Chapter 103 -- passive open.
+/* Chapter 105 -- passive open.
  *
  * Allocate a listener slot on `local_port` and return its cid.
  * The slot transitions to TCP_LISTEN immediately and starts
@@ -105,7 +105,7 @@ int tcp_connect(const uint8_t dst_ip[NET_IPV4_LEN], uint16_t dst_port);
  * returns it. */
 int tcp_listen(uint16_t local_port);
 
-/* Chapter 103 -- accept the next fully-established inbound conn.
+/* Chapter 105 -- accept the next fully-established inbound conn.
  *
  * `listen_cid` must be a cid returned by `tcp_listen`.  Returns:
  *   >= 0  the cid of a fresh TCP_ESTABLISHED conn, popped from
@@ -146,7 +146,7 @@ int tcp_state(int cid);
  * test for a HTTP-style request/response. */
 int tcp_eof(int cid);
 
-/* Chapter 104 -- read out the peer's 4-tuple coordinates from a
+/* Chapter 106 -- read out the peer's 4-tuple coordinates from a
  * connected conn.  Used by SYS_SOCKET_ACCEPT to surface "who
  * connected to me" to userspace.  Either output pointer may be
  * NULL.  `peer_ip_out` receives a packed big-endian IPv4 (same

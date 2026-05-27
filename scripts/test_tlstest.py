@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_tlstest.py — chapter 112a BearSSL link/run smoke test.
+"""scripts/test_tlstest.py — chapter 124 BearSSL link/run smoke test.
 
 Boots the kernel, drops to /bin/sh, runs `/bin/tlstest`, and asserts:
 
@@ -140,7 +140,7 @@ def main():
             print("FAIL: tlstest never emitted its summary PASS line")
             print(tail[-2000:].decode("ascii", "replace"))
             return 1
-        print("PASS: chapter 112a bearssl link/run smoke test")
+        print("PASS: chapter 124 bearssl link/run smoke test")
         return 0
     finally:
         q.kill(); q.wait()

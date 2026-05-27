@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/test_binutils_target.py — chapter 131a host-tool smoke test.
+# scripts/test_binutils_target.py — chapter 175 host-tool smoke test.
 #
 # NOT added to scripts/sweep.sh because this exercises host
 # binaries, not the kernel.  Run manually when you suspect
@@ -20,7 +20,7 @@
 #   6. Print PASS and exit 0.  Anything else exits 1 with FAIL.
 #
 # We don't bother running the linked program — that's chapter
-# 131b's job (smoke-loading it inside the guest).  Chapter 131a
+# 131b's job (smoke-loading it inside the guest).  Chapter 175
 # only proves the *host* can produce a valid aarch64 ELF using
 # the new aarch64-osdev triple.
 

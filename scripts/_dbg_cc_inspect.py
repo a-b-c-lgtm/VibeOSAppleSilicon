@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_cc_inspect.py — capture cc emit + linked binary for chapter 121 diagnosis."""
+"""scripts/_dbg_cc_inspect.py — capture cc emit + linked binary for chapter 157 diagnosis."""
 import os, socket, subprocess, time, select, signal, sys
 
 ROOT = "/Users/seusher/Desktop/osdev"

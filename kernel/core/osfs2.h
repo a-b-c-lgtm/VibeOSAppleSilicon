@@ -22,8 +22,8 @@
  *   Block 1           block bitmap (1 bit per block, LSB-first)
  *   Block 2           inode bitmap (1 bit per inode, LSB-first)
  *   Block 3..66       inode table (64 blocks × 32 inodes/block = 2048 inodes)
- *   Block 67          journal header                       (chapter 83)
- *   Block 68..99      journal data slots (32 × 4 KiB)      (chapter 83)
+ *   Block 67          journal header                       (chapter 84)
+ *   Block 68..99      journal data slots (32 × 4 KiB)      (chapter 84)
  *   Block 100..16383  data blocks (file contents + indirect blocks)
  *
  * 64 MiB image total (16384 × 4 KiB).  See scripts/mkosfs2.py for
@@ -33,19 +33,19 @@
  * Inode 0 is reserved as a null sentinel.  Inode 1 is the root
  * directory.  Every other inode is allocated dynamically.
  *
- * Why ext2-shaped instead of LFS or CoW?  See chapter 80; we want
+ * Why ext2-shaped instead of LFS or CoW?  See chapter 81; we want
  * the simplest layout that exhibits the three ideas above without
  * needing a journal or a block-pointer translation layer.
  *
- * No journaling, no caching, no atomic-rename in chapter 81.  Every
+ * No journaling, no caching, no atomic-rename in chapter 82.  Every
  * write is synchronous: write the data block(s), then write the
  * inode block, then write the bitmap block(s).  A power loss
  * mid-write therefore leaves the FS in a self-consistent shape
  * iff the kernel crashed between two of those phases AND the
  * inode hadn't yet been linked into the directory; we accept the
- * small inconsistency window for chapter 81 and revisit in 82/83.
+ * small inconsistency window for chapter 82 and revisit in 82/83.
  *
- * Chapter 82 added a 32-slot write-back cache; chapter 83 added
+ * Chapter 83 added a 32-slot write-back cache; chapter 84 added
  * the single-active-transaction physical-block journal whose on-
  * disk region is described above.  Every flush is now wrapped in
  * a journal commit, so a crash mid-flush either replays the entire
@@ -86,7 +86,7 @@
 /* Which virtio-blk device hosts OSFS-2.  hd0 is OSFS-1; hd1 is us. */
 #define OSFS2_DEVICE              1
 
-/* Chapter 83 — journal sizing.  The journal is one header block
+/* Chapter 84 — journal sizing.  The journal is one header block
  * plus N data slots, sized to match the cache so a single flush
  * can be journalled in one transaction.  Both must agree with
  * scripts/mkosfs2.py. */
@@ -104,8 +104,8 @@ struct osfs2_superblock {
     uint32_t inode_table_blocks;  /* 64 */
     uint32_t data_start_block;    /* 100 (post-chapter-83 layout) */
     uint32_t root_inode;          /* 1 */
-    uint32_t journal_header_block; /* 67  (chapter 83) */
-    uint32_t journal_data_blocks;  /* 32  (chapter 83) */
+    uint32_t journal_header_block; /* 67  (chapter 84) */
+    uint32_t journal_data_blocks;  /* 32  (chapter 84) */
     uint32_t reserved;            /* 0; future second-journal head */
 } __attribute__((packed));
 
@@ -191,7 +191,7 @@ uint32_t osfs2_size(uint32_t ino);
  *
  * Kept as a thin wrapper around osfs2_listdir_at(ROOT, ...) so
  * the existing flat-namespace callers (vfs_listdir's `/data/`
- * branch in chapters 81–84) keep working unchanged. */
+ * branch in chapters 82–85) keep working unchanged. */
 int osfs2_listdir(uint32_t *idx, char *name_out, size_t cap,
                   uint32_t *size_out);
 
@@ -205,7 +205,7 @@ int osfs2_listdir_at(uint32_t parent_ino, uint32_t *idx,
                      char *name_out, size_t cap,
                      uint32_t *size_out, uint32_t *type_out);
 
-/* Chapter 82 \u2014 force every dirty cache block to disk.
+/* Chapter 83 \u2014 force every dirty cache block to disk.
  *
  * `ino` is advisory: the implementation flushes the WHOLE
  * write-back cache because bitmap and inode-table blocks aren't
@@ -219,7 +219,7 @@ int osfs2_listdir_at(uint32_t parent_ino, uint32_t *idx,
  * succeed. */
 int osfs2_fsync(uint32_t ino);
 
-/* Chapter 113 — vtable adapter for the mount table.  OSFS-2 is
+/* Chapter 132 — vtable adapter for the mount table.  OSFS-2 is
  * writable, supports subdirectories, mkdir, and unlink.  Mounted
  * at `/data` with flags=0 (writable). */
 struct fs_ops;

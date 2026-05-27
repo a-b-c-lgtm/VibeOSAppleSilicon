@@ -1,5 +1,5 @@
 /*
- * userspace/htmltok/htmltok.c — milestone-59 HTML5 tokenizer driver.
+ * userspace/htmltok/htmltok.c — HTML5 tokenizer driver.
  *
  * Reads a file path from argv[1] (or "/mnt/test.html" if missing),
  * slurps it whole into a heap buffer, runs `html.h`'s tokenizer over

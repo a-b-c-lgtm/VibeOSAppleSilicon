@@ -14,7 +14,7 @@
  *
  *   2. We don't get duplicate `static memcpy` definitions when
  *      two such headers are included by the same .c (which is
- *      what bit chapter 110 -- both layout.h and cookies.h had
+ *      what bit chapter 120 -- both layout.h and cookies.h had
  *      their own copies).
  *
  *   3. There's exactly one place to add memmove() the day a

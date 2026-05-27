@@ -9,9 +9,9 @@ Layout (matches kernel/core/osfs.h):
         0x0C..end       = 0
 
     sector 1..8  directory: array of struct osfs_dirent (32 bytes each),
-                 eight sectors -> 128 entries max (chapter 106b bump;
-                 was 4 sectors / 64 entries from M60 through ch106a,
-                 and 2 / 32 before M60)
+                 eight sectors -> 128 entries max (chapter 110 bump;
+                 was 4 sectors / 64 entries through ch106a,
+                 and 2 / 32 before that)
         char     name[20]      (NUL-padded)
         uint32_t start_sector  (LBA)
         uint32_t size_bytes
@@ -30,14 +30,14 @@ import sys
 from pathlib import Path
 
 SECTOR = 512
-TOTAL_SECTORS = 524288    # 256 MiB image.  Chapter 131f swapped
+TOTAL_SECTORS = 524288    # 256 MiB image.  Chapter 180 swapped
                           # the toy 12 KiB /bin/as + 7 KiB /bin/ld
                           # for the real GNU binutils gas-new
                           # (~3.3 MiB) + ld-new (~2.9 MiB), and
                           # together with the 8.3 MiB
                           # wallpaper.bgra that pushed the
                           # previous 16 MiB image over the line.
-                          # Chapter 132f bumped 32 -> 256 MiB to make
+                          # Chapter 186 bumped 32 -> 256 MiB to make
                           # room for /bin/gcc (3 MiB xgcc driver) +
                           # /bin/cc1 (43 MiB stripped, the C frontend
                           # + middle/back-end + libbackend.a code).
@@ -47,9 +47,9 @@ TOTAL_SECTORS = 524288    # 256 MiB image.  Chapter 131f swapped
                           # don't do in-guest.
 DIRENT = struct.Struct("<20sIII")
 DIR_SECTORS = 16          # sixteen sectors of dirents -> 256 files
-                          # (was 2 / 32 pre-M60, 4 / 64 through ch106a,
-                          # bumped in chapter 106b for proxytest, then
-                          # again in chapter 132i so the libc headers
+                          # (was 2 / 32 early on, 4 / 64 through ch106a,
+                          # bumped in chapter 110 for proxytest, then
+                          # again in chapter 189 so the libc headers
                           # could ship on /bin for in-guest gcc)
 FIRST_DATA_SECTOR = 17    # superblock = 0, directory = 1..16, data = 17..
 MAX_FILES = (SECTOR * DIR_SECTORS) // DIRENT.size  # 256

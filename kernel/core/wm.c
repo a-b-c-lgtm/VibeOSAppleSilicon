@@ -1,5 +1,5 @@
 /*
- * kernel/core/wm.c — minimal in-kernel window manager (milestone 40).
+ * kernel/core/wm.c — minimal in-kernel window manager.
  *
  * Implementation notes
  * --------------------
@@ -75,14 +75,14 @@ struct wm_window {
     int32_t  id;
     uint64_t owner_pid;
     uint32_t z;             /* monotonically-increasing z order */
-    uint32_t flags;         /* GUI_WIN_FLAG_* — milestone 47 */
-    int      minimized;     /* milestone 51: hidden but live */
+    uint32_t flags;         /* GUI_WIN_FLAG_* */
+    int      minimized;     /* hidden but live */
     int32_t  x, y;          /* origin of decoration in framebuffer pixels */
     uint32_t w, h;          /* content-area dimensions (excludes deco) */
     uint8_t *pixels;        /* w*h*4 BGRA, kheap-allocated */
     char     title[WM_TITLE_MAX + 1];
     struct gui_event_ring events;
-    /* Chapter 108a \u2014 userspace pixel-buffer mapping.  Lazily
+    /* Chapter 114 \u2014 userspace pixel-buffer mapping.  Lazily
      * populated by wm_map_window; cleared by wm_unmap_window /
      * wm_destroy_window / wm_destroy_owner.
      *
@@ -110,7 +110,7 @@ struct wm_window {
     uint64_t             *user_pages_pa;
     struct address_space *user_as;
 
-    /* chapter 108e -- when set, the kernel WM's pointer router
+    /* chapter 118 -- when set, the kernel WM's pointer router
      * skips this window entirely.  hit_test() pretends the window
      * isn't there; the focused-window MOVE/UP forwarding path
      * also bails before pushing to this window's event ring.
@@ -157,7 +157,7 @@ static int32_t          g_focus_id    = -1;
  * little headroom; deliver_key range-checks before indexing. */
 static uint8_t          g_keys_held[0x110];
 
-/* ---- mouse / pointer state (milestone 41) ---- */
+/* ---- mouse / pointer state ---- */
 static int32_t  g_pointer_x  = -1;          /* -1 = uninitialised */
 static int32_t  g_pointer_y  = -1;
 static uint32_t g_buttons    = 0;           /* GUI_BTN_* bitmap */
@@ -201,7 +201,7 @@ static int g_csi_param = 0;
 
 /* Width of the close button on the right side of the title bar. */
 #define WM_CLOSE_BTN_W   20
-/* Width of the milestone-51 minimize button, drawn immediately to
+/* Width of the minimize button, drawn immediately to
  * the LEFT of the close button.  Same height as the close button
  * (WM_TITLE_HEIGHT - 4); same 2-px gap to the right edge of the
  * title bar applies cumulatively. */
@@ -372,9 +372,9 @@ static int32_t topmost_id(void)
     return best_id;
 }
 
-/* ---- painting (chapter 108d: retired) ----
+/* ---- painting (chapter 117: retired) ----
  *
- * Prior to chapter 108d the kernel WM owned the entire scanout
+ * Prior to chapter 117 the kernel WM owned the entire scanout
  * paint path: paint_wallpaper, blit_window (with decoration,
  * close button, minimise button, resize grip, content blit),
  * blit_cursor (a hand-rolled X11-style sprite), wm_draw_text_fb
@@ -417,7 +417,7 @@ static int32_t topmost_id(void)
  *   - all input routing (wm_keyboard_byte, wm_pointer_move,
  *     wm_pointer_button) — pixel-side compose_all() calls
  *     deleted; event-queue enqueues stay
- *   - chapter 108a wm_map_window / wm_unmap_window / wm_damage
+ *   - chapter 114 wm_map_window / wm_unmap_window / wm_damage
  *     mapped-buffer machinery
  *   - WM_LIST, WM_GET_SCREEN_SIZE, gui_create_window,
  *     gui_destroy_window, gui_window_fb, gui_poll_event,
@@ -426,7 +426,7 @@ static int32_t topmost_id(void)
  * Legacy GUI apps (notepad, gui_term, browser, launcher,
  * taskbar, desktop, paint, notify, hellogui, pixapp,
  * save_dialog) were ported to wmclient (userspace/libgui/wmclient.h)
- * and the /srv/wm bus in chapter 108d, one app at a time.
+ * and the /srv/wm bus in chapter 117, one app at a time.
  * Hellowsd (which already uses wmclient) IS visible
  * after this slice — paint the magic 0xff7755aa colour into
  * its window and the wsd compose path puts it on screen
@@ -437,7 +437,7 @@ static int32_t topmost_id(void)
 
 /* ---- public API ---- */
 
-/* Chapter 108d — compose_all is retired.  The 12 in-tree call sites
+/* Chapter 117 — compose_all is retired.  The 12 in-tree call sites
  * (focus changes, drags, destroys, raises, minimises, damage)
  * used to trigger a kernel-side framebuffer recomposite.  Now
  * that wsd owns the scanout, the right thing is for those state
@@ -579,7 +579,7 @@ static int32_t hit_test(int32_t sx, int32_t sy)
         if (w->flags & GUI_WIN_FLAG_PIN_TO_BOTTOM) continue;
         /* Minimized windows aren't on screen — clicks ignore them. */
         if (w->minimized) continue;
-        /* chapter 108e -- wsd-routed shadows are invisible to the
+        /* chapter 118 -- wsd-routed shadows are invisible to the
          * kernel hit-tester.  wsd does its own hit-test in
          * wsd-z-order and injects events via gui_deliver_event. */
         if (w->input_passthrough) continue;
@@ -611,8 +611,8 @@ static int32_t hit_test(int32_t sx, int32_t sy)
 
 /* Decompose a screen-relative click for a known window into one of:
  *   'C' = close button
- *   'M' = minimize button (milestone 51)
- *   'R' = bottom-right resize grip (milestone 63)
+ *   'M' = minimize button
+ *   'R' = bottom-right resize grip
  *   'T' = title bar (drag handle)
  *   'B' = body / content area (forward to app)
  *   '-' = miss
@@ -799,7 +799,7 @@ void wm_pointer_move(int32_t sx, int32_t sy)
         }
     } else if (g_focus_id >= 0) {
         struct wm_window *w = win_by_id(g_focus_id);
-        /* chapter 108e -- wsd-routed shadows get their MOVE
+        /* chapter 118 -- wsd-routed shadows get their MOVE
          * events injected by wsd, not auto-forwarded by kernel. */
         if (w && w->input_passthrough) w = NULL;
         if (w) {
@@ -851,7 +851,7 @@ void wm_pointer_button(uint32_t button, int down)
     int32_t hit = hit_test(sx, sy);
     if (down && button == GUI_BTN_LEFT) {
         if (hit < 0) {
-            /* chapter 108e follow-up -- click landed where the
+            /* chapter 118 follow-up -- click landed where the
              * kernel WM sees no window.  In a wsd-managed
              * session this is the common case: every wsd
              * client's shadow is input_passthrough, so kernel
@@ -938,7 +938,7 @@ void wm_pointer_button(uint32_t button, int down)
      * content area if applicable. */
     if (g_focus_id >= 0) {
         struct wm_window *w = win_by_id(g_focus_id);
-        /* chapter 108e -- wsd-routed shadows get their UP/non-left
+        /* chapter 118 -- wsd-routed shadows get their UP/non-left
          * events injected by wsd, not auto-forwarded by kernel. */
         if (w && w->input_passthrough) w = NULL;
         if (w) {
@@ -1019,12 +1019,12 @@ long wm_create_window_ex(uint64_t pid, uint32_t w, uint32_t h,
      * handles (skips the duplicate). */
     win->z          = ++g_next_z;
     win->flags      = flags;
-    win->minimized  = 0;        /* milestone 51: created visible */
+    win->minimized  = 0;        /* created visible */
     win->w          = w;
     win->h          = h;
     win->pixels     = buf;
     win->events.head = win->events.tail = 0;
-    /* Chapter 108a \u2014 no user-visible mapping yet; lazily
+    /* Chapter 114 \u2014 no user-visible mapping yet; lazily
      * populated by the first wm_map_window call. */
     win->user_pages_n  = 0;
     win->user_pages_pa = NULL;
@@ -1091,7 +1091,7 @@ long wm_destroy_window(uint64_t pid, int32_t id)
 {
     struct wm_window *w = win_owned_by(id, pid);
     if (!w) return -ENOENT;
-    /* Chapter 108a \u2014 tear the user-visible mapping down before
+    /* Chapter 114 \u2014 tear the user-visible mapping down before
      * we forget about the window.  The AS is still live (we're
      * called from sys_gui_destroy_window, EL0 caller is the
      * owner thread).  Failure here is logged and ignored \u2014
@@ -1125,7 +1125,7 @@ void wm_destroy_owner(uint64_t pid)
     int any = 0;
     for (int32_t i = 0; i < WM_MAX_WINDOWS; i++) {
         if (g_wins[i].in_use && g_wins[i].owner_pid == pid) {
-            /* Chapter 108a \u2014 uninstall the user-visible mapping
+            /* Chapter 114 \u2014 uninstall the user-visible mapping
              * first.  Owner-exit teardown runs from thread_exit
              * BEFORE address_space_destroy, so the owner's AS
              * is still live and the uninstall succeeds.  If for
@@ -1162,12 +1162,12 @@ long wm_present(uint64_t pid, int32_t id,
                 uint32_t x, uint32_t y, uint32_t rw, uint32_t rh,
                 const uint8_t *src_user)
 {
-    /* Chapter 108d: kernel compositor retired.  Legacy apps that
+    /* Chapter 117: kernel compositor retired.  Legacy apps that
      * still call SYS_WIN_PRESENT get a successful no-op so they
      * don't crash; they will draw nothing on screen until they
      * port to wmclient + the userspace wsd compose path.
      *
-     * milestone-15 invariant preserved: once the app has mapped
+     * Per-process-AS invariant preserved: once the app has mapped
      * the FB into its own AS (user_pages_n > 0), the kernel
      * refuses to keep writing through its copy -- prevents
      * tearing with the user's direct writes.  mixtest.c verifies
@@ -1184,7 +1184,7 @@ long wm_fill_rect(uint64_t pid, int32_t id,
                   uint32_t rw, uint32_t rh,
                   uint32_t bgra)
 {
-    /* Chapter 108d: see wm_present above.  No-op success unless
+    /* Chapter 117: see wm_present above.  No-op success unless
      * the window has been mapped to userspace -- then -EBUSY. */
     (void)x; (void)y; (void)rw; (void)rh; (void)bgra;
     struct wm_window *w = win_by_id(id);
@@ -1193,7 +1193,7 @@ long wm_fill_rect(uint64_t pid, int32_t id,
     return 0;
 }
 
-/* Chapter 108b -- look up a single codepoint, preferring the
+/* Chapter 115 -- look up a single codepoint, preferring the
  * userspace font server.  Returns 0 and fills *out_gi on
  * success; also returns the cell height and baseline offset
  * appropriate to whichever source was used.  Always succeeds
@@ -1227,9 +1227,9 @@ static int wm_text_glyph(uint32_t cp,
     return 0;
 }
 
-/* Chapter 102 -- pixel-accurate text measurement.
+/* Chapter 104 -- pixel-accurate text measurement.
  *
- * Chapter 108b: the source of glyph metrics is fontd (via
+ * Chapter 115: the source of glyph metrics is fontd (via
  * wm_font_get_glyph) when the daemon is up, the bitmap font
  * otherwise.  Either way the per-glyph advance is summed
  * exactly the way wm_draw_text will lay them out.  Stops at
@@ -1262,7 +1262,7 @@ long wm_draw_text(uint64_t pid, int32_t id,
                   uint32_t fg_bgra, uint32_t bg_bgra,
                   int transparent)
 {
-    /* Chapter 108d: see wm_present above.  No-op success unless
+    /* Chapter 117: see wm_present above.  No-op success unless
      * the window has been mapped to userspace -- then -EBUSY.
      * We deliberately don't read s_user -- legacy callers pass
      * pointers from their address space we don't need to touch. */
@@ -1276,7 +1276,7 @@ long wm_draw_text(uint64_t pid, int32_t id,
 
 long wm_flush(uint64_t pid, int32_t id)
 {
-    /* Chapter 108d: kernel compositor retired; wsd flushes its own
+    /* Chapter 117: kernel compositor retired; wsd flushes its own
      * scanout via SYS_FB_PRESENT.  Legacy SYS_WIN_FLUSH callers
      * get a success return so they don't error out. */
     (void)pid; (void)id;
@@ -1365,7 +1365,7 @@ long wm_raise_window(uint64_t pid, int32_t id)
     /* Raising a minimized window implicitly restores it: the user's
      * intent ("bring this to the front") makes no sense if the
      * window stays hidden.  This also matches the taskbar's
-     * "click to restore" UX in milestone 51. */
+     * "click to restore" UX. */
     if (w->minimized) w->minimized = 0;
     /* Pinned windows always paint last regardless of z, so a raise
      * is a no-op visually — but still legal so callers don't have
@@ -1378,7 +1378,7 @@ long wm_raise_window(uint64_t pid, int32_t id)
     return 0;
 }
 
-/* Milestone 51 — hide / show a window without destroying it. */
+/* Hide / show a window without destroying it. */
 long wm_set_minimized(uint64_t pid, int32_t id, int on)
 {
     (void)pid;  /* Any process may toggle for now (taskbar lives in
@@ -1428,7 +1428,7 @@ long wm_set_minimized(uint64_t pid, int32_t id, int on)
     return 0;
 }
 
-/* ---------- Chapter 108a: userspace window-buffer mapping ---------- */
+/* ---------- Chapter 114: userspace window-buffer mapping ---------- */
 
 /* Free the user-visible page set for `w` WITHOUT touching the
  * AS layer.  Used by destroy paths where the AS uninstall has
@@ -1454,7 +1454,7 @@ long wm_map_window(uint64_t pid, int32_t id,
 {
     struct wm_window *w = win_owned_by(id, pid);
     if (!w) return -EPERM;
-    /* Chapter 108a defers resize coherence to 108b.  RESIZABLE
+    /* Chapter 114 defers resize coherence to 108b.  RESIZABLE
      * windows can't be mapped today because the resize-grip
      * drag path realloc()s w->pixels but has no story for the
      * user-visible mapping.  Apps that opt in to gui_window_fb
@@ -1655,7 +1655,7 @@ long wm_damage(uint64_t pid, int32_t id,
 }
 
 /* ---------------------------------------------------------------
- * chapter 108e -- userspace decorations + cursor (wsd takes over)
+ * chapter 118 -- userspace decorations + cursor (wsd takes over)
  *
  * The three helpers below are the kernel API surface that wsd
  * leans on once it owns title-bar paint, drag, close-button paint,
@@ -1693,7 +1693,7 @@ long wm_pointer_state(int32_t *out_x_user, int32_t *out_y_user,
 /* Move a kernel-WM window (typically a wsd "input shadow") to a
  * new scanout position.  No clipping, no event delivery, no
  * recompose -- the kernel WM doesn't paint any more in
- * chapter 108d; the only reason this exists is so that hit-testing for
+ * chapter 117; the only reason this exists is so that hit-testing for
  * body clicks lines up after wsd drags the window.  Caller
  * (wsd) is responsible for sending any GUI_EVENT_MOVE-equivalent
  * to the app via wm_deliver_event if it cares. */
@@ -1731,7 +1731,7 @@ long wm_deliver_event(int32_t id, const struct gui_event *ev_user)
     return 0;
 }
 
-/* chapter 108e -- toggle the wsd-routed pointer-passthrough flag
+/* chapter 118 -- toggle the wsd-routed pointer-passthrough flag
  * on one shadow.  Idempotent.  See struct wm_window's
  * input_passthrough comment for the routing semantics. */
 long wm_set_input_passthrough(int32_t id, int on)

@@ -1,4 +1,4 @@
-/* userspace/setjmptest/setjmptest.c — chapter 128a regression.
+/* userspace/setjmptest/setjmptest.c — chapter 165 regression.
  *
  * Drives setjmp/longjmp through every case the spec promises:
  *

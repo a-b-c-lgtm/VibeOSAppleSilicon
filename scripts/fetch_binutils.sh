@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/fetch_binutils.sh — vendor binutils-2.44 source.
 #
-# Chapter 131a needs the binutils source tree on disk so we can
+# Chapter 175 needs the binutils source tree on disk so we can
 # patch the aarch64-osdev triple into it and host-build the
 # cross-binutils.  We pin to 2.44 because that's the version
 # Homebrew shipped at chapter-131a writing time (the host's

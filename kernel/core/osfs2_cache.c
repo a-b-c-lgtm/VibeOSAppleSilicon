@@ -9,7 +9,7 @@
  */
 #include "osfs2_cache.h"
 #include "osfs2.h"                 /* OSFS2_BLOCK_SIZE / SECTORS_PER_BLOCK / DEVICE */
-#include "osfs2_journal.h"         /* chapter 83 — every flush goes through the journal */
+#include "osfs2_journal.h"         /* chapter 84 — every flush goes through the journal */
 #include "serial.h"
 #include "../device/virtio_blk.h"
 
@@ -38,7 +38,7 @@ static uint64_t    g_evictions;
 
 /* One OSFS-2 block = OSFS2_SECTORS_PER_BLOCK virtio-blk sectors,
  * issued sequentially.  Returns 0 on success, -1 on any failure.
- * Used only by the cache-fill (read) path; chapter 83 routed the
+ * Used only by the cache-fill (read) path; chapter 84 routed the
  * write path through osfs2_journal_commit() so the cache itself
  * no longer talks to virtio-blk for writes. */
 static int raw_read(uint32_t blk, uint8_t *dst)
@@ -86,7 +86,7 @@ static int pick_victim(void)
  * slot is left valid + clean and we return 0.  On error we leave
  * the slot dirty so the data isn't silently lost.
  *
- * Chapter 83: the actual disk write is delegated to
+ * Chapter 84: the actual disk write is delegated to
  * osfs2_journal_commit() with count=1, so every eviction is
  * itself crash-atomic (the journal will replay it on recovery if
  * the kernel died after the journal commit landed but before the
@@ -193,7 +193,7 @@ int osfs2_cache_write(uint32_t blk, const void *buf)
 
 int osfs2_cache_flush(void)
 {
-    /* Chapter 83 — batch every dirty slot into one journal
+    /* Chapter 84 — batch every dirty slot into one journal
      * transaction.  This is the moment the journal earns its
      * keep: bitmap, inode, and dirent updates from a single
      * metadata operation that all sit in the cache become a

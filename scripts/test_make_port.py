@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/test_make_port.py — chapter 126 smoke test.
+scripts/test_make_port.py — chapter 162 smoke test.
 
 The first real `/bin/make` invocation on osdev: parse a real
 Makefile from disk, recurse through its dependency graph,
@@ -80,7 +80,7 @@ def seed_data():
 
 
 def main():
-    print("[chapter 126] /bin/make port smoke test")
+    print("[chapter 162] /bin/make port smoke test")
     seed_data()
     q = boot()
     s = conn()
@@ -89,7 +89,7 @@ def main():
         time.sleep(1.5)
         drain(s, time.time() + 0.5)
 
-        # 1. /bin/make is on disk (chapter 126 wired it into the
+        # 1. /bin/make is on disk (chapter 162 wired it into the
         # build).  ls /bin/make must succeed.
         out = send_cmd(s, "ls /bin/make", timeout=10.0)
         expect_pass(b"/bin/make" in out and b"cannot" not in out,

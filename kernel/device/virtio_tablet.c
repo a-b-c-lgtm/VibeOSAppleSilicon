@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_tablet.c — milestone-41 virtio-input tablet.
+ * kernel/device/virtio_tablet.c — virtio-input tablet.
  *
  * This driver is an EV_ABS-savvy sibling of virtio_input.c.  Same
  * handshake, same single-page queue layout, same lazy polling from
@@ -411,7 +411,7 @@ void virtio_tablet_poll(void)
     if (!g_mmio_base) return;
 
     struct vring_used *u = used_ring();
-    /* Chapter 106b fast path: pump_input_into_wm() lands here on
+    /* Chapter 110 fast path: pump_input_into_wm() lands here on
      * every cooperative sys_yield.  Skip the MMIO traffic
      * (INTERRUPT_STATUS read + QUEUE_NOTIFY write both trap to
      * HVF) when the device hasn't produced new events.  u->idx

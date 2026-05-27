@@ -1,7 +1,7 @@
 /*
- * kernel/core/wsd_fb.c — chapter 108d.
+ * kernel/core/wsd_fb.c — chapter 117.
  *
- * Frames-backwards version of the chapter 108a wm_map_window
+ * Frames-backwards version of the chapter 114 wm_map_window
  * primitive, applied to the framebuffer instead of to a window's
  * pixel buffer.  Exposes the single syscall SYS_FB_MAP_SCANOUT
  * which takes the contiguous physical pages of the active
@@ -37,7 +37,7 @@
  * VA range, RW from EL0, non-executable, tagged
  * DESC_SW_WM_WINDOW so AS teardown skips them (we own them) and
  * fork() doesn't inherit them.  The "WM_WINDOW" name is a
- * historical artifact of chapter 108a; the mechanism is general.
+ * historical artifact of chapter 114; the mechanism is general.
  */
 
 #include "syscall.h"
@@ -104,7 +104,7 @@ static long do_install(uint64_t pid)
     if (!t || !t->as) return -EFAULT;
 
     /* Build a trivial array of N contiguous PAs.  We use the
-     * same install primitive as chapter 108a (which expects an
+     * same install primitive as chapter 114 (which expects an
      * arbitrary list of non-contiguous PAs) — the contiguity
      * doesn't help us here, but it does let us synthesise the
      * array deterministically rather than copying it from any
@@ -204,9 +204,9 @@ void wsd_fb_release_owner(uint64_t pid)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 108d — SYS_FB_PRESENT.
+ * Chapter 117 — SYS_FB_PRESENT.
  *
- * After chapter 108d the kernel WM no longer composes anything, so wsd
+ * After chapter 117 the kernel WM no longer composes anything, so wsd
  * owns the whole "store pixels in scanout RAM, then flush to
  * GPU" chain.  fb_present() (in kernel/device/fb.c) is the
  * primitive that puts the GPU on the hook to re-read the

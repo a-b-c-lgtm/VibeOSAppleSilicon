@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_proxy.py -- chapter 106b / M97 regression.
+"""scripts/test_browser_proxy.py -- chapter 110 regression.
 
 End-to-end exercise of the chapter-106b architectural change:
 
@@ -16,9 +16,9 @@ End-to-end exercise of the chapter-106b architectural change:
 This is the proof that THREE in-house features compose end to
 end without anyone outside the guest:
 
-  - chapter 106  (TCP loopback so 127.0.0.1:8080 works at all)
-  - chapter 106a (httpd's serve_forward "be a dumb pipe")
-  - chapter 106b (browser default proxy points at loopback)
+  - chapter 108  (TCP loopback so 127.0.0.1:8080 works at all)
+  - chapter 109 (httpd's serve_forward "be a dumb pipe")
+  - chapter 110 (browser default proxy points at loopback)
 
 The fake upstream lives on the host at 10.0.2.2:UPSTREAM_PORT
 (SLIRP NAT) and returns a recognisable marker + the request
@@ -30,16 +30,16 @@ proves:
                   --> 10.0.2.2:18083 (SLIRP NAT) --> host upstream
                   --> response splice --> browser renders --> serial
 
-If chapter 106 is reverted, the browser's connect(127.0.0.1)
-will time out.  If chapter 106a is reverted, httpd will 404 on
-the unknown path.  If chapter 106b is reverted (or the user
+If chapter 108 is reverted, the browser's connect(127.0.0.1)
+will time out.  If chapter 109 is reverted, httpd will 404 on
+the unknown path.  If chapter 110 is reverted (or the user
 runs an old browser), BR_DEFAULT_PROXY still points at
 10.0.2.2:8080 and we'd need scripts/https_proxy.py running on
 the host -- which this test deliberately doesn't start, so the
 fetch would fail.  All three regressions show as a missing
 marker.
 
-Boot-time net self-test (chapter 103) holds boot ~30s before
+Boot-time net self-test (chapter 105) holds boot ~30s before
 the shell appears; we give 120s of slack for the prompt.
 """
 import http.server
@@ -254,7 +254,7 @@ def main():
         # proxytest's "spawning /bin/browser" line.  Note the
         # actual format is "[proxytest] iter N/M: spawning /bin/browser ..."
         # — match the trailing portion so we're robust to the
-        # iter-prefix added in chapter 106b.
+        # iter-prefix added in chapter 110.
         log += wait_for(ser, b"spawning /bin/browser", 5.0)
         if b"spawning /bin/browser" not in log:
             print("FAIL: proxytest never spawned browser")
@@ -273,7 +273,7 @@ def main():
 
         # httpd should log the forward dispatch with the path
         # the browser's canonicalize_url produced.  The "/upstream/"
-        # prefix is exactly what serve_forward sees -- chapter 106a
+        # prefix is exactly what serve_forward sees -- chapter 109
         # logs it via log_request "forward GET <path> -> 200".
         # We don't pin the EXACT path here because the URL gets
         # canonicalised; we just confirm the dispatch picked the

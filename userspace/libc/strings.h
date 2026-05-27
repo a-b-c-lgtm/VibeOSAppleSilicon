@@ -1,4 +1,4 @@
-/* userspace/libc/strings.h — chapter 130a.
+/* userspace/libc/strings.h — chapter 172.
  *
  * POSIX legacy header: case-insensitive string compare.  C99
  * moved these into <string.h>; <strings.h> still exists for

@@ -1,5 +1,5 @@
 /*
- * kernel/core/wm_font.c — chapter 108b WM-side font client.
+ * kernel/core/wm_font.c — chapter 115 WM-side font client.
  *
  * Implementation notes — see wm_font.h for the contract.
  *
@@ -51,7 +51,7 @@
 #define WM_FONT_SIZE_PX    FONT_SIZE_DEFAULT
 /* DejaVu Sans @ 16 px: ascent ~13, descent ~3 — matches the
  * chapter-102 cell height of 16 and baseline of 12 the WM
- * was using already.  Hardcoded for chapter 108b; chapter 108c
+ * was using already.  Hardcoded for chapter 115; chapter 116
  * generalises this when libgui callers ask for other sizes. */
 #define WM_FONT_CELL_HEIGHT 16u
 #define WM_FONT_BASELINE    12u

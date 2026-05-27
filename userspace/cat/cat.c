@@ -4,7 +4,7 @@
  * stack by the kernel ELF loader; see kernel/core/elf.c).
  * Defaults to "/motd" when called with no arguments.
  *
- * Chapter 116d: rewritten to drive the FILE * layer.  The body
+ * Chapter 152: rewritten to drive the FILE * layer.  The body
  * is now identical to a POSIX cat — fopen + fread + fwrite, no
  * raw fd syscalls, and error reporting via strerror(errno).
  */

@@ -1,5 +1,5 @@
 /*
- * userspace/libfs/userfs.h — chapter 114 user-space filesystem
+ * userspace/libfs/userfs.h — chapter 140 user-space filesystem
  * library.  A daemon that wants to mount a path implements a
  * handful of callbacks, fills in `struct userfs_handler`, and
  * calls `userfs_serve(prefix, &ops)`.  The library:

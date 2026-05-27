@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_libc_printf2.py — chapter 128f regression for the
+"""scripts/test_libc_printf2.py — chapter 170 regression for the
 extended <printf.h> and <scanf.h> surface.
 
 Single in-guest binary: `printftest2`.  Boots the kernel, waits

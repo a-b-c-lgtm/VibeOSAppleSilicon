@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-scripts/test_cc_vars.py — chapter 123 smoke test.
+scripts/test_cc_vars.py — chapter 159 smoke test.
 
-Chapter 121 shipped /bin/cc with only printf/puts/return-int-literal.
-Chapter 123 extends it with the first real compiler features:
+Chapter 157 shipped /bin/cc with only printf/puts/return-int-literal.
+Chapter 159 extends it with the first real compiler features:
 
   - Local `int` variables with initializers
   - Assignment statements
@@ -121,7 +121,7 @@ def compile_and_run(s, src_text, base, expected_exit,
 
 
 def main():
-    print("[chapter 123] /bin/cc variables + expressions smoke test")
+    print("[chapter 159] /bin/cc variables + expressions smoke test")
     reformat_data()
     q = boot()
     s = conn()

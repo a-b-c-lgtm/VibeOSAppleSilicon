@@ -1,4 +1,4 @@
-/* userspace/timetest/timetest.c — chapter 128d regression.
+/* userspace/timetest/timetest.c — chapter 168 regression.
  *
  * Exercises the POSIX <time.h> surface:
  *   - clock_gettime(CLOCK_REALTIME)
@@ -107,9 +107,9 @@ int main(int argc, char **argv)
     time_t t2 = mktime(&tm);
     CHECK(t == t2);
 
-    /* difftime: returns double, needs FP at EL0 (chapter 129);
+    /* difftime: returns double, needs FP at EL0 (chapter 171);
      * not exercised here.  Test will get a difftime() check
-     * when chapter 129 lifts -mgeneral-regs-only. */
+     * when chapter 171 lifts -mgeneral-regs-only. */
 
     /* asctime shape -- always exactly 25 chars + NUL. */
     struct tm wed = {

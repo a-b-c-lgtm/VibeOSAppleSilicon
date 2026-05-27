@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_wallpaper.py — milestone-50 smoke test.
+"""scripts/test_wallpaper.py — userspace wallpaper smoke test.
 
 Boots, waits for shell, screendumps the framebuffer, and asserts
 that the wallpaper painted by the userspace /bin/desktop process
@@ -197,7 +197,7 @@ def main():
             return 1
         print("PASS: shell still responsive after wallpaper blit")
 
-        print("\nMILESTONE 50: ALL TESTS PASSED")
+        print("\nALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

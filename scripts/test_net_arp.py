@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_net_arp.py — milestone-53 net stack smoke test.
+"""scripts/test_net_arp.py — net stack smoke test.
 
 Boots fully headless with QEMU SLIRP user-mode networking and a
 virtio-net NIC, then verifies that the new in-kernel network
@@ -14,7 +14,7 @@ stack (`kernel/core/net.{c,h}`) successfully:
 
 Unlike `test_virtio_net.py` (which validates the *driver* with
 the same end-to-end behaviour), this test specifically checks the
-M53 stack lines: `[net] up: ip=...`, `[net] self-test: gateway
+net stack lines: `[net] up: ip=...`, `[net] self-test: gateway
 MAC=52:54:00:12:35:02` (the SLIRP gateway's well-known MAC), and
 `[net] self-test: ARP cache populated`.
 """
@@ -135,7 +135,7 @@ def main():
             return 1
         print("PASS: shell prompt reached after net init")
 
-        print("\nMILESTONE 53: ALL TESTS PASSED")
+        print("\nALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_sigaction.py — chapter 77 regression.
+"""scripts/test_sigaction.py — chapter 76 regression.
 
 Boots the kernel, drops to the shell, runs `sigtest`, and
 expects `[sigtest] all checks passed` to appear.  Any

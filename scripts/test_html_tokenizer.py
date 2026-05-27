@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_html_tokenizer.py — milestone-59 driver.
+"""scripts/test_html_tokenizer.py — HTML tokenizer driver.
 
 Boot the kernel, wait for the shell prompt, run `htmltok /mnt/test.html`
 and assert that the emitted token stream contains the structural
@@ -156,7 +156,7 @@ def main():
             print("---- output region ----", file=sys.stderr)
             print(text[idx:idx + 4096], file=sys.stderr)
         return 1
-    print("PASS: html tokenizer milestone-59 — all checks green")
+    print("PASS: html tokenizer — all checks green")
     return 0
 
 

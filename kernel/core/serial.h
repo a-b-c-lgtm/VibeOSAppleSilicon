@@ -7,7 +7,7 @@
  *
  * On `qemu-system-aarch64 -machine virt` the first PL011 instance
  * lives at physical 0x09000000.  QEMU pre-configures the device for
- * 115200 8N1 with both FIFOs enabled, so milestone-0 code can call
+ * 115200 8N1 with both FIFOs enabled, so the earliest code can call
  * serial_putc() with no prior init beyond a no-op serial_init().
  *
  * The API mirrors the x86 build's serial.h verbatim so that

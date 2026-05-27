@@ -1,5 +1,5 @@
 /*
- * userspace/doom/doomgeneric_osdev.c — chapter 130a platform shim.
+ * userspace/doom/doomgeneric_osdev.c — chapter 172 platform shim.
  *
  * DoomGeneric's per-platform contract is six functions
  * (declared in doomgeneric.h):
@@ -16,7 +16,7 @@
  *
  * Our shim is a small adapter to the libgui wmclient (chapter
  * 108d) for pixels + input, the sleep_ms/uptime_ms syscalls
- * (chapter 22 / 29) for time, and printf.h for diagnostics.
+ * (chapter 21 / 29) for time, and printf.h for diagnostics.
  *
  * Pixel format
  * ------------
@@ -40,7 +40,7 @@
  *   ASCII 0x1B            → KEY_ESCAPE (== 27)
  *   ASCII 0x0D / 0x0A     → KEY_ENTER (== 13)
  *
- * Releases ride GUI_EVENT_KEY_UP (chapter 133g), so
+ * Releases ride GUI_EVENT_KEY_UP (chapter 197), so
  * gamekeydown[k] follows the real key state exactly — release
  * a movement key and the player stops the same tick.  The
  * shim's g_held[] table only exists to dedup auto-repeat
@@ -51,7 +51,7 @@
  * Closing the window
  * ------------------
  * GUI_EVENT_CLOSE → I_Quit() via raise(SIGINT) which Doom's
- * own SIGINT handler (chapter 128b) catches and unwinds via
+ * own SIGINT handler (chapter 166) catches and unwinds via
  * longjmp.  Simpler in-shim: just call exit(0).
  */
 
@@ -260,7 +260,7 @@ int main(int argc, char **argv)
      * Just Works.  Doom's M_CheckParm walks myargv; we
      * synthesise the args by rebuilding argv.
      *
-     * Chapter 130b — WAD lives at /data/doom1.wad (root of the
+     * Chapter 173 — WAD lives at /data/doom1.wad (root of the
      * OSFS-2 mount).  mkosfs2.py is flat (no subdirs); the
      * earlier-planned `/data/wads/doom1.wad` would have needed
      * subdirectory support we don't have. */

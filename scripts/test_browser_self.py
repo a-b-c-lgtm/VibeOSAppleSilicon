@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_self.py -- chapter 106c capstone test.
+"""scripts/test_browser_self.py -- chapter 111 capstone test.
 
 The end-to-end loop: in-guest /bin/browser fetches a page from
 in-guest /bin/httpd over the lo0 loopback interface, no host
@@ -8,7 +8,7 @@ inside the guest):
 
   /bin/browser
      -> socket_connect(127.0.0.1, 80)
-     -> kernel tcp_send (chapter 106 loopback short-circuit)
+     -> kernel tcp_send (chapter 108 loopback short-circuit)
      -> kernel tcp_handle
      -> /bin/httpd's socket_accept (auto-spawned by init)
      -> open("/mnt/test.html")
@@ -35,7 +35,7 @@ The test asserts:
 The boot is BARE-KERNEL deliberately: no virtio-gpu,
 virtio-keyboard, virtio-tablet.  This keeps the test fast
 (~6 s wall) and isolates the loopback path from the
-yield-driven cursor pump that chapter 106b spent so much
+yield-driven cursor pump that chapter 110 spent so much
 effort fixing.  The desktop variant of this test
 (test_browser_hn_serial_with_desktop.py) covers the GUI
 version of the same fetch path against the chapter-106a
@@ -90,7 +90,7 @@ PAGE_RENDERED_RES = [
     re.compile(_loose(b"The quick brown fox"), re.DOTALL),
 ]
 
-# init.c (chapter 106c) prints these BEFORE handing control to
+# init.c (chapter 111) prints these BEFORE handing control to
 # the shell.  All three must appear in the boot transcript or
 # the auto-spawn regressed.
 BOOT_MARKERS = [
@@ -119,7 +119,7 @@ def boot():
         "-device", "virtio-blk-device,drive=hd1",
         # virtio-net required for the kernel's TCP path to come
         # up cleanly (init_netd's DHCP probe, the chapter-103
-        # boot self-test).  Loopback (chapter 106) is decoupled
+        # boot self-test).  Loopback (chapter 108) is decoupled
         # from the NIC -- 127.0.0.1 traffic short-circuits at
         # ip_send_packet -- so the in-guest fetch doesn't go
         # through this device.  But booting without it makes
@@ -203,7 +203,7 @@ def main():
             return 1
         print(f"PASS: shell prompt reached")
 
-        # (2) Auto-spawn assertions.  init.c (chapter 106c) is
+        # (2) Auto-spawn assertions.  init.c (chapter 111) is
         # supposed to spawn httpd on port 80 BEFORE running the
         # shell.  The boot transcript proves that ordering.
         boot_log = b"".join(transcript)

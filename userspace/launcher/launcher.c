@@ -1,6 +1,6 @@
 /*
- * userspace/launcher/launcher.c — milestone-44 GUI app launcher,
- * ported to /srv/wm in chapter 108d, then reshaped
+ * userspace/launcher/launcher.c — GUI app launcher,
+ * ported to /srv/wm in chapter 117, then reshaped
  * into a Start-menu-style panel.
  *
  * A small undecorated panel pinned just above the taskbar.  Four
@@ -40,10 +40,10 @@
  * Children spawned by the launcher are not wait()ed for: the
  * kernel will leak the (small) thread struct of an exited child
  * until the launcher itself exits or until someone else reaps it.
- * Acceptable for a milestone-44 demo with at most a handful of
+ * Acceptable for an app-launcher demo with at most a handful of
  * launches per session.
  *
- * Chapter 108d port notes:
+ * Chapter 117 port notes:
  *   - wsd owns the per-window FB and compose.  wmclient maps the
  *     FB into our AS so paint primitives stay in-process.
  *   - wm_create_window_at takes a `title` argument that doubles

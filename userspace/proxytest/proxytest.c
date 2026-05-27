@@ -1,5 +1,5 @@
 /*
- * userspace/proxytest/proxytest.c -- chapter 106b / M97 demo program.
+ * userspace/proxytest/proxytest.c -- chapter 110 demo program.
  *
  * Demonstrates the chapter-106b architectural payoff in one
  * hermetic command: the browser dials its DEFAULT proxy
@@ -46,7 +46,7 @@
  *
  * Naming note: this is "proxytest" rather than "browse" or
  * "fetch" because the THING under test is the proxy chain,
- * not the browser's rendering.  See chapter 106b for the
+ * not the browser's rendering.  See chapter 110 for the
  * argument that "be a dumb pipe" architecture is what we are
  * exercising.
  */
@@ -73,7 +73,7 @@ int main(int argc, char **argv)
     const char *url = "https://m97.proxy.test/path";
     int viewport = 600;
     int verbose = 1;
-    /* Chapter 106b: --repeat N reproduces the user-observed
+    /* Chapter 110: --repeat N reproduces the user-observed
      * "every refresh takes 30+ seconds" GUI-browser symptom by
      * running the browser N times back-to-back through a single
      * long-lived httpd (no --once).  Each iteration prints its
@@ -115,7 +115,7 @@ int main(int argc, char **argv)
             printf("usage: proxytest [--url <url>] [--repeat N] "
                    "[--timing] [--quiet]\n");
             printf("  default url: https://m97.proxy.test/path\n");
-            printf("  needs HTTPD_UPSTREAM set in env (chapter 106a).\n");
+            printf("  needs HTTPD_UPSTREAM set in env (chapter 109).\n");
             printf("  --repeat N runs the browser N times against a\n");
             printf("    single long-lived httpd; default 1 (one-shot).\n");
             return 0;
@@ -159,7 +159,7 @@ int main(int argc, char **argv)
     if (verbose)
         printf("[proxytest] BROWSER_PROXY=http://127.0.0.1:8080/\n");
 
-    /* (2) Wait for httpd to bind its listen socket.  Chapter 105
+    /* (2) Wait for httpd to bind its listen socket.  Chapter 107
      * shows that httpd's listen line prints almost immediately
      * after spawn; 300 ms is generous (the kernel boot self-test
      * is the only thing that has ever taken longer).  We could

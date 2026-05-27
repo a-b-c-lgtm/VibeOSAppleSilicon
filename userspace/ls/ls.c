@@ -14,7 +14,7 @@
  *                     • `<DIR>` marker for d_type==DT_DIR,
  *                       byte size for d_type==DT_REG.
  *
- * Chapter 117 port — the previous implementation used
+ * Chapter 153 port — the previous implementation used
  * SYS_LISTDIR_AT directly with prefix-filtering and a
  * dir-dedup buffer.  All of that is now subsumed by the
  * `opendir`/`readdir` wrapper in libc/dirent.h, which means
@@ -71,7 +71,7 @@ static void s_render_dir_entry(const char *parent, size_t plen,
 int main(int argc, char **argv)
 {
     /* Bare `ls`: preserve the historical flat-dump that has
-     * been the dev/debug interface since milestone 20.  This
+     * been the dev/debug interface since the early listdir chapter.  This
      * uses the kernel's SYS_LISTDIR which folds every mount
      * into a single linear cursor — opendir/readdir is the
      * wrong tool for "show me everything everywhere". */

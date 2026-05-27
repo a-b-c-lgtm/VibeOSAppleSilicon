@@ -33,7 +33,7 @@ int uaccess_check(uint64_t uptr, size_t len)
     return range_in_user(uptr, len) ? 0 : -EFAULT;
 }
 
-/* Chapter 108d \u2014 pre-fault a user page so the kernel
+/* Chapter 117 \u2014 pre-fault a user page so the kernel
  * memcpy below can write to it without triggering an EL1 data
  * abort.  Two cases need handling:
  *
@@ -84,7 +84,7 @@ int copy_from_user(void *kdst, uint64_t uptr, size_t len)
     if (!range_in_user(uptr, len))
         return -EFAULT;
 
-    /* Chapter 108d \u2014 fault-in pages first so a lazy
+    /* Chapter 117 \u2014 fault-in pages first so a lazy
      * anon mmap range (e.g. a wsd worker thread's stack) doesn't
      * translation-fault at EL1 when the memcpy below dereferences
      * it.  Already-mapped pages are no-ops. */
@@ -113,7 +113,7 @@ int copy_to_user(uint64_t uptr, const void *ksrc, size_t len)
     if (!range_in_user(uptr, len))
         return -EFAULT;
 
-    /* Chapter 75 \u2014 every page touched by the write must be
+    /* Chapter 74 \u2014 every page touched by the write must be
      * writable in the active AS.  Forked-but-unmodified user
      * pages are mapped RO + DESC_SW_COW, and AArch64 RO
      * permissions apply to EL1 too: a kernel memcpy through a
@@ -122,7 +122,7 @@ int copy_to_user(uint64_t uptr, const void *ksrc, size_t len)
      * on each shared page first.  Already-writable pages are a
      * no-op; genuinely-RO mappings (program text) cause -EFAULT.
      *
-     * Chapter 108d \u2014 also fault-in lazy anon mmap
+     * Chapter 117 \u2014 also fault-in lazy anon mmap
      * pages so worker thread stacks (allocated by
      * thread_spawn_files via mmap(MAP_ANONYMOUS)) can receive
      * kernel writes before user mode has touched them. */

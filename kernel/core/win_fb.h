@@ -1,5 +1,5 @@
 /*
- * kernel/core/win_fb.h — chapter 108d.
+ * kernel/core/win_fb.h — chapter 117.
  *
  * Server-allocated, client-mappable per-window framebuffer.
  * Lets wsd (window-server daemon) allocate a BGRA pixel buffer
@@ -14,7 +14,7 @@
  * the unique scanout buffer respectively).  This module
  * provides a TABLE of N independent shareable backing
  * objects — closer to a tiny shared-memory subsystem than to
- * either of those.  Once chapter 108d's wmclient starts
+ * either of those.  Once chapter 117's wmclient starts
  * making these per window, the table becomes the only path
  * by which userspace gets at a window's pixels.
  *
@@ -27,7 +27,7 @@
  *
  *   sys_win_fb_map → caller passes an id; kernel maps the
  *     same physical pages into caller's AS at a fresh VA.
-     * Chapter 108d is intentionally permissive: any caller who
+     * Chapter 117 is intentionally permissive: any caller who
  *     knows the id can map.  The ACL is the chapter-107 IPC
  *     channel — wsd only hands an id to the client that owns
  *     the window.  A future capability layer can tighten this
@@ -65,7 +65,7 @@
 long sys_win_fb_alloc(long args_uptr);
 long sys_win_fb_map(long args_uptr);
 long sys_win_fb_free(long id_arg);
-/* chapter 108e — resize an existing win_fb to (new_w, new_h).
+/* chapter 118 — resize an existing win_fb to (new_w, new_h).
  * Owner-only.  Reallocates the backing, copies top-left of the
  * old contents over, uninstalls all existing mappings (owner +
  * mappers) since their VAs back stale pages, frees old pages.

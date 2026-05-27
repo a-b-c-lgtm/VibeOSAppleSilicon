@@ -1,4 +1,4 @@
-/* userspace/heaptest/heaptest.c — milestone 17 user-heap test.
+/* userspace/heaptest/heaptest.c — user-heap test.
  *
  * Allocates a few buffers of varying sizes, fills them with
  * patterns, verifies the patterns survive interleaved frees, and

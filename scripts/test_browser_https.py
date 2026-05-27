@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_https.py -- chapter 112d native HTTPS in the browser.
+"""scripts/test_browser_https.py -- chapter 127 native HTTPS in the browser.
 
 Boots the kernel, waits for the shell prompt, runs
 
     browser https://localhost:8443/
 
 against the in-guest /bin/httpsd (auto-spawned by init at boot,
-chapter 112b), and asserts that:
+chapter 125), and asserts that:
 
   1. The browser's TLS path actually engaged (`[browser] TLS
      handshake OK with 127.0.0.1:8443 (chain-validated, ...)`).
@@ -128,7 +128,7 @@ def main():
         # 3. Drive the browser.  Default mode (no flag) renders
         #    a plain-text dump to serial, which is enough to see
         #    the response body.  Any path works -- httpsd serves
-        #    the marker body for every GET (chapter 112b).  Host
+        #    the marker body for every GET (chapter 125).  Host
         #    is "localhost" rather than "127.0.0.1" so the sample
         #    chain's CN=localhost leaf passes SNI verification.
         ser.sendall(b"browser https://localhost:8443/\n")
@@ -177,7 +177,7 @@ def main():
             # not a hard fail -- the handshake + body checks above
             # already cover the chapter-112d contract.
 
-        print("PASS: chapter 112d native HTTPS in /bin/browser end-to-end")
+        print("PASS: chapter 127 native HTTPS in /bin/browser end-to-end")
         return 0
     finally:
         q.kill(); q.wait()

@@ -1,4 +1,4 @@
-/* userspace/libc/scanf.h — chapter 128f.
+/* userspace/libc/scanf.h — chapter 170.
  *
  * Header-only sscanf / vsscanf.  The fscanf/scanf wrappers
  * live in stdio.h (since they need FILE *); this header

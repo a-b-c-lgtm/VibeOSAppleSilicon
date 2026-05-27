@@ -1,4 +1,4 @@
-/* userspace/stdlibtest/stdlibtest.c — chapter 128e regression.
+/* userspace/stdlibtest/stdlibtest.c — chapter 169 regression.
  *
  * Exercises the new <stdlib.h> surface:
  *   - qsort + bsearch

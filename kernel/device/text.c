@@ -1,6 +1,6 @@
 /*
- * Text rendering implementation -- Chapter 23 (bitmap) +
- * Chapter 102 (per-glyph AA + variable-width).
+ * Text rendering implementation -- Chapter 22 (bitmap) +
+ * Chapter 104 (per-glyph AA + variable-width).
  *
  * Public contract in text.h hasn't changed. What HAS changed is
  * the internal pipeline:
@@ -105,7 +105,7 @@ void text_draw_glyph(const struct bitmap_font *font,
     uint32_t w = font->cell_width;
     uint32_t h = font->cell_height;
 
-    /* Chapter 108b: there's only one font kind in the kernel now
+    /* Chapter 115: there's only one font kind in the kernel now
      * (the bitmap font).  The cell IS the bitmap, so we pretend
      * the baseline is the bottom edge and font.c's font_get_glyph
      * sets top_bearing = cell_height so the bitmap lands at

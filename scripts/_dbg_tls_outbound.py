@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_tls_outbound.py -- chapter 112g manual outbound HTTPS probe.
+"""scripts/_dbg_tls_outbound.py -- chapter 130 manual outbound HTTPS probe.
 
 Boot the guest with QEMU SLIRP networking, wait for shell, then
 fire `browser <URL>` at a real public site and watch the serial
@@ -8,14 +8,14 @@ log for TLS handshake success + HTTP body bytes.
 This is the chapter-112g end-to-end proof that:
 
   * DNS works against SLIRP's 10.0.2.3 forwarder (already true
-    since chapter 57, but new domains keep finding bugs).
+    since chapter 56, but new domains keep finding bugs).
   * sys_connect can reach arbitrary public IPv4 + port 443
-    through SLIRP's outbound NAT (chapter 39).
+    through SLIRP's outbound NAT (chapter 38).
   * BearSSL's `_full` profile + the public roots from
     /mnt/ca.bundle accept a real-world server certificate
     chain.
   * SNI + SAN/CN matching pass against a hostname the in-guest
-    code has never seen (chapter 112d wired SNI for localhost;
+    code has never seen (chapter 127 wired SNI for localhost;
     public sites force the SAN-DNS-matching paths to run).
 
 NOT a regression test:

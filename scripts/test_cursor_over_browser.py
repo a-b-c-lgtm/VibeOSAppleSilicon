@@ -7,7 +7,7 @@ miss any save/restore bug that only manifests on detailed
 content.  This version drives the cursor over the .note div in
 test_layout.html — yellow box with dark text and a 2px gold
 border — exactly the content the user reported distortion on
-in chapter 108e.
+in chapter 118.
 
 Strategy:
   1. Boot, wait for launcher.

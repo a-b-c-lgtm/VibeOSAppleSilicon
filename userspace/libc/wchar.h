@@ -1,4 +1,4 @@
-/* userspace/libc/wchar.h — chapter 131f stub.
+/* userspace/libc/wchar.h — chapter 180 stub.
  *
  * Two callers in the binutils-2.44 cross build:
  *

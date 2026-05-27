@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/stage_libc_headers.py -- chapter 132j staging tool.
+"""scripts/stage_libc_headers.py -- chapter 190 staging tool.
 
 OSFS-1 is a flat namespace, but our user-facing libc headers
 in `userspace/libc/sys/*.h` use `#include "../foo.h"` to reach

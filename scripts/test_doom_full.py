@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 # scripts/test_doom_full.py
 # ─────────────────────────────────────────────────────────────────────────────
-# Chapter 133d — in-guest Doom full vendor compile.
+# Chapter 194 — in-guest Doom full vendor compile + link.
 #
 # Boots the OS, extracts /bin/doomgeneric.tar onto /data, runs
-# /bin/make -f /bin/doom_full.mk (compiles 77 vendor sources),
-# and verifies a representative subset of .o files landed.
+# /bin/make -f /bin/doom_full.mk (compiles 81 vendor sources +
+# dummy.o), spot-checks a representative subset of .o files,
+# then runs /bin/make -f /bin/doom_link.mk to prove the .o set
+# is actually linkable into /data/doomgeneric.elf.
 #
-# Expected runtime: ~15-20 min (77 gcc invocations × ~10sec each
-# inside the guest).
+# The link step catches drift the compile alone cannot:
+#  - missing -D flags (e.g. -DOSDEV_LIBC_NO_GLOBAL_DEFS) that
+#    leave every TU emitting strong-global duplicates,
+#  - missing OBJS entries (e.g. gusconf.o / icon.o) that the
+#    host build and doom_link.args expect.
+#
+# Expected runtime: ~25 min (compile dominates; link is ~15 s).
 # ─────────────────────────────────────────────────────────────────────────────
 import os, sys, time, socket, subprocess, signal, re
 
@@ -201,11 +208,18 @@ def main():
                "step 3b: no compile/link errors during full build")
 
         # --- step 4: spot-check .o files exist ---
+        # The list intentionally includes gusconf.o and icon.o:
+        # those two were silently absent from doom_full.mk's OBJS
+        # for the entire 133d-195 run, so the in-guest compile
+        # left /data/src/ with only 80 of the 82 .o files the
+        # host build (and doom_link.args) expects.  Spot-checking
+        # them here turns that drift into a step-4 FAIL.
         targets = [
             b"m_random.o", b"m_bbox.o", b"m_fixed.o",
             b"am_map.o", b"d_main.o", b"p_setup.o",
             b"r_main.o", b"r_draw.o", b"z_zone.o",
             b"doomgeneric.o", b"w_wad.o",
+            b"gusconf.o", b"icon.o",
         ]
         found = 0
         for t in targets:
@@ -215,6 +229,102 @@ def main():
                 found += 1
         expect(found == len(targets),
                f"step 4: spot-check .o files exist ({found}/{len(targets)})")
+
+        # --- step 5: link the compiled objects into doomgeneric.elf ---
+        # The whole point of doom_full.mk is to produce a .o set
+        # that /bin/make -f /bin/doom_link.mk can link.  Running
+        # the link here catches drift the compile alone can't:
+        # missing -D flags (e.g. -DOSDEV_LIBC_NO_GLOBAL_DEFS) that
+        # leave each TU emitting its own copy of strong globals
+        # like `__cxa_finalize` / `environ`, missing source files
+        # that show up as `cannot find /data/src/X.o`, etc.
+        out = send_cmd(sock, "/bin/ls /bin/doom_link.mk", timeout=10)
+        expect(b"doom_link.mk" in out,
+               "step 5a: /bin/doom_link.mk shipped on OSFS-1")
+
+        print("--- launching /bin/make -f /bin/doom_link.mk ---")
+        sock.sendall(b"/bin/make -f /bin/doom_link.mk\n")
+        link_out = b""
+        deadline = time.time() + 600.0  # 10 min hard cap
+        last_byte = time.time()
+        sock.settimeout(0.5)
+        while time.time() < deadline:
+            try:
+                chunk = sock.recv(8192)
+                if chunk:
+                    link_out += chunk
+                    last_byte = time.time()
+                    sys.stdout.buffer.write(chunk)
+                    sys.stdout.flush()
+                    if b"make: built 'all'" in link_out:
+                        break
+                    if (b"make: recipe for" in link_out
+                            or b"make: spawn" in link_out
+                            or b"make: waitpid" in link_out):
+                        break
+                else:
+                    break
+            except socket.timeout:
+                if time.time() - last_byte > 120.0:
+                    print("\n--- 120s idle; bailing on link ---")
+                    break
+
+        expect(b"make: built 'all'" in link_out,
+               "step 5b: /bin/make completed link rule")
+
+        # Anchor failure detection on /bin/ld's `ld:` prefix.
+        # The benign "ld: warning: ... has a LOAD segment with
+        # RWX permissions" is filtered by line so a real ld error
+        # (`ld: undefined reference`, `ld: cannot find ...`,
+        # `ld: multiple definition of ...`) still trips this.
+        bad_ld = False
+        for line in link_out.splitlines():
+            if not line.startswith(b"/bin/ld:") and not line.startswith(b"ld:"):
+                continue
+            tail = line.split(b"ld:", 1)[1].lstrip()
+            if tail.startswith(b"warning"):
+                continue
+            bad_ld = True
+            break
+        expect(not bad_ld
+               and b"undefined reference" not in link_out
+               and b"multiple definition" not in link_out
+               and b"cannot find" not in link_out
+               and b"make: recipe for" not in link_out
+               and b"make: spawn" not in link_out
+               and b"make: waitpid" not in link_out,
+               "step 5c: no link errors (multi-def, undef ref, missing .o)")
+
+        out = send_cmd(sock, "/bin/ls /data/doomgeneric.elf",
+                       timeout=10)
+        expect(b"doomgeneric.elf" in out and b"no such" not in out.lower(),
+               "step 5d: /data/doomgeneric.elf produced")
+
+        # Size sanity: a real doomgeneric.elf is ~2.4 MiB
+        # (chapter 195 baseline: 2,502,904 bytes).  Anything
+        # under ~500 KB indicates the link silently dropped TUs;
+        # anything over ~50 MB indicates a runaway.
+        out = send_cmd(sock, "/bin/wc /data/doomgeneric.elf",
+                       timeout=30, idle=3.0)
+        size_ok = False
+        last_n = None
+        for line in out.splitlines():
+            s = line.decode(errors="replace").strip()
+            parts = s.split()
+            if (len(parts) >= 4
+                    and parts[0].isdigit() and parts[1].isdigit()
+                    and parts[2].isdigit()
+                    and parts[3].endswith(".elf")):
+                n = int(parts[2])
+                last_n = n
+                if 500_000 <= n <= 50_000_000:
+                    size_ok = True
+                    print(f"    (doomgeneric.elf = {n} bytes)")
+                    break
+        if not size_ok:
+            print(f"    (wc raw output: {out[-200:]!r}; last_n={last_n})")
+        expect(size_ok,
+               "step 5e: /data/doomgeneric.elf size is plausible")
 
     finally:
         try:

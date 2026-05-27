@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/_dbg_qemu_socket_diag.sh — chapter 130b sweep-crash diagnosis.
+# scripts/_dbg_qemu_socket_diag.sh — chapter 173 sweep-crash diagnosis.
 #
 # Tests fail with "no serial socket: /tmp/osdev-...sock" but no qemu
 # process exists. This script launches one qemu the same way

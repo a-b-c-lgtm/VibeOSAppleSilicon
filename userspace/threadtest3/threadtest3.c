@@ -1,4 +1,4 @@
-/* userspace/threadtest3/threadtest3.c — chapter 93 CLONE_FILES smoke
+/* userspace/threadtest3/threadtest3.c — chapter 94 CLONE_FILES smoke
  * test.
  *
  * Two cases, run back-to-back:

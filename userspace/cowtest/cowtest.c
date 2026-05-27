@@ -1,4 +1,4 @@
-/* userspace/cowtest/cowtest.c \u2014 chapter 75 copy-on-write smoke test.
+/* userspace/cowtest/cowtest.c \u2014 chapter 74 copy-on-write smoke test.
  *
  * Verifies the lazy-clone path that replaced address_space_clone's
  * eager memcpy in sys_fork:
@@ -22,7 +22,7 @@
  *      waitpid() with a stack-allocated `code_out`; the kernel
  *      copy_to_user must pre-fault the COW page rather than
  *      trapping at EL1.  This is the single most subtle bug we
- *      hit during chapter 75 bring-up: AArch64 RO permissions
+ *      hit during chapter 74 bring-up: AArch64 RO permissions
  *      apply to EL1 too, so a kernel write through a user VA
  *      that happens to point at a still-shared COW page faults
  *      in EL1 with nowhere good to land.  uaccess.c's

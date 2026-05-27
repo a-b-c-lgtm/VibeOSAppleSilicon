@@ -23,7 +23,7 @@
  *           AS only inherits the slots the kernel actually needs).
  *
  * No ASIDs yet: every address_space_activate flushes the TLB.  ASIDs
- * land in a future milestone (small, tagged invalidation).
+ * are a future enhancement (small, tagged invalidation).
  */
 #ifndef ADDRESS_SPACE_H
 #define ADDRESS_SPACE_H
@@ -49,18 +49,18 @@
 #define USER_TEXT_BASE      0x1000100000UL    /* matches linker_user.ld     */
 #define USER_HEAP_BASE      0x1010000000UL    /* sbrk starts here           */
 #define USER_HEAP_MAX       0x1030000000UL    /* hard cap (512 MiB heap)    */
-/* Chapter 90 — mmap() VAs come out of a bump pointer between
+/* Chapter 91 — mmap() VAs come out of a bump pointer between
  * USER_MMAP_BASE and USER_MMAP_MAX.  Sits between the heap top
  * and the stack region; deliberately disjoint from sbrk so the
- * two never trip over each other.  Bump-only for chapter 90:
+ * two never trip over each other.  Bump-only for chapter 91:
  * munmap leaves the VA range fallow, never reused.  A real
- * VMA-rb-tree allocator lands when the chapter 90 floor proves
+ * VMA-rb-tree allocator lands when the chapter 91 floor proves
  * limiting. */
 #define USER_MMAP_BASE      0x1030000000UL    /* mmap region start         */
 #define USER_MMAP_MAX       0x103F000000UL    /* mmap region end (240 MiB) */
 #define USER_STACK_TOP      0x1040000000UL    /* one past top of user range */
 #define USER_STACK_PAGES    16                /* 64 KiB user stack          */
-/* Chapter 101 — one unmapped page immediately below the user
+/* Chapter 103 — one unmapped page immediately below the user
  * stack base.  Touching it produces a translation fault that the
  * fault handler recognises (via the DESC_SW_GUARD software bit
  * on the L3 entry) and turns into a friendly "user stack
@@ -69,15 +69,15 @@
 #define USER_STACK_GUARD_VA                                                 \
     (USER_STACK_TOP - ((uint64_t)(USER_STACK_PAGES + 1)) * 0x1000UL)
 /* The 16 KiB original (4 pages) was just enough for shell-style
- * tools but blew up on the M64 browser when laying out deeply
+ * tools but blew up on the browser when laying out deeply
  * nested HN comment threads (each comment is wrapped in 4-5
  * <table>/<tbody>/<tr>/<td> levels, and a long thread nests 50+
  * deep — layout_build_subtree recurses to that depth, then
  * css_match_chain adds more frames per node).  See repo memory
- * note `chapter-44-css-table-layout.md` and the M64 browser
+ * note `chapter-44-css-table-layout.md` and the browser
  * notes for the diagnostic trail. */
 
-/* chapter 108e follow-up #4 — one entry on an address_space's
+/* chapter 118 follow-up #4 — one entry on an address_space's
  * WM-window VA freelist (see address_space::wm_freelist).  The
  * list is singly-linked, sorted by `va` ascending, with no two
  * adjacent entries that touch (coalesced on insert).  A range
@@ -103,18 +103,18 @@ struct address_space {
      * 4 KiB pages between the old and new break.  Always page-aligned. */
     uint64_t  heap_brk;
 
-    /* Chapter 90 — mmap support.
+    /* Chapter 91 — mmap support.
      *
      * vmas:        head of a singly-linked list of struct vma,
      *              one per outstanding mmap(); sorted by va.
      * mmap_brk:    bump pointer for the next mmap allocation.
      *              Starts at USER_MMAP_BASE; grows toward
-     *              USER_MMAP_MAX.  Never recycled in chapter 90.
+     *              USER_MMAP_MAX.  Never recycled in chapter 91.
      */
     struct vma *vmas;
     uint64_t    mmap_brk;
 
-    /* chapter 108e follow-up #4 — WM-window VA freelist.
+    /* chapter 118 follow-up #4 — WM-window VA freelist.
      *
      * Without this, address_space_install_wm_window burns a
      * fresh slab of bump-pointer VA on every call and
@@ -133,7 +133,7 @@ struct address_space {
      * same-size resizes can ride a single freelist node. */
     struct wm_va_range *wm_freelist;
 
-    /* Chapter 91 — reference count.
+    /* Chapter 92 — reference count.
      *
      * Set to 1 by address_space_create.  Bumped by
      * address_space_share when a new thread starts using this
@@ -148,7 +148,7 @@ struct address_space {
      * if still > 0" before the existing teardown.
      *
      * volatile + atomic_* ops on it because clone/exit can
-     * race across CPUs (chapter 89 SMP). */
+     * race across CPUs (chapter 90 SMP). */
     volatile uint32_t refcount;
 };
 
@@ -192,7 +192,7 @@ void address_space_share(struct address_space *as);
  * page memcpy moves into the page-fault path. */
 struct address_space *address_space_clone(const struct address_space *src);
 
-/* Chapter 75 \u2014 copy-on-write clone.  Same VA layout and same
+/* Chapter 74 \u2014 copy-on-write clone.  Same VA layout and same
  * semantics as address_space_clone, but instead of allocating
  * fresh pages the parent and child share every existing page
  * read-only.  Writable pages are tagged with a software-defined
@@ -236,7 +236,7 @@ int address_space_map(struct address_space *as,
                       uint64_t va, uint64_t pa,
                       uint64_t pages, int writable, int executable);
 
-/* Chapter 101 — install a one-page guard at `va`.  The L3 entry
+/* Chapter 103 — install a one-page guard at `va`.  The L3 entry
  * is written *invalid* (touching it faults) but tagged with the
  * DESC_SW_GUARD software bit so address_space_lookup_pte and the
  * data-abort handler can distinguish "intentional guard" from
@@ -245,21 +245,21 @@ int address_space_map(struct address_space *as,
  * page itself had to be allocated and pmem refused). */
 int address_space_install_guard(struct address_space *as, uint64_t va);
 
-/* Chapter 101 — read the raw L3 descriptor that backs `va`, or
+/* Chapter 103 — read the raw L3 descriptor that backs `va`, or
  * 0 if no L2 / L3 covers the address.  Software bits like
  * DESC_SW_GUARD survive in the entry even when DESC_VALID is
  * clear; the fault handler uses this to read them back. */
 uint64_t address_space_lookup_pte(const struct address_space *as,
                                   uint64_t va);
 
-/* Chapter 101 — DESC_SW_GUARD as observable through
+/* Chapter 103 — DESC_SW_GUARD as observable through
  * address_space_lookup_pte.  Software bit 57 (bits 55, 56 are
  * already used by DESC_SW_COW and DESC_SW_PAGECACHE).  The MMU
  * ignores bits 55..58 when DESC_VALID is clear, so we get a free
  * communication channel between AS-create time and fault time. */
 #define DESC_SW_GUARD       (1ULL << 57)
 
-/* Chapter 108a — software bit 58 marks "this page is a WM window
+/* Chapter 114 — software bit 58 marks "this page is a WM window
  * pixel buffer mapped into userspace; the WM owns the physical
  * page and the AS must NOT pmem_free it on teardown."  Behaves
  * like DESC_SW_PAGECACHE in spirit but has its own dedicated
@@ -271,7 +271,7 @@ uint64_t address_space_lookup_pte(const struct address_space *as,
  * mapped windows" rule. */
 #define DESC_SW_WM_WINDOW   (1ULL << 58)
 
-/* Chapter 108a \u2014 install N physical pages owned by the WM into
+/* Chapter 114 \u2014 install N physical pages owned by the WM into
  * the user range, contiguously in VA.  Each entry of
  * `page_pas[i]` is a 4 KiB-aligned PA that came from
  * pmem_alloc_page (or any equivalent source) and is owned by
@@ -291,7 +291,7 @@ int address_space_install_wm_window(struct address_space *as,
                                     uint64_t n_pages,
                                     uint64_t *va_out);
 
-/* Chapter 108a \u2014 tear down a previously-installed WM window
+/* Chapter 114 \u2014 tear down a previously-installed WM window
  * mapping.  Walks the N L3 entries starting at `va`, asserts each
  * one carries DESC_SW_WM_WINDOW (returning -1 otherwise so caller
  * notices misuse), and zeroes the descriptor.  Does NOT free the
@@ -310,7 +310,7 @@ void address_space_activate(const struct address_space *as);
 uint64_t address_space_boot_l1_pa(void);
 
 /* ------------------------------------------------------------------
- * Chapter 90 — mmap regions and lazy fault-in.
+ * Chapter 91 — mmap regions and lazy fault-in.
  *
  * struct vma describes one outstanding mmap.  All pages within
  * the vma are lazily faulted in: the mmap syscall just records
@@ -349,7 +349,7 @@ uint64_t address_space_mmap_anon(struct address_space *as,
 /* mmap_ramfs: reserve a fresh mmap region of `pages` * PAGE_SIZE
  * bytes mapped onto the ramfs file at index `ramfs_index`,
  * starting at `file_offset` (must be page-aligned).  PROT_READ
- * only — chapter 90 does not support PROT_WRITE on file
+ * only — chapter 91 does not support PROT_WRITE on file
  * mappings (would need COW on the page-cache page).  Returns
  * the chosen VA on success or 0 on failure. */
 uint64_t address_space_mmap_ramfs(struct address_space *as,
@@ -359,7 +359,7 @@ uint64_t address_space_mmap_ramfs(struct address_space *as,
 
 /* munmap: remove the mmap entry covering `va` and unmap every
  * lazily-faulted-in page.  `va` must match the start of an
- * existing vma; partial unmaps are not supported in chapter 90.
+ * existing vma; partial unmaps are not supported in chapter 91.
  * Returns 0 on success or -1 if `va` doesn't name a known vma. */
 int      address_space_munmap(struct address_space *as, uint64_t va);
 

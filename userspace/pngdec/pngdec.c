@@ -1,5 +1,5 @@
 /*
- * userspace/pngdec/pngdec.c — chapter 97 PNG decoder test harness.
+ * userspace/pngdec/pngdec.c — chapter 98 PNG decoder test harness.
  *
  * Reads a PNG file, decodes it via libc/png.h, and prints
  *   <path>: <w>x<h>, sum=<sum>, opaque=<count>

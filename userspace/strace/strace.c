@@ -1,4 +1,4 @@
-/* userspace/strace/strace.c — chapter 100 syscall tracer driver.
+/* userspace/strace/strace.c — chapter 102 syscall tracer driver.
  *
  *   strace <program> [args...]
  *

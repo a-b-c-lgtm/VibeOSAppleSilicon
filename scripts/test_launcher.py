@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""scripts/test_launcher.py — milestone-44 smoke test.
+"""scripts/test_launcher.py — launcher smoke test.
 
 Boots headless, summons the launcher window via the taskbar's
 Start button, then drives the mouse via virtio-tablet to click
 the "gui_term" button.  Verifies that a SECOND kernel-shadow
 window is created (the spawned gui_term).
 
-Chapter 108d/e port notes:
+Chapter 117/e port notes:
   - Launcher is now a Start-menu-style panel: NO_DECORATION,
     ALWAYS_ON_TOP, anchored just above the taskbar.  It is
     HIDDEN by default at boot and is summoned by clicking the
@@ -169,7 +169,7 @@ def main():
             print("FAIL: shell prompt not reached"); return 1
         print("PASS: shell ready")
 
-        # Post-M46, init auto-spawns /bin/launcher at boot.  The
+        # Post boot-to-desktop, init auto-spawns /bin/launcher at boot.  The
         # launcher now creates its window, paints once, then
         # immediately minimizes itself (Start-menu model: hidden
         # by default).  We still expect exactly one [wm] window
@@ -231,7 +231,7 @@ def main():
         screendump(qmp, DUMP_PATH)
         print(f"  saved screendump after click: {DUMP_PATH}")
 
-        # Chapter 108d note: gui_term has not yet been ported to wmclient,
+        # Chapter 117 note: gui_term has not yet been ported to wmclient,
         # so its window does NOT appear in the wsd composition.
         # We only verify that the spawn was acknowledged by the
         # kernel (the [wm] window created count check above) and
@@ -239,7 +239,7 @@ def main():
         # gui_term ports, add an assertion that a pixel at its
         # cascade position (140, 140) is no longer the wsd
         # wallpaper.
-        print("\nMILESTONE 45: ALL TESTS PASSED")
+        print("\nALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

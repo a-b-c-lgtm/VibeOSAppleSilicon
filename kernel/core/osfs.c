@@ -109,11 +109,11 @@ const struct osfs_dirent *osfs_dirent_at(size_t i)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 113 — struct fs_ops adapter.
+ * Chapter 132 — struct fs_ops adapter.
  *
  * OSFS-1 is read-only, flat-namespace, and historically mounted
  * at BOTH `/mnt` and `/bin` (binaries live on disk since
- * milestone 13).  The vtable adapter is one set of methods plus
+ * the on-disk binaries chapter).  The vtable adapter is one set of methods plus
  * two mount registrations; the cookie is unused (NULL).
  *
  * Read-only is enforced two ways:
@@ -238,7 +238,7 @@ const struct fs_ops osfs1_fs_ops = {
 void osfs1_register_mount(void)
 {
     /* OSFS-1 is the disk-backed mount that holds both user data
-     * (chapter 12 — /mnt) and binaries (milestone 13 — /bin).
+     * (chapter 11 — /mnt) and binaries (/bin).
      * Same on-disk file table, two different mount points; the
      * read-only flag is set on both so EROFS_VFS comes back
      * cleanly from any write attempt. */

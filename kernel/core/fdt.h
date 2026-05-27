@@ -46,7 +46,7 @@ int fdt_read_psci_method(const void *blob, char *out, size_t cap);
  * size of out_mpidrs[]. */
 size_t fdt_read_cpus(const void *blob, uint64_t *out_mpidrs, size_t max);
 
-/* Chapter 95 — find the first node whose `compatible` property
+/* Chapter 96 — find the first node whose `compatible` property
  * contains "arm,pl031" and return its first `reg` cell pair as
  * the MMIO base address in *base_out.  Returns 1 on success,
  * 0 if no such node is present.  We assume the parent's

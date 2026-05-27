@@ -5,7 +5,7 @@
  * helpers go straight into the program's object file.  No external
  * .o needed.
  *
- * Thread safety (chapter 94 update): a per-process spinlock guards
+ * Thread safety (chapter 95 update): a per-process spinlock guards
  * the free-list head and the sbrk-grow path.  Without it, two
  * threads in the same address space (e.g. the browser's GUI core
  * and parser thread, sharing the heap via CLONE_VM) can corrupt
@@ -189,7 +189,7 @@ static inline void free(void *p)
 }
 
 /* calloc(n, size): allocate n*size bytes, zero-initialised.
- * Chapter 130a addition (DoomGeneric needs it).  We do the
+ * Chapter 172 addition (DoomGeneric needs it).  We do the
  * malloc + memset by hand to avoid pulling in <string.h> here
  * (which would create a circular include via stdlib.h). */
 static inline void *calloc(size_t n, size_t size)
@@ -203,7 +203,7 @@ static inline void *calloc(size_t n, size_t size)
     return p;
 }
 
-/* realloc(p, want): grow or shrink an allocation.  Chapter 130a
+/* realloc(p, want): grow or shrink an allocation.  Chapter 172
  * addition.  Always malloc-new-copy-free-old — we don't try to
  * extend in place even when the trailing slack is sufficient,
  * because the free-list shape after coalescing makes the math

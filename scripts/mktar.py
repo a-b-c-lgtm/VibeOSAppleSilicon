@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """scripts/mktar.py -- build a ustar archive from a directory tree.
 
-Chapter 133a.  Produces tarballs that /bin/tar can extract
+Chapter 191.  Produces tarballs that /bin/tar can extract
 in-guest: ustar format, no GNU extensions, no compression.
 
 Why not just shell out to /usr/bin/tar?

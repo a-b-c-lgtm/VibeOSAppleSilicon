@@ -220,7 +220,7 @@ What the arrows mean:
 
 - **Solid arrows** are data-plane edges (drivers feed core, core uses arch, kernel services land in the network stack, ...).
 - **Thick `==>` arrows** are the two userspace-visible IPC mechanisms: `svc` for the kernel syscall ABI, and `srv` named channels for daemon-to-client traffic (window server, font server, clipboard).
-- The **`wsd` box** is the chapter 108d–e milestone: the compositor, cursor, decorations, and resize live in a userspace process; the kernel keeps `win_fb` for backing storage and "shadow" WM windows that `wsd` uses for hit-testing and input delivery.
+- The **`wsd` box** is the chapter 117–e milestone: the compositor, cursor, decorations, and resize live in a userspace process; the kernel keeps `win_fb` for backing storage and "shadow" WM windows that `wsd` uses for hit-testing and input delivery.
 - The **`BearSSL` box** is vendored TLS 1.2: every `https://` handshake (browser, `httpsd`, `tlstest`) goes through one `tls_socket` API and one ~130-anchor `ca.bundle` derived from the host's system trust store.
 
 ## Why AArch64? Why HVF?
@@ -327,9 +327,9 @@ a bad device line after an edit).
 
 - [Book index](book/INDEX.md) — master table of contents and status
   table, broken into fifteen parts.
-- [Chapter 1: Why Apple Silicon, why aarch64, why now](book/chapters/01-foundations/01-why-apple-silicon.md)
+- [Chapter 1: Why Apple Silicon, why aarch64, why now](book/chapters/01-foundations/001-why-apple-silicon.md)
   — the design argument in long form.
-- [Chapter 3: First boot](book/chapters/01-foundations/03-first-boot.md)
+- [Chapter 3: First boot](book/chapters/01-foundations/003-first-boot.md)
   — the smallest thing that prints to the UART.
 
 ## What works today
@@ -355,7 +355,7 @@ to open windowed apps:
   `env`, `sleep`, `uptime`, `time`).
 - **Filesystems** — a classical Unix VFS with a longest-prefix
   mount table dispatching through a `struct fs_ops` vtable (Part
-  XVI, chapter 113); six mounts in the live table (`/`, `/proc`,
+  XVI, chapter 132); six mounts in the live table (`/`, `/proc`,
   `/tmp`, `/mnt`, `/bin`, `/data`), each enforcing its `MOUNT_RO`
   flag uniformly via `EROFS_VFS`; a read-only on-disk OSFS plus a
   writable in-memory `tmpfs` and a writable on-disk OSFS-2 for
@@ -417,17 +417,17 @@ to open windowed apps:
   unpacks ustar archives, and `notepad` has a **Build button**
   that runs `make` on the current file's directory. The Doom
   source tree compiles and links end-to-end inside the guest
-  (chapters 133c–133f).
+  (chapters 193–196).
 - **Games and real software** — `/bin/doom`: id Software's
   Doom shareware running on the framebuffer, fed by the
   virtio-keyboard with real `GUI_EVENT_KEY_UP` plumbing so
   movement keys release the same tick the user lifts them
-  (chapter 133g). The Doom binary on disk is the one
+  (chapter 197). The Doom binary on disk is the one
   `/bin/gcc` produced in-guest, not the cross-built artefact.
 
 ## Project status
 
-The codebase tracks the book chapter by chapter. As of chapter 133g
+The codebase tracks the book chapter by chapter. As of chapter 197
 (real `GUI_EVENT_KEY_UP` plumbing, retiring the Doom timed-release
 shim and closing Part XVIII), every part through XVIII — *Real GCC,
 Real Software, Real Doom* — has been shipped end to end. The OS now
@@ -448,9 +448,9 @@ headline gaps still open on the roadmap are:
   (`/tmp`) and to the writable on-disk OSFS-2 at `/data`, but
   without journalling.
 - **Part XVI — Filesystem Architecture, second half.** The
-  mount-table refactor (chapter 113) is done; user-space
+  mount-table refactor (chapter 132) is done; user-space
   filesystem servers via a 9P-shaped RPC and `SYS_MOUNT` /
-  `SYS_UMOUNT` (chapter 114) is the next milestone.
+  `SYS_UMOUNT` (chapter 140) is the next milestone.
 - **Part VI — Window manager extras.** Menus, window snapping,
   and the remaining 52+ items in the GUI roadmap.
 - **Section 19 onward.** Next roadmap item is undefined at the

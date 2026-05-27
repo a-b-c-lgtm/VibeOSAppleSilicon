@@ -1,5 +1,5 @@
 /*
- * userspace/libc/proc_stat.h — chapter 114e public ABI for the
+ * userspace/libc/proc_stat.h — chapter 145 public ABI for the
  * three "kernel state" syscalls that procd uses to render
  * /proc files in user space.
  *

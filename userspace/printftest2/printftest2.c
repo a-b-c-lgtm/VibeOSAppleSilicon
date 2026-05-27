@@ -1,4 +1,4 @@
-/* userspace/printftest2/printftest2.c — chapter 128f regression.
+/* userspace/printftest2/printftest2.c — chapter 170 regression.
  *
  * Exercises the format-string surface added in 128f:
  *

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_setjmp.py — chapter 128a setjmp/longjmp regression.
+"""scripts/test_setjmp.py — chapter 165 setjmp/longjmp regression.
 
 Boots the kernel headless over a unix-socket serial pipe (same
 shape as scripts/test_printftest.py), waits for the shell

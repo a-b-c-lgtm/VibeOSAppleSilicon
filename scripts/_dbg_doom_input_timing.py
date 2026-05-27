@@ -15,13 +15,13 @@ QEMU framebuffer to confirm the player actually moved.
 
 History
 -------
-This script was written for chapter 130b's timed-release input
-shim. At the time, chapter 30's virtio_input dropped key releases
+This script was written for chapter 173's timed-release input
+shim. At the time, chapter 29's virtio_input dropped key releases
 at the kernel layer, so the doom shim had to fake them with a
 250-ms `HOLD_RELEASE_MS` timer; this script's deliberately-spaced
 taps exercised that timer.
 
-Chapter 133g retired the shim. Releases now ride a real
+Chapter 197 retired the shim. Releases now ride a real
 `GUI_EVENT_KEY_UP` event from `virtio_input.c` → `wm.c` →
 userspace, so `gamekeydown[]` follows the actual key state.
 The script still works — it's now a general "does Doom respond
@@ -33,12 +33,12 @@ What the original (130b) bug looked like
 ----------------------------------------
 Doom would reach the title screen and the user could navigate
 the menu, but the player would not move/turn/fire once in-game.
-Root cause: chapter 130a emitted a synthetic release IMMEDIATELY
+Root cause: chapter 172 emitted a synthetic release IMMEDIATELY
 after each press, so `gamekeydown[k]` was cleared in the same
 event-queue drain that set it, and `G_BuildTiccmd` (running
 once per 35-Hz tick) read `gamekeydown[k] == 0` and produced no
 movement. The 130b fix deferred the synthetic release 250 ms
-after the last real press; chapter 133g replaced the synthesis
+after the last real press; chapter 197 replaced the synthesis
 entirely with real release events.
 
 The script keeps deliberately-spaced taps so each tap maps to a
@@ -126,7 +126,7 @@ def main():
         # Originally the 300 ms gap mattered: it had to be
         # comfortably longer than the chapter-130b timed-release
         # window (250 ms) so each tap was a clean press + release
-        # event pair. After chapter 133g the timer is gone and
+        # event pair. After chapter 197 the timer is gone and
         # release events ride the real GUI_EVENT_KEY_UP path; the
         # spacing now just keeps the test readable, any value is
         # fine.

@@ -1,4 +1,4 @@
-/* userspace/libc/sys/times.h — chapter 132f
+/* userspace/libc/sys/times.h — chapter 186
  *
  * Minimal <sys/times.h> for the in-guest gcc cross-build.  We
  * don't actually track per-process CPU time on this OS, so

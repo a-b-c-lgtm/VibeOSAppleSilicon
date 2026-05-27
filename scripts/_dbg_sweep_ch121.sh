@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/_dbg_sweep_ch121.sh — 20-test regression sweep for chapter 121.
+# scripts/_dbg_sweep_ch121.sh — 20-test regression sweep for chapter 157.
 # Run in the background:
 #   nohup scripts/_dbg_sweep_ch121.sh > /tmp/osdev_sweep_ch121/nohup.log 2>&1 &
 LOG=/tmp/osdev_sweep_ch121/sweep.log

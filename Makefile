@@ -134,7 +134,7 @@ USER_LDFLAGS := -T userspace/linker_user.ld -nostdlib --orphan-handling=error \
 # `make` with no target should build everything (kernel + disk image),
 # not just the first ELF rule the file happens to mention.  Without
 # this line make picks $(HELLO_ELF) as .DEFAULT_GOAL (first non-pattern
-# target in the file) and silently skips kernel.elf -- chapter 106b
+# target in the file) and silently skips kernel.elf -- chapter 110
 # debugging spent an hour rebuilding the WRONG thing because edits to
 # kernel/core/tcp.c looked compiled in but weren't.  See the
 # `all:` rule near the bottom for what gets built.
@@ -164,14 +164,14 @@ SH_ELF  := $(BUILD)/userspace/sh/sh.elf
 SH_STRIPPED := $(BUILD)/userspace/sh/sh.stripped.elf
 SH_EMBED:= $(BUILD)/userspace/sh/sh.elf.o
 
-# milestone-16 isolation smoke test: pokes a kernel address from
+# Isolation smoke test: pokes a kernel address from
 # EL0 and is expected to fault.  See userspace/badpoke/badpoke.c.
 BADPOKE_OBJS := $(BUILD)/userspace/crt/crt0.o \
                 $(BUILD)/userspace/badpoke/badpoke.o
 BADPOKE_ELF  := $(BUILD)/userspace/badpoke/badpoke.elf
 BADPOKE_STRIPPED := $(BUILD)/userspace/badpoke/badpoke.stripped.elf
 
-# milestone-16 syscall-pointer test: hands the kernel a kernel
+# Syscall-pointer test: hands the kernel a kernel
 # address as a buffer pointer and expects -EFAULT every time.
 BADPTR_OBJS := $(BUILD)/userspace/crt/crt0.o \
                $(BUILD)/userspace/badptr/badptr.o
@@ -186,7 +186,7 @@ STACKBOMB_OBJS := $(BUILD)/userspace/crt/crt0.o \
 STACKBOMB_ELF  := $(BUILD)/userspace/stackbomb/stackbomb.elf
 STACKBOMB_STRIPPED := $(BUILD)/userspace/stackbomb/stackbomb.stripped.elf
 
-# milestone-17 user-heap test: exercises malloc/free + sbrk.
+# User-heap test: exercises malloc/free + sbrk.
 HEAPTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
                  $(BUILD)/userspace/heaptest/heaptest.o
 HEAPTEST_ELF  := $(BUILD)/userspace/heaptest/heaptest.elf
@@ -223,13 +223,23 @@ THREADTEST3_OBJS := $(BUILD)/userspace/crt/crt0.o \
 THREADTEST3_ELF  := $(BUILD)/userspace/threadtest3/threadtest3.elf
 THREADTEST3_STRIPPED := $(BUILD)/userspace/threadtest3/threadtest3.stripped.elf
 
-# milestone-18 argv test: prints argv[1..argc-1] joined by spaces.
+# Argv test: prints argv[1..argc-1] joined by spaces.
 ECHO_OBJS := $(BUILD)/userspace/crt/crt0.o \
              $(BUILD)/userspace/echo/echo.o
 ECHO_ELF  := $(BUILD)/userspace/echo/echo.elf
 ECHO_STRIPPED := $(BUILD)/userspace/echo/echo.stripped.elf
 
-# milestone-19 printf test: exercises the libc printf.h header.
+# POSIX-ish rm: unlink(2) wrapper with -f.  The in-guest Makefile
+# fixtures (e.g. assets/osfs/doom_link.mk's `clean` recipe) want
+# /bin/rm; before this, the kernel had SYS_UNLINK and the shell
+# had a builtin `rm`, but no standalone binary that a sub-make
+# could spawn.
+RM_OBJS := $(BUILD)/userspace/crt/crt0.o \
+           $(BUILD)/userspace/rm/rm.o
+RM_ELF  := $(BUILD)/userspace/rm/rm.elf
+RM_STRIPPED := $(BUILD)/userspace/rm/rm.stripped.elf
+
+# Printf test: exercises the libc printf.h header.
 PRINTFTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
                    $(BUILD)/userspace/printftest/printftest.o
 PRINTFTEST_ELF  := $(BUILD)/userspace/printftest/printftest.elf
@@ -423,7 +433,7 @@ AR_STRIPPED := $(BUILD)/userspace/ar/ar.stripped.elf
 # osdev libc (cstring.o as the libc bridge); the OSFS recipe
 # below ships the stripped binaries as /bin/as and /bin/ld in
 # place of the toy versions.  The toy AS_ELF / LD_ELF rules
-# stay buildable for chapter 118/119 readers but are no longer
+# stay buildable for chapter 154/119 readers but are no longer
 # wired into the disk image.
 BINUTILS_GUEST_BUILD := $(BUILD)/binutils-build-guest-ld
 BINUTILS_AS_NEW      := $(BINUTILS_GUEST_BUILD)/gas/as-new
@@ -478,7 +488,7 @@ GCCW_STRIPPED := $(BUILD)/userspace/gccw/gccw.stripped.elf
 # build/gcc-build-guest/ by scripts/test_guest_gcc.py.  Treated
 # as an external input here: if it's missing the OSFS build
 # falls back to a placeholder that prints a "run
-# scripts/test_guest_gcc.py first" message.  See chapter 132f.
+# scripts/test_guest_gcc.py first" message.  See chapter 186.
 XGCC_GUEST_BIN  := $(BUILD)/gcc-build-guest/gcc/gcc/xgcc
 CC1_GUEST_BIN   := $(BUILD)/gcc-build-guest/gcc/gcc/cc1
 XGCC_GUEST_STRIPPED := $(BUILD)/userspace/gccw/xgcc.stripped.elf
@@ -491,10 +501,10 @@ MAKE_OBJS := $(BUILD)/userspace/crt/crt0.o \
 MAKE_ELF  := $(BUILD)/userspace/make/make.elf
 MAKE_STRIPPED := $(BUILD)/userspace/make/make.stripped.elf
 
-# milestone-20 ls: walks the SYS_LISTDIR namespace.
+# /bin/ls: walks the SYS_LISTDIR namespace.
 # Includes cstring.o so dirent.h's opendir/closedir can resolve
 # the __asm__("malloc")/__asm__("free") rename trampolines
-# introduced in chapter 132f (dirent.h had to stop including
+# introduced in chapter 186 (dirent.h had to stop including
 # malloc.h to keep the gcc-tree poisoning happy).
 LS_OBJS := $(BUILD)/userspace/crt/crt0.o \
            $(BUILD)/userspace/ls/ls.o \
@@ -502,7 +512,7 @@ LS_OBJS := $(BUILD)/userspace/crt/crt0.o \
 LS_ELF  := $(BUILD)/userspace/ls/ls.elf
 LS_STRIPPED := $(BUILD)/userspace/ls/ls.stripped.elf
 
-# milestone-21 uptime: prints monotonic ms since boot.
+# /bin/uptime: prints monotonic ms since boot.
 UPTIME_OBJS := $(BUILD)/userspace/crt/crt0.o \
                $(BUILD)/userspace/uptime/uptime.o
 UPTIME_ELF  := $(BUILD)/userspace/uptime/uptime.elf
@@ -602,14 +612,14 @@ CSTRING_OBJ := $(BUILD)/userspace/libc/cstring.o
 # overrides for each are below.
 TLS_SOCKET_OBJ := $(BUILD)/userspace/libc/tls_socket.o
 TEST_CHAIN_OBJ := $(BUILD)/vendor/testcerts/test_chain.o
-# Chapter 112e: second test chain (ECDSA / P-256) re-exported
+# Chapter 128: second test chain (ECDSA / P-256) re-exported
 # from a sibling TU because the BearSSL sample headers all use
 # `static const` for their CERT0/CERT1/CHAIN symbols.
 TEST_CHAIN_EC_OBJ := $(BUILD)/vendor/testcerts/test_chain_ec.o
 
 # chapter-112a tlstest: links libbearssl.a and runs br_sha256 against
 # two NIST KAT vectors.  Proves the build works; no TLS yet.
-# chapter 112b extends this with `tlstest --handshake HOST PORT`
+# chapter 125 extends this with `tlstest --handshake HOST PORT`
 # which dials an in-guest TLS server and verifies the handshake
 # end-to-end -- so tlstest now also needs the tls_socket + cert
 # objects.
@@ -639,13 +649,13 @@ PNGDEC_OBJS := $(BUILD)/userspace/crt/crt0.o \
 PNGDEC_ELF  := $(BUILD)/userspace/pngdec/pngdec.elf
 PNGDEC_STRIPPED := $(BUILD)/userspace/pngdec/pngdec.stripped.elf
 
-# milestone-24 env: prints the per-process environment.
+# /bin/env: prints the per-process environment.
 ENV_OBJS := $(BUILD)/userspace/crt/crt0.o \
             $(BUILD)/userspace/env/env.o
 ENV_ELF  := $(BUILD)/userspace/env/env.elf
 ENV_STRIPPED := $(BUILD)/userspace/env/env.stripped.elf
 
-# milestone-27 grep / wc / head / tail: classic text-shaping tools.
+# grep / wc / head / tail: classic text-shaping tools.
 GREP_OBJS := $(BUILD)/userspace/crt/crt0.o \
              $(BUILD)/userspace/grep/grep.o
 GREP_ELF  := $(BUILD)/userspace/grep/grep.elf
@@ -666,7 +676,7 @@ TAIL_OBJS := $(BUILD)/userspace/crt/crt0.o \
 TAIL_ELF  := $(BUILD)/userspace/tail/tail.elf
 TAIL_STRIPPED := $(BUILD)/userspace/tail/tail.stripped.elf
 
-# Chapter 133a /bin/tar: ustar archive reader (list + extract).
+# Chapter 191 /bin/tar: ustar archive reader (list + extract).
 # Read-only -- archives are produced at build time by
 # scripts/mktar.py; in-guest we only ever extract.
 TAR_OBJS := $(BUILD)/userspace/crt/crt0.o \
@@ -683,7 +693,7 @@ BF_OBJS := $(BUILD)/userspace/crt/crt0.o \
 BF_ELF  := $(BUILD)/userspace/bf/bf.elf
 BF_STRIPPED := $(BUILD)/userspace/bf/bf.stripped.elf
 
-# milestone-29 sleep: SYS_SLEEP_MS demo + scriptable pause.
+# /bin/sleep: SYS_SLEEP_MS demo + scriptable pause.
 SLEEP_OBJS := $(BUILD)/userspace/crt/crt0.o \
               $(BUILD)/userspace/sleep/sleep.o
 SLEEP_ELF  := $(BUILD)/userspace/sleep/sleep.elf
@@ -695,13 +705,13 @@ SYNC_OBJS := $(BUILD)/userspace/crt/crt0.o \
 SYNC_ELF  := $(BUILD)/userspace/sync/sync.elf
 SYNC_STRIPPED := $(BUILD)/userspace/sync/sync.stripped.elf
 
-# milestone-30 pipes: self-test for SYS_PIPE / SYS_DUP2 / pipe_*.
+# Pipes self-test for SYS_PIPE / SYS_DUP2 / pipe_*.
 PIPETEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
                  $(BUILD)/userspace/pipetest/pipetest.o
 PIPETEST_ELF  := $(BUILD)/userspace/pipetest/pipetest.elf
 PIPETEST_STRIPPED := $(BUILD)/userspace/pipetest/pipetest.stripped.elf
 
-# milestone-65 fork + exec: self-test for SYS_FORK / SYS_EXEC.  Forks
+# fork + exec self-test for SYS_FORK / SYS_EXEC.  Forks
 # three times (pure fork, fork+exec /bin/hello, heap-copy verification)
 # and prints `[forktest] all checks passed` on success.
 FORKTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
@@ -734,7 +744,7 @@ COWTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
 COWTEST_ELF  := $(BUILD)/userspace/cowtest/cowtest.elf
 COWTEST_STRIPPED := $(BUILD)/userspace/cowtest/cowtest.stripped.elf
 
-# chapter 108c mixtest: asserts the one-window-one-draw-path
+# chapter 116 mixtest: asserts the one-window-one-draw-path
 # contract.  A window that installed gui_window_fb must refuse
 # gui_fill_rect / gui_draw_text / gui_present with -EBUSY; an
 # unmapped window must still accept them (legacy notify path).
@@ -743,7 +753,7 @@ MIXTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
 MIXTEST_ELF  := $(BUILD)/userspace/mixtest/mixtest.elf
 MIXTEST_STRIPPED := $(BUILD)/userspace/mixtest/mixtest.stripped.elf
 
-# milestone-56 httpget: TCP client over the M55 stack via the new
+# /bin/httpget: TCP client over the network stack via the new
 # socket syscall surface.  Useful end-to-end test that the
 # kernel-side fd path correctly demuxes onto tcp_send/tcp_recv.
 HTTPGET_OBJS := $(BUILD)/userspace/crt/crt0.o \
@@ -875,7 +885,7 @@ FONTD_STRIPPED := $(BUILD)/userspace/fontd/fontd.stripped.elf
 # kernel/core/wm.c with logic that lives in this binary.
 # Bound to /srv/wm (chapter-107 IPC) in Phase B.
 #
-# chapter 108e -- wsd paints title bars and the cursor sprite
+# chapter 118 -- wsd paints title bars and the cursor sprite
 # using libgui/draw.h (draw_text -> fontd, draw_fill_rect,
 # draw_blit_bgra), so DRAW_OBJ has to come along.  draw.o is
 # declared later in this Makefile (WMCLIENT_OBJ block) but
@@ -913,7 +923,7 @@ HELLOWSD_OBJS := $(BUILD)/userspace/crt/crt0.o \
 HELLOWSD_ELF  := $(BUILD)/userspace/hellowsd/hellowsd.elf
 HELLOWSD_STRIPPED := $(BUILD)/userspace/hellowsd/hellowsd.stripped.elf
 
-# chapter-108 clip CLI: REMOVED in chapter 114.  The clipboard
+# chapter-108 clip CLI: REMOVED in chapter 140.  The clipboard
 # is now a userfs mount, so `echo X > /clipboard/text` and
 # `cat /clipboard/text` from the shell do the same job that
 # /bin/clip used to do.  See userspace/clip.deleted/ in git
@@ -930,7 +940,7 @@ PROXYTEST_OBJS := $(BUILD)/userspace/crt/crt0.o \
 PROXYTEST_ELF  := $(BUILD)/userspace/proxytest/proxytest.elf
 PROXYTEST_STRIPPED := $(BUILD)/userspace/proxytest/proxytest.stripped.elf
 
-# milestone-59 htmltok: HTML5 tokenizer driver.  Reads a file (or
+# /bin/htmltok: HTML5 tokenizer driver.  Reads a file (or
 # /mnt/test.html by default), runs userspace/libc/html.h over it,
 # and prints one [TYPE] line per token for the test harness to grep.
 HTMLTOK_OBJS := $(BUILD)/userspace/crt/crt0.o \
@@ -938,7 +948,7 @@ HTMLTOK_OBJS := $(BUILD)/userspace/crt/crt0.o \
 HTMLTOK_ELF  := $(BUILD)/userspace/htmltok/htmltok.elf
 HTMLTOK_STRIPPED := $(BUILD)/userspace/htmltok/htmltok.stripped.elf
 
-# milestone-60 htmldom: HTML DOM-builder driver.  Reads a file (or
+# /bin/htmldom: HTML DOM-builder driver.  Reads a file (or
 # /mnt/test.html by default), runs userspace/libc/html.h followed
 # by userspace/libc/dom.h over it, and walks the resulting tree
 # depth-first.  One [TYPE] line per node, indented two spaces per
@@ -948,7 +958,7 @@ HTMLDOM_OBJS := $(BUILD)/userspace/crt/crt0.o \
 HTMLDOM_ELF  := $(BUILD)/userspace/htmldom/htmldom.elf
 HTMLDOM_STRIPPED := $(BUILD)/userspace/htmldom/htmldom.stripped.elf
 
-# milestone-61 cssparse: CSS parser + selector matcher.  Reads a
+# /bin/cssparse: CSS parser + selector matcher.  Reads a
 # CSS file (default /mnt/test.css) and prints one indented block
 # per parsed rule.  If a second arg is given (an HTML file path) it
 # also builds a DOM and prints which rules match each element.
@@ -957,7 +967,7 @@ CSSPARSE_OBJS := $(BUILD)/userspace/crt/crt0.o \
 CSSPARSE_ELF  := $(BUILD)/userspace/cssparse/cssparse.elf
 CSSPARSE_STRIPPED := $(BUILD)/userspace/cssparse/cssparse.stripped.elf
 
-# milestone-62 layout: full layout pipeline driver.  Reads an HTML
+# /bin/layout: full layout pipeline driver.  Reads an HTML
 # file (default /mnt/test_layout.html) at a given viewport width
 # (default 800), runs html.h -> dom.h -> css.h cascade -> layout.h
 # block + inline layout, and prints the box tree plus paint command
@@ -967,13 +977,14 @@ LAYOUT_OBJS := $(BUILD)/userspace/crt/crt0.o \
 LAYOUT_ELF  := $(BUILD)/userspace/layout/layout.elf
 LAYOUT_STRIPPED := $(BUILD)/userspace/layout/layout.stripped.elf
 
-# milestone-63 browser: full browser pipeline.  Fetches an HTML
-# document (file path or http:// URL), runs the M59-M62 stack, and
+# /bin/browser: full browser pipeline.  Fetches an HTML
+# document (file path or http:// URL), runs the tokenizer + DOM +
+# CSS + layout pipeline, and
 # either dumps the paint stream (--paint) or renders it onto an
 # 8x16-px-cell character grid for stdout (default = plain ASCII
 # with box-drawing borders; --ansi adds 24-bit colour + underline
 # escapes).  https:// is rejected (no TLS yet).
-# Chapter 108d: --gui mode now uses the wsd-backed
+# Chapter 117: --gui mode now uses the wsd-backed
 # wmclient + draw.o (each frame composes into the mapped FB and
 # pushes one wm_window_dirty) instead of the chapter-94 kernel-WM
 # syscalls (gui_create_window / gui_fill_rect / gui_present /
@@ -982,7 +993,7 @@ LAYOUT_STRIPPED := $(BUILD)/userspace/layout/layout.stripped.elf
 # the dead-code is < 4 KiB and lets the same browser binary do
 # both paths without per-mode link variants.
 #
-# Chapter 112d: the browser now speaks TLS natively via the same
+# Chapter 127: the browser now speaks TLS natively via the same
 # BearSSL static library that backs tlstest + httpsd.  We pull in
 # TLS_SOCKET_OBJ (the BearSSL engine + br_sslio_ wrapper),
 # TEST_CHAIN_OBJ (the sample CN=localhost RSA-2048 chain whose
@@ -1001,9 +1012,9 @@ BROWSER_OBJS := $(BUILD)/userspace/crt/crt0.o \
 BROWSER_ELF  := $(BUILD)/userspace/browser/browser.elf
 BROWSER_STRIPPED := $(BUILD)/userspace/browser/browser.stripped.elf
 
-# milestone-40 GUI demo: opens a window, paints a gradient + text,
+# /bin/hellogui demo: opens a window, paints a gradient + text,
 # accepts keystrokes routed through the in-kernel WM.
-# Chapter 108c: now links against libgui/draw.o for the in-process
+# Chapter 116: now links against libgui/draw.o for the in-process
 # software rasteriser, so the cold paint + per-keystroke repaint
 # both go through direct pixel writes + one gui_window_dirty
 # instead of the legacy gui_present / gui_draw_text syscalls.
@@ -1029,13 +1040,13 @@ PIXAPP_OBJS := $(BUILD)/userspace/crt/crt0.o \
 PIXAPP_ELF  := $(BUILD)/userspace/pixapp/pixapp.elf
 PIXAPP_STRIPPED := $(BUILD)/userspace/pixapp/pixapp.stripped.elf
 
-# milestone-41 mouse demo: paints colour squares wherever the user
+# /bin/paint demo: paints colour squares wherever the user
 # clicks, with right-click cycling palette + close-button support.
-# Chapter 108c: links against libgui/draw.o so each brush stamp is
+# Chapter 116: links against libgui/draw.o so each brush stamp is
 # an in-process pixel write + one gui_window_dirty over the stamp
 # rect, instead of one gui_fill_rect + gui_flush syscall pair per
 # stamp on the drag hot path.
-# Chapter 108d: also pulls in wmclient.o so paint can
+# Chapter 117: also pulls in wmclient.o so paint can
 # create its window through wsd and pull mouse events via
 # wm_poll_event (instead of the kernel-WM gui_* syscalls).
 PAINT_OBJS := $(BUILD)/userspace/crt/crt0.o \
@@ -1045,7 +1056,7 @@ PAINT_OBJS := $(BUILD)/userspace/crt/crt0.o \
 PAINT_ELF  := $(BUILD)/userspace/paint/paint.elf
 PAINT_STRIPPED := $(BUILD)/userspace/paint/paint.stripped.elf
 
-# milestone-42 GUI terminal: spawn_pipe() child binaries and render
+# /bin/gui_term: spawn_pipe() child binaries and render
 # their stdout into the window scrollback.
 GUI_TERM_OBJS := $(BUILD)/userspace/crt/crt0.o \
                  $(BUILD)/userspace/gui_term/gui_term.o \
@@ -1054,19 +1065,19 @@ GUI_TERM_OBJS := $(BUILD)/userspace/crt/crt0.o \
 GUI_TERM_ELF  := $(BUILD)/userspace/gui_term/gui_term.elf
 GUI_TERM_STRIPPED := $(BUILD)/userspace/gui_term/gui_term.stripped.elf
 
-# milestone-43 GUI text editor: open / edit / save text files in a
+# /bin/notepad: GUI text editor; open / edit / save text files in a
 # real window.  Uses Ctrl-S to save, Ctrl-Q / ESC to quit.
 #
-# Chapter 84: notepad is now the first multi-object userspace app
+# Chapter 85: notepad is now the first multi-object userspace app
 # in the tree — the Save As dialog lives in userspace/libgui/ as
 # a separately-compiled translation unit (`save_dialog.o`) so it
 # can be reused by future GUI apps without copy-pasting.  The
 # build system has supported multi-object apps from day one (see
 # the `*_OBJS` lists), but this is the first time we use it.
 #
-# Chapter 108c adds draw.o — the software rasteriser + fontd
+# Chapter 116 adds draw.o — the software rasteriser + fontd
 # client every chapter-108c-mapped app links against.  Chapter
-# Chapter 108d ported notepad off the kernel-WM syscalls onto
+# Chapter 117 ported notepad off the kernel-WM syscalls onto
 # the wsd-backed libgui primitives (DRAW_OBJ + WMCLIENT_OBJ);
 # save_dialog.o also moved to draw/wmclient so it can be linked
 # in alongside.  draw.o has no dependency on save_dialog.o, so
@@ -1081,9 +1092,9 @@ NOTEPAD_OBJS := $(BUILD)/userspace/crt/crt0.o \
 NOTEPAD_ELF  := $(BUILD)/userspace/notepad/notepad.elf
 NOTEPAD_STRIPPED := $(BUILD)/userspace/notepad/notepad.stripped.elf
 
-# milestone-44 GUI app launcher: small floating window with three
+# /bin/launcher: small floating GUI window with three
 # buttons that spawn() the matching binary on click.
-# Chapter 108c: linked against libgui/draw.o so the per-hover
+# Chapter 116: linked against libgui/draw.o so the per-hover
 # repaint is a handful of in-process pixel writes + one
 # gui_window_dirty, rather than eight syscalls per button.
 LAUNCHER_OBJS := $(BUILD)/userspace/crt/crt0.o \
@@ -1093,9 +1104,9 @@ LAUNCHER_OBJS := $(BUILD)/userspace/crt/crt0.o \
 LAUNCHER_ELF  := $(BUILD)/userspace/launcher/launcher.elf
 LAUNCHER_STRIPPED := $(BUILD)/userspace/launcher/launcher.stripped.elf
 
-# milestone-47 desktop taskbar: borderless always-on-top strip pinned
+# /bin/taskbar: borderless always-on-top strip pinned
 # to the bottom of the framebuffer; one cell per non-pinned window.
-# Chapter 108c: linked against libgui/draw.o so the per-second
+# Chapter 116: linked against libgui/draw.o so the per-second
 # clock tick + per-event cell repaint are pure in-process pixel
 # writes plus a tight gui_window_dirty over the rect that
 # actually changed.
@@ -1106,9 +1117,9 @@ TASKBAR_OBJS := $(BUILD)/userspace/crt/crt0.o \
 TASKBAR_ELF  := $(BUILD)/userspace/taskbar/taskbar.elf
 TASKBAR_STRIPPED := $(BUILD)/userspace/taskbar/taskbar.stripped.elf
 
-# milestone-49 toast notifications.  /bin/notify pops up a brief
+# Toast notifications.  /bin/notify pops up a brief
 # borderless always-on-top window with a message and auto-dismisses.
-# Chapter 108d: ported to /srv/wm via wmclient; the
+# Chapter 117: ported to /srv/wm via wmclient; the
 # kernel-WM gui_fill_rect / gui_draw_text syscalls are stubs now,
 # so notify rasterises its own pixels via libgui/draw.[hc] into
 # the wsd-mapped framebuffer and DAMAGEs through WM_WIN_DAMAGE.
@@ -1119,7 +1130,7 @@ NOTIFY_OBJS := $(BUILD)/userspace/crt/crt0.o \
 NOTIFY_ELF  := $(BUILD)/userspace/notify/notify.elf
 NOTIFY_STRIPPED := $(BUILD)/userspace/notify/notify.stripped.elf
 
-# milestone-50 desktop environment.  /bin/desktop owns the
+# /bin/desktop owns the
 # wallpaper: it reads /wallpaper.bgra from disk, creates a screen-
 # sized PIN_TO_BOTTOM window, and blits the pixels in via the
 # chapter-108c draw_blit_bgra helper.  Pre-108c this was a
@@ -1165,13 +1176,13 @@ $(BUILD)/userspace/tlstest/tlstest.o: userspace/tlstest/tlstest.c
 	@mkdir -p $(dir $@)
 	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc -c $< -o $@
 
-# Chapter 112b: tls_socket.c is libc-adjacent code that uses
+# Chapter 125: tls_socket.c is libc-adjacent code that uses
 # BearSSL.  Same header-path override as tlstest.o.
 $(BUILD)/userspace/libc/tls_socket.o: userspace/libc/tls_socket.c
 	@mkdir -p $(dir $@)
 	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc -c $< -o $@
 
-# Chapter 112d: browser.c now includes bearssl.h so it can read
+# Chapter 127: browser.c now includes bearssl.h so it can read
 # the engine's last-error code after a BR_SSLIO clean close and
 # tell EOF apart from a real TLS error.  Same header-path
 # override as tls_socket.o.  This pattern-specific rule must
@@ -1182,12 +1193,12 @@ $(BUILD)/userspace/browser/browser.o: userspace/browser/browser.c
 	@mkdir -p $(dir $@)
 	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc -c $< -o $@
 
-# Chapter 112b: httpsd.c uses BearSSL too.
+# Chapter 125: httpsd.c uses BearSSL too.
 $(BUILD)/userspace/httpsd/httpsd.o: userspace/httpsd/httpsd.c
 	@mkdir -p $(dir $@)
 	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc -c $< -o $@
 
-# Chapter 112b: test_chain.c re-exports the BearSSL sample chain.
+# Chapter 125: test_chain.c re-exports the BearSSL sample chain.
 # Needs vendor/bearssl/samples/ on the include path so the sample
 # headers (chain-rsa.h, key-rsa.h) resolve.  The sample headers
 # come from BearSSL 0.6 (MIT) and are unmodified.
@@ -1196,7 +1207,7 @@ $(BUILD)/vendor/testcerts/test_chain.o: vendor/testcerts/test_chain.c
 	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc \
 	    -I vendor/bearssl/samples -c $< -o $@
 
-# Chapter 112e: same shape for the EC sample chain (chain-ec.h /
+# Chapter 128: same shape for the EC sample chain (chain-ec.h /
 # key-ec.h).  Separate TU because the upstream headers declare
 # their CERT0/CERT1/CHAIN as `static const` and would collide if
 # included in the same translation unit as the RSA chain.
@@ -1205,7 +1216,7 @@ $(BUILD)/vendor/testcerts/test_chain_ec.o: vendor/testcerts/test_chain_ec.c
 	$(CC) $(USER_CFLAGS) -I vendor/bearssl-shim -I vendor/bearssl/inc \
 	    -I vendor/bearssl/samples -c $< -o $@
 
-# Chapter 130a — DoomGeneric vendor sources.
+# Chapter 172 — DoomGeneric vendor sources.
 #
 # Pattern rule mirrors the BearSSL pattern: separate from the
 # generic userspace rule because (a) third-party code can't be
@@ -1302,6 +1313,10 @@ $(ECHO_ELF): $(ECHO_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(ECHO_OBJS)
 
+$(RM_ELF): $(RM_OBJS) userspace/linker_user.ld
+	@mkdir -p $(dir $@)
+	$(LD) $(USER_LDFLAGS) -o $@ $(RM_OBJS)
+
 $(PRINTFTEST_ELF): $(PRINTFTEST_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(PRINTFTEST_OBJS)
@@ -1342,7 +1357,7 @@ $(FPTEST_ELF): $(FPTEST_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ $(FPTEST_OBJS)
 
-# Chapter 130a — Doom link rule.  Wrap the objects in
+# Chapter 172 — Doom link rule.  Wrap the objects in
 # --start-group / --end-group so the ld can resolve the
 # circular dependencies that DoomGeneric's modules have
 # with each other (e.g. p_setup → r_main → g_game → p_setup).
@@ -1351,7 +1366,7 @@ $(DOOM_ELF): $(DOOM_OBJS) userspace/linker_user.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(USER_LDFLAGS) -o $@ --start-group $(DOOM_OBJS) --end-group
 
-# Chapter 133e — Doom runtime archive shipped on the OSFS image.
+# Chapter 195 — Doom runtime archive shipped on the OSFS image.
 # Bundles the 5 non-vendor objects (crt0, doomgeneric_osdev shim,
 # setjmp, cstring, wmclient) into a single static .a so the
 # in-guest link step is one /bin/ld invocation that takes the 80
@@ -1691,6 +1706,9 @@ $(THREADTEST3_STRIPPED): $(THREADTEST3_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(ECHO_STRIPPED): $(ECHO_ELF)
+	$(OBJCOPY) --strip-all $< $@
+
+$(RM_STRIPPED): $(RM_ELF)
 	$(OBJCOPY) --strip-all $< $@
 
 $(PRINTFTEST_STRIPPED): $(PRINTFTEST_ELF)
@@ -2037,11 +2055,11 @@ $(BUILD)/ramfs/%.o: assets/ramfs/%
 	    $(notdir $<) $(abspath $@)
 
 # ----------------------------------------------------------------------
-# Embedded TrueType font (chapter 102 -> chapter 108b)
+# Embedded TrueType font (chapter 104 -> chapter 115)
 #
 # Pre-chapter-108b this was embedded into the kernel image because
 # the in-kernel TTF rasteriser (kernel/device/ttf.c) needed the
-# raw bytes.  Chapter 108b moved the rasteriser to /bin/fontd,
+# raw bytes.  Chapter 115 moved the rasteriser to /bin/fontd,
 # so the TrueType payload moved with it: instead of linking into
 # the kernel ELF it links into the fontd ELF.  Same objcopy-binary
 # trick; the symbols are still _binary_DejaVuSans_ttf_start /
@@ -2059,7 +2077,7 @@ $(FONT_BLOB_OBJ): $(FONT_BLOB_SRC)
 	    --rename-section .data=.rodata.embedded_user,readonly,data,contents,alloc \
 	    $(notdir $<) $(abspath $@)
 
-# milestone-50 desktop wallpaper.  An arbitrary JPEG (today
+# Desktop wallpaper.  An arbitrary JPEG (today
 # assets/backgrounds/flowers.jpg) gets cover-fitted to the
 # framebuffer's native resolution at build time, then placed onto
 # OSFS as /mnt/wallpaper.bgra.  A userspace `desktop` process
@@ -2087,7 +2105,7 @@ $(WALLPAPER_BIN): $(WALLPAPER_SRC) scripts/img_to_bgra.py
 	@mkdir -p $(dir $@)
 	python3 scripts/img_to_bgra.py $< $@ $(WALLPAPER_W) $(WALLPAPER_H)
 
-# Chapter 133a: doomgeneric source tarball, shipped on /bin so
+# Chapter 191: doomgeneric source tarball, shipped on /bin so
 # the in-guest /bin/tar can extract it onto /data and the
 # in-guest /bin/gcc can rebuild Doom from source.
 DOOMGENERIC_TAR := $(BUILD)/doomgeneric.tar
@@ -2097,7 +2115,7 @@ $(DOOMGENERIC_TAR): scripts/mktar.py $(DOOMGENERIC_SRCS)
 	@mkdir -p $(dir $@)
 	python3 scripts/mktar.py $@ vendor/doomgeneric/src src
 
-# Chapter 133e: tarball of the host-cross-built Doom vendor .o
+# Chapter 195: tarball of the host-cross-built Doom vendor .o
 # files.  Shipped at /bin/doomobjs.tar so the link-only
 # regression test (scripts/test_doom_link.py) can populate
 # /data/src/ in ~5 seconds instead of running the full 20-minute
@@ -2118,9 +2136,9 @@ OBJS     := $(S_OBJS) $(C_OBJS) $(RAMFS_OBJS)
 # The actual rules are further down where the run targets live.
 #
 #   $(DISK)      — virtio-blk hd0, OSFS-1 (read-only, kernel + assets).
-#   $(DATA_DISK) — virtio-blk hd1, OSFS-2 (writable, chapter 81+).
+#   $(DATA_DISK) — virtio-blk hd1, OSFS-2 (writable, chapter 82+).
 #
-# OSFS-2 is formatted empty by default; chapter 84 will start seeding
+# OSFS-2 is formatted empty by default; chapter 85 will start seeding
 # it with notepad documents and shell history that need to survive a
 # reboot.
 DISK      := $(BUILD)/disk.img
@@ -2134,12 +2152,12 @@ DATA_DISK := $(BUILD)/data.img
 # not yet used to build any disk artefact (that lands in 132c when
 # xgcc is cross-built), but we list it here so a fresh clone running
 # `make` / `make run-graphical` automatically fetches + patches the
-# source.  Otherwise a reader following chapter 132a would have to
+# source.  Otherwise a reader following chapter 181 would have to
 # know about `bash scripts/fetch_gcc.sh` out-of-band.  The marker
 # rule is idempotent — once the .patched-osdev file exists, make
 # does nothing on subsequent invocations.
 #
-# `$(GCC_PREREQS_MARKER)` is chapter 132b's GMP/MPFR/MPC in-tree
+# `$(GCC_PREREQS_MARKER)` is chapter 182's GMP/MPFR/MPC in-tree
 # symlinks.  Same auto-fetch reasoning.  Depends on $(GCC_MARKER)
 # at the rule level so the order is always extract-gcc → drop-in
 # the math libs.
@@ -2185,7 +2203,7 @@ $(BUILD)/%.o: %.S
 # it — without this, growing a struct embedded in struct thread
 # silently produced .o files compiled against TWO different
 # layouts of the same struct, with predictably weird runtime
-# corruption (chapter 81 post-mortem).
+# corruption (chapter 82 post-mortem).
 #
 # `-include` (lower-case) means make does not error on first build
 # when no .d files exist yet.
@@ -2204,12 +2222,12 @@ DEP_FILES := $(shell find $(BUILD) -name '*.d' 2>/dev/null)
 #
 # `-nographic` routes UART0 to the controlling terminal AND wires
 # Ctrl-A X as the QEMU exit shortcut.  We do not pass `-display`
-# yet — that lands in milestone 6 when virtio-gpu shows up.
+# yet — that lands later when virtio-gpu shows up.
 # ----------------------------------------------------------------------
 # `assets/virt.dtb` is the auto-generated DTB extracted once via
 # `qemu-system-aarch64 -M virt,...,dumpdtb=assets/virt.dtb`.  We
 # load it at 0x44000000 (well past the 1 MiB kernel image) so
-# milestone-6+ kernels can scan it for the physical memory map.
+# the kernel can scan it for the physical memory map.
 DTB      := assets/virt.dtb
 DTB_ADDR := 0x44000000
 
@@ -2219,7 +2237,7 @@ DTB_ADDR := 0x44000000
 # DTB's /memory node matches the new size.
 QEMU_MEM ?= 8G
 
-# Chapter 86 — number of cores to expose to the guest.  The
+# Chapter 87 — number of cores to expose to the guest.  The
 # kernel's smp_init() reads /cpus from the DTB and wakes every
 # secondary via PSCI CPU_ON.  Default 2 (boot CPU + one
 # secondary, the chapter-86 minimum); override with
@@ -2236,12 +2254,12 @@ QEMU_SMP ?= 2
 # (DISK is defined earlier so all: can depend on it.)
 OSFS_FILES := assets/osfs/hello.txt assets/osfs/poem.txt assets/osfs/test.html assets/osfs/test.css assets/osfs/test_layout.html assets/osfs/hn.html assets/osfs/forms.html assets/osfs/onclick.html assets/osfs/icon.png assets/osfs/icon_palette.png assets/osfs/icon_gray.png assets/osfs/icon_large.png assets/osfs/img_test.html assets/osfs/intrinsic.html assets/osfs/ca.bundle assets/osfs/osdev.ld assets/osfs/hello.bf assets/osfs/stdio_test.c assets/osfs/mk_test.mk assets/osfs/mk_helloA.c assets/osfs/mk_helloB.c assets/osfs/doom_pilot.mk assets/osfs/doom_full.mk assets/osfs/doom_link.mk assets/osfs/doom_link.args $(WALLPAPER_BIN)
 
-# Chapter 132i + 132j: the user-facing libc headers shipped on the
+# Chapter 189 + 132j: the user-facing libc headers shipped on the
 # OSFS image so the in-guest /bin/gcc can resolve `#include
 # <stdio.h>` and friends.  Two sets:
 #
 #  - LIBC_TOP_HEADERS: top-level headers, copied verbatim to /bin.
-#    Chapter 132j added `unistd.h` (was excluded in 132i because it
+#    Chapter 190 added `unistd.h` (was excluded in 132i because it
 #    pulls in `sys/stat.h`; now that we ship sys/ this works).
 #
 #  - LIBC_SYS_HEADERS: headers shipped as literal-named entries
@@ -2276,12 +2294,12 @@ $(STAGED_LIBC_DIR)/sys/%.h: userspace/libc/sys/%.h scripts/stage_libc_headers.py
 # code should reference LIBC_TOP_HEADERS.
 LIBC_HEADERS := $(LIBC_TOP_HEADERS)
 
-# Chapter 132i: GCC's own freestanding headers (stdint.h, stddef.h,
+# Chapter 189: GCC's own freestanding headers (stdint.h, stddef.h,
 # stdarg.h, ...).  These are built as part of the xgcc cross-build
 # and live under build/gcc-build-guest/gcc/gcc/include/.  Our libc
 # headers `#include <stdint.h>` etc., so without these on disk cpp
 # fails with "stdint.h: No such file or directory" on the first
-# `#include <stdio.h>` (chapter 132i bring-up bug).  arm_*, tgmath
+# `#include <stdio.h>` (chapter 189 bring-up bug).  arm_*, tgmath
 # and the heavier SIMD headers are deliberately skipped -- 16 ISO C
 # headers / ~90 KB is enough for hello-world-shaped programs.
 GCC_FREESTANDING_DIR := build/gcc-build-guest/gcc/gcc/include
@@ -2296,7 +2314,7 @@ GCC_FREESTANDING_HEADERS := stdint.h stdint-gcc.h stddef.h stdarg.h \
 # $(CC1_GUEST_BIN).  Placed there so all variables it depends on
 # -- GCC_XGCC, OSDEV_CC, GCC_PREREQS_MARKER -- are in scope at
 # parse time.)
-OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(GETRAND_STRIPPED) $(MOUNT_STRIPPED) $(TLSTEST_STRIPPED) $(HTTPSD_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(COOKIES_STRIPPED) $(ECHOD_STRIPPED) $(ECHOFS_STRIPPED) $(HTTPD_STRIPPED) $(LOOPTEST_STRIPPED) $(SRVTEST_STRIPPED) $(CLIPBOARDD_STRIPPED) $(PROCD_STRIPPED) $(FONTD_STRIPPED) $(PROXYTEST_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PIXAPP_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(MIXTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED) $(WSD_STRIPPED) $(WMTEST_STRIPPED) $(HELLOWSD_STRIPPED) $(HANGFS_STRIPPED) $(ERRNOTEST_STRIPPED) $(STDIOTEST_STRIPPED) $(ENVTEST_STRIPPED) $(STATTEST_STRIPPED) $(BINUTILS_AS_STRIPPED) $(BINUTILS_LD_STRIPPED) $(AR_STRIPPED) $(ATEXITTEST_STRIPPED) $(CC_STRIPPED) $(MAKE_STRIPPED) $(SETJMPTEST_STRIPPED) $(SIGTEST2_STRIPPED) $(ABORTTEST_STRIPPED) $(STRTEST_STRIPPED) $(ASSERTFAIL_STRIPPED) $(TIMETEST_STRIPPED) $(STDLIBTEST_STRIPPED) $(PRINTFTEST2_STRIPPED) $(FPTEST_STRIPPED) $(DOOM_STRIPPED) $(GCCW_STRIPPED) $(XGCC_GUEST_STRIPPED) $(CC1_GUEST_STRIPPED) $(BF_STRIPPED) $(TAR_STRIPPED)
+OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPPED) $(BADPOKE_STRIPPED) $(BADPTR_STRIPPED) $(HEAPTEST_STRIPPED) $(MMAPTEST_STRIPPED) $(THREADTEST_STRIPPED) $(THREADTEST2_STRIPPED) $(THREADTEST3_STRIPPED) $(ECHO_STRIPPED) $(RM_STRIPPED) $(PRINTFTEST_STRIPPED) $(LS_STRIPPED) $(UPTIME_STRIPPED) $(PS_STRIPPED) $(TOP_STRIPPED) $(DATE_STRIPPED) $(BEEP_STRIPPED) $(GETRAND_STRIPPED) $(MOUNT_STRIPPED) $(TLSTEST_STRIPPED) $(HTTPSD_STRIPPED) $(PNGDEC_STRIPPED) $(ENV_STRIPPED) $(GREP_STRIPPED) $(WC_STRIPPED) $(HEAD_STRIPPED) $(TAIL_STRIPPED) $(SLEEP_STRIPPED) $(SYNC_STRIPPED) $(PIPETEST_STRIPPED) $(HTTPGET_STRIPPED) $(COOKIES_STRIPPED) $(ECHOD_STRIPPED) $(ECHOFS_STRIPPED) $(HTTPD_STRIPPED) $(LOOPTEST_STRIPPED) $(SRVTEST_STRIPPED) $(CLIPBOARDD_STRIPPED) $(PROCD_STRIPPED) $(FONTD_STRIPPED) $(PROXYTEST_STRIPPED) $(HTMLTOK_STRIPPED) $(HTMLDOM_STRIPPED) $(CSSPARSE_STRIPPED) $(LAYOUT_STRIPPED) $(BROWSER_STRIPPED) $(HELLOGUI_STRIPPED) $(PIXAPP_STRIPPED) $(PAINT_STRIPPED) $(GUI_TERM_STRIPPED) $(NOTEPAD_STRIPPED) $(LAUNCHER_STRIPPED) $(TASKBAR_STRIPPED) $(NOTIFY_STRIPPED) $(DESKTOP_STRIPPED) $(FORKTEST_STRIPPED) $(SIGTEST_STRIPPED) $(CHLDTEST_STRIPPED) $(COWTEST_STRIPPED) $(MIXTEST_STRIPPED) $(STRACE_STRIPPED) $(STACKBOMB_STRIPPED) $(WSD_STRIPPED) $(WMTEST_STRIPPED) $(HELLOWSD_STRIPPED) $(HANGFS_STRIPPED) $(ERRNOTEST_STRIPPED) $(STDIOTEST_STRIPPED) $(ENVTEST_STRIPPED) $(STATTEST_STRIPPED) $(BINUTILS_AS_STRIPPED) $(BINUTILS_LD_STRIPPED) $(AR_STRIPPED) $(ATEXITTEST_STRIPPED) $(CC_STRIPPED) $(MAKE_STRIPPED) $(SETJMPTEST_STRIPPED) $(SIGTEST2_STRIPPED) $(ABORTTEST_STRIPPED) $(STRTEST_STRIPPED) $(ASSERTFAIL_STRIPPED) $(TIMETEST_STRIPPED) $(STDLIBTEST_STRIPPED) $(PRINTFTEST2_STRIPPED) $(FPTEST_STRIPPED) $(DOOM_STRIPPED) $(GCCW_STRIPPED) $(XGCC_GUEST_STRIPPED) $(CC1_GUEST_STRIPPED) $(BF_STRIPPED) $(TAR_STRIPPED)
 
 # Bake the chapter-97 test PNG (16x16 RGBA with a known pixel
 # pattern) at build time.  See scripts/make_test_png.py for the
@@ -2304,7 +2322,7 @@ OSFS_BIN_FILES := $(INIT_STRIPPED) $(SH_STRIPPED) $(CAT_STRIPPED) $(HELLO_STRIPP
 assets/osfs/icon.png: scripts/make_test_png.py
 	python3 scripts/make_test_png.py $@
 
-# Chapter 98 added palette (colour type 3) and 8-bit grayscale
+# Chapter 99 added palette (colour type 3) and 8-bit grayscale
 # (colour type 0) sister images for the extended decoder tests.
 assets/osfs/icon_palette.png: scripts/make_test_png.py
 	python3 scripts/make_test_png.py --kind=palette $@
@@ -2312,14 +2330,14 @@ assets/osfs/icon_palette.png: scripts/make_test_png.py
 assets/osfs/icon_gray.png: scripts/make_test_png.py
 	python3 scripts/make_test_png.py --kind=gray $@
 
-# Chapter 98b adds a larger (64x64) palette image used by
+# Chapter 100 adds a larger (64x64) palette image used by
 # test_browser_intrinsic_size.py to exercise the layout-pass
 # intrinsic-size hook: each 32x32 quadrant = 1024 same-colour
 # pixels, more than the layout's 16x16 fallback could produce.
 assets/osfs/icon_large.png: scripts/make_test_png.py
 	python3 scripts/make_test_png.py --kind=large_palette $@
 
-# Chapter 112e + 112f CA bundle.  Framed "CAB1" format ingested
+# Chapter 128 + 112f CA bundle.  Framed "CAB1" format ingested
 # by tls_socket_init_chain_from_bundle in the guest.  Two
 # anchors, both ROOT certs (not intermediates):
 #
@@ -2330,12 +2348,12 @@ assets/osfs/icon_large.png: scripts/make_test_png.py
 # in chain-{rsa,ec}.h).  With the ROOT in the trust store the
 # validator does the recursive walk: leaf sig vs intermediate
 # pubkey (off the wire) -> intermediate sig vs root pubkey (off
-# the anchor list) -> accept.  In chapter 112e we trusted the
+# the anchor list) -> accept.  In chapter 128 we trusted the
 # intermediate directly, which only exercised the first link.
 #
 # Ingest is via the chapter-112f PEM mode -- the same code path
 # you'd point at a Mozilla NSS root list.
-# Chapter 112g: fetch the host's public CA list (Mozilla NSS-derived
+# Chapter 130: fetch the host's public CA list (Mozilla NSS-derived
 # on most systems) into vendor/testcerts/ on first build, then fold
 # it into the framed bundle alongside the BearSSL sample roots.  The
 # .pem is .gitignored and rebuilt on demand.
@@ -2396,6 +2414,7 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES) \
 	    threadtest2=$(THREADTEST2_STRIPPED) \
 	    threadtest3=$(THREADTEST3_STRIPPED) \
 	    echo=$(ECHO_STRIPPED) \
+	    rm=$(RM_STRIPPED) \
 	    printftest=$(PRINTFTEST_STRIPPED) \
 	    setjmptest=$(SETJMPTEST_STRIPPED) \
 	    sigtest2=$(SIGTEST2_STRIPPED) \
@@ -2494,11 +2513,11 @@ $(DISK): scripts/mkosfs.py $(OSFS_FILES) $(OSFS_BIN_FILES) \
 	    wallpaper.bgra=$(WALLPAPER_BIN)
 
 # OSFS-2 disk: empty 64 MiB OSFS-2 image, formatted by mkosfs2.py.
-# A `make clean` always wipes it; chapter 81 explicitly tests against
-# the freshly-formatted state.  Chapter 84 will switch this to a
+# A `make clean` always wipes it; chapter 82 explicitly tests against
+# the freshly-formatted state.  Chapter 85 will switch this to a
 # preserve-across-clean policy once notepad/sh-history live here.
 #
-# Chapter 130b — if assets/wads/doom1.wad is present, seed it into the
+# Chapter 173 — if assets/wads/doom1.wad is present, seed it into the
 # OSFS-2 root so `doom` (which looks at /data/doom1.wad by default)
 # can launch a full title-screen game without the user having to type
 # `-iwad <path>`.  The file is .gitignored (4 MiB shareware binary)
@@ -2528,7 +2547,7 @@ QEMU_BLK := -drive if=none,file=$(DISK),format=raw,id=hd0 \
 QEMU_GPU := -device virtio-gpu-device,xres=$(FB_XRES),yres=$(FB_YRES)
 QEMU_KBD := -device virtio-keyboard-device
 QEMU_TBL := -device virtio-tablet-device
-# Milestone 52: SLIRP user-mode networking attached to a virtio-net
+# SLIRP user-mode networking attached to a virtio-net
 # device on the virtio-mmio bus.  Default: guest is 10.0.2.15/24,
 # gateway is 10.0.2.2, no host-side port forwarding.  Override
 # QEMU_NETDEV to add hostfwd=tcp::5555-:5555 etc.
@@ -2536,7 +2555,7 @@ QEMU_NETDEV ?= user,id=n0
 QEMU_NET := -netdev $(QEMU_NETDEV) -device virtio-net-device,netdev=n0
 QEMU_DISPLAY ?= cocoa
 
-# Chapter 96: virtio-sound on the virtio-mmio bus.  The default
+# Chapter 97: virtio-sound on the virtio-mmio bus.  The default
 # `none` audiodev makes QEMU consume samples without playing
 # them through any host backend (great for `make run` and tests
 # — no audible boot chime in a terminal session).  For
@@ -2548,11 +2567,11 @@ QEMU_AUDIO_BACKEND ?= none
 QEMU_SND := -audiodev $(QEMU_AUDIO_BACKEND),id=audio0 \
             -device virtio-sound-device,audiodev=audio0
 
-# Chapter 112 — hardware RNG fed from the host's /dev/urandom.
+# Chapter 123 — hardware RNG fed from the host's /dev/urandom.
 # Without this option the kernel's virtio_rng_init() finds nothing
 # and random_init() falls back to a CNTVCT-seeded ChaCha20 PRNG
 # with a loud warning on the boot log; that path is fine for tests
-# but is NOT safe to use for TLS (chapter 114+).  Every regular
+# but is NOT safe to use for TLS (chapter 140+).  Every regular
 # `run*` target now hands the device to the guest by default; pass
 # `QEMU_RNG=` on the command line to suppress it and exercise the
 # fallback path explicitly.
@@ -2581,7 +2600,7 @@ run: $(KERNEL) $(DISK) $(DATA_DISK) $(GCC_MARKER) $(GCC_PREREQS_MARKER)
 # stdio so kernel logs continue to appear in the terminal alongside
 # the graphical window.
 #
-# Chapter 105: this is the daily-driver target, so we bake a SLIRP
+# Chapter 107: this is the daily-driver target, so we bake a SLIRP
 # hostfwd into its QEMU_NETDEV.  That way `httpd 8080 &` inside the
 # guest is immediately reachable from the host as
 # `curl http://127.0.0.1:18080/mnt/hello.txt`.  Without the hostfwd
@@ -2656,7 +2675,7 @@ disasm: $(KERNEL)
 	$(OBJDUMP) -d -M no-aliases $(KERNEL) | sed -n '1,80p'
 
 # ----------------------------------------------------------------------
-# Chapter 131a: aarch64-osdev cross binutils.
+# Chapter 175: aarch64-osdev cross binutils.
 #
 # Source lives in vendor/binutils-2.44/, patched to know about the
 # `aarch64-osdev` triple (cpu=aarch64, vendor=unknown, os=osdev).
@@ -2664,7 +2683,7 @@ disasm: $(KERNEL)
 # .gitignore'd; scripts/fetch_binutils.sh re-creates the source
 # from a sha256-pinned tarball.
 #
-# Why a new triple?  See book/chapters/.../131a-binutils-target.md.
+# Why a new triple?  See book/chapters/.../175-binutils-target.md.
 # Short answer: when we later ship `aarch64-osdev-gcc` we want its
 # default search paths and predefined macros (__osdev__) to be
 # distinct from the host's aarch64-elf cross.
@@ -2710,11 +2729,11 @@ clean-binutils:
 	rm -rf $(BINUTILS_BUILD) $(TOOLCHAIN_PREFIX)
 
 # ----------------------------------------------------------------------
-# Chapter 132a: aarch64-osdev gcc source tree (fetch + patch only).
+# Chapter 181: aarch64-osdev gcc source tree (fetch + patch only).
 #
 # This chapter ONLY teaches the gcc-14.2.0 source tree about the
 # new `aarch64-osdev` triple — it does not build xgcc yet (that's
-# chapter 132b, which also needs GMP/MPFR/MPC and a sibling build
+# chapter 182, which also needs GMP/MPFR/MPC and a sibling build
 # directory).  The patched source tree lives in vendor/gcc-14.2.0/
 # alongside vendor/binutils-2.44/.  Both the tarball and the
 # extracted tree are .gitignore'd; scripts/fetch_gcc.sh re-creates
@@ -2742,7 +2761,7 @@ clean-gcc-src:
 	rm -rf $(GCC_SRC)
 
 # ----------------------------------------------------------------------
-# Chapter 132b: GMP / MPFR / MPC vendored as in-tree symlinks.
+# Chapter 182: GMP / MPFR / MPC vendored as in-tree symlinks.
 #
 # GCC 14 needs all three at link time for arbitrary-precision
 # arithmetic (constant folding, `__builtin_…` math, the
@@ -2757,7 +2776,7 @@ clean-gcc-src:
 # The script downloads each tarball into vendor/, extracts it
 # alongside gcc-14.2.0, and creates relative symlinks
 # vendor/gcc-14.2.0/{gmp,mpfr,mpc} pointing at the extracted
-# dirs.  When xgcc's configure (chapter 132c) sees those
+# dirs.  When xgcc's configure (chapter 183) sees those
 # subdirs it switches into "in-tree" build mode and builds the
 # math libs as part of `make all-gcc` itself.
 #
@@ -2779,17 +2798,17 @@ clean-gcc-prereqs:
 	rm -rf vendor/gmp-6.2.1 vendor/mpfr-4.1.0 vendor/mpc-1.2.1
 
 # ----------------------------------------------------------------------
-# Chapter 132c: cross-build aarch64-osdev-gcc.
+# Chapter 183: cross-build aarch64-osdev-gcc.
 #
 # This is the actual compiler-build step.  We configure the patched
-# gcc-14.2.0 source tree (chapter 132a) with our triple, point it at
-# the binutils toolchain prefix (chapter 131a) so it picks up our
+# gcc-14.2.0 source tree (chapter 181) with our triple, point it at
+# the binutils toolchain prefix (chapter 175) so it picks up our
 # aarch64-osdev-as / aarch64-osdev-ld, and run `make all-gcc` to
 # produce a stage-1 host-built cross compiler.  We deliberately stop
 # at `all-gcc` rather than going all the way to `make all` — the
 # target libraries (libgcc, libstdc++, libatomic) need target headers
 # and a working crt0 in places gcc's configure expects to find them,
-# which is chapter 132d's job.  For now `aarch64-osdev-gcc -v` and
+# which is chapter 184's job.  For now `aarch64-osdev-gcc -v` and
 # `-dumpmachine` working is the whole contract.
 #
 # Configure flags worth calling out:
@@ -2862,7 +2881,7 @@ clean-xgcc:
 	rm -rf $(TOOLCHAIN_PREFIX)/aarch64-osdev
 
 # ----------------------------------------------------------------------
-# Chapter 132d: xgcc sysroot install.
+# Chapter 184: xgcc sysroot install.
 #
 # The real `aarch64-osdev-gcc` looks up `crt0.o` via STARTFILE_SPEC
 # and `linker_user.ld` via LINK_SPEC (defined in
@@ -2873,7 +2892,7 @@ clean-xgcc:
 # gcc adds to the default `-isystem` chain for cross builds.
 #
 # Same layout will be mirrored under /aarch64-osdev/{lib,include}/
-# inside the guest when chapter 132e ships xgcc as /bin/gcc, so a
+# inside the guest when chapter 185 ships xgcc as /bin/gcc, so a
 # single set of specs works on both host and target.
 # ----------------------------------------------------------------------
 XGCC_SYSROOT     := $(TOOLCHAIN_PREFIX)/aarch64-osdev
@@ -2919,7 +2938,7 @@ $(XGCC_SYS_BIN_MARKER): $(BINUTILS_AS) $(BINUTILS_LD) | $(GCC_XGCC)
 	done
 	@touch $@
 
-# Chapter 132e: bundle libc extern wrappers (memcpy / memset /
+# Chapter 185: bundle libc extern wrappers (memcpy / memset /
 # memmove / malloc / strlen / strerror / ... — all the symbols
 # cstring.c defines non-static) into a sysroot archive so xgcc
 # autoconf link tests (gmp, mpfr, mpc, gcc itself) resolve them.
@@ -2945,16 +2964,16 @@ xgcc-sysroot: $(XGCC_SYS_CRT0) $(XGCC_SYS_LDS) $(XGCC_SYS_INC_MARKER) \
 gcc-osdev: xgcc-sysroot
 
 # ----------------------------------------------------------------------
-# Chapter 131b: aarch64-osdev-cc target compiler wrapper.
+# Chapter 176: aarch64-osdev-cc target compiler wrapper.
 #
 # Bridges the gap until chapter 132 lands a real aarch64-osdev-gcc.
 # Wraps the host's aarch64-elf-gcc with three overrides:
-#   - -B points at our chapter 131a toolchain bin/, with `as` and
+#   - -B points at our chapter 175 toolchain bin/, with `as` and
 #     `ld` symlinked to aarch64-osdev-as / aarch64-osdev-ld so gcc
 #     dispatches to our binutils, not its bundled aarch64-elf ones.
 #   - -nostdlibinc kills aarch64-elf-gcc's bundled newlib system
 #     headers.
-#   - -isystem points header lookup at our libc (chapters 116-128).
+#   - -isystem points header lookup at our libc (chapters 148-164).
 #
 # Why it's a generated file:  the wrapper needs an absolute path to
 # the OSDEV_ROOT so it works no matter where in the workspace make
@@ -2989,7 +3008,7 @@ aarch64-osdev-cc-install: $(OSDEV_CC) $(OSDEV_AS_SYMLINK) $(OSDEV_LD_SYMLINK)
 	@echo "aarch64-osdev-cc-install:   ld -> $$(readlink $(OSDEV_LD_SYMLINK))"
 
 # ----------------------------------------------------------------------
-# Guest GCC cross-build (chapter 132c-132i)
+# Guest GCC cross-build (chapter 183-189)
 #
 # The build/gcc-build-guest/ tree contains three things we ship
 # onto /bin in the OSFS image:
@@ -3000,7 +3019,7 @@ aarch64-osdev-cc-install: $(OSDEV_CC) $(OSDEV_AS_SYMLINK) $(OSDEV_LD_SYMLINK)
 #
 # All three are produced by `make all-gcc` inside the cross-build
 # tree.  scripts/test_guest_gcc.py drives that build (Phases 1-4
-# from chapters 132c-132h), so we route the make-side dependency
+# from chapters 183-188), so we route the make-side dependency
 # through a single stamp file and let the script do the work.
 #
 # KEEP=1 is critical: without it the script wipes its build tree
@@ -3071,7 +3090,7 @@ gcc-build-guest: $(GCC_GUEST_STAMP)
 # Also preserved: the xgcc cross-build (build/gcc-build-guest/),
 # produced by scripts/test_guest_gcc.py.  Same rationale — multi-
 # hour rebuild, supplies xgcc + cc1 + freestanding headers shipped
-# onto /bin (chapter 132i).  Use `rm -rf build/gcc-build-guest` to
+# onto /bin (chapter 189).  Use `rm -rf build/gcc-build-guest` to
 # nuke it explicitly.
 # ----------------------------------------------------------------------
 .PHONY: clean
@@ -3079,3 +3098,34 @@ clean:
 	@find $(BUILD) -mindepth 1 -maxdepth 1 \
 	    ! -name toolchain ! -name binutils-build ! -name gcc-build-guest \
 	    -exec rm -rf {} + 2>/dev/null || true
+
+# ----------------------------------------------------------------------
+# Book
+#
+# `make book` regenerates book/SUMMARY.md from book/INDEX.md and
+# then runs mdbook over book/.  The mdbook config (book/book.toml)
+# wires in book/preprocessors/github_links.py, which rewrites every
+# markdown link that escapes book/ into an absolute github URL so
+# the rendered html actually resolves the source references.
+#
+# Output lands in build/book-html/ (set by book/book.toml's
+# build.build-dir).  Open build/book-html/index.html in a browser.
+#
+# Requires mdbook on PATH.  Install with: cargo install mdbook
+# (or: brew install mdbook).
+# ----------------------------------------------------------------------
+.PHONY: book book-summary book-clean
+book-summary:
+	python3 scripts/gen_book_summary.py
+
+book: book-summary
+	@command -v mdbook >/dev/null 2>&1 || { \
+	    echo "make book: mdbook not found on PATH"; \
+	    echo "  install with: cargo install mdbook   (or: brew install mdbook)"; \
+	    exit 1; \
+	}
+	cd book && mdbook build
+	@echo "make book: rendered html in $(BUILD)/book-html/"
+
+book-clean:
+	rm -rf $(BUILD)/book-html

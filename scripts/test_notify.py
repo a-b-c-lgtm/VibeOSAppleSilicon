@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_notify.py — milestone-49 smoke test.
+"""scripts/test_notify.py — notify smoke test.
 
 Boots, types `notify Hello world! &` at the shell, screendumps,
 and asserts:
@@ -196,7 +196,7 @@ def main():
             return 1
         print(f"PASS: toast auto-dismissed (accent now = {ac2})")
 
-        print("\nMILESTONE 49: ALL TESTS PASSED")
+        print("\nALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

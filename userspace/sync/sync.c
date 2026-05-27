@@ -1,4 +1,4 @@
-/* userspace/sync/sync.c — chapter 82 fsync demo / utility.
+/* userspace/sync/sync.c — chapter 83 fsync demo / utility.
  *
  * `sync` opens /data/.sync (creating it on first run) and calls
  * fsync(fd) on it.  Because the kernel-side fsync flushes the

@@ -1,6 +1,6 @@
 /*
  * kernel/core/osfs2_journal.h — single-active-transaction
- * physical-block journal for OSFS-2.  Chapter 83.
+ * physical-block journal for OSFS-2.  Chapter 84.
  *
  * Goal
  * ====

@@ -1,5 +1,5 @@
 /*
- * userspace/libgui/wmclient.h — chapter 108d
+ * userspace/libgui/wmclient.h — chapter 117
  * client library for /srv/wm.
  *
  * What this file is
@@ -88,7 +88,7 @@
  * `kernel_id` is the id of a NO_DECORATION kernel-WM window
  * that this process opened in parallel with the wsd window so
  * that the kernel can route pointer / keyboard events through
- * its existing per-pid event queues (chapter 108d keeps the input
+ * its existing per-pid event queues (chapter 117 keeps the input
  * path in the kernel WM; only compose moved to wsd).  Zero if
  * the caller didn't ask for input routing, in which case
  * `wm_poll_event` always returns 0. */
@@ -133,19 +133,19 @@ int  wm_create_window(uint32_t w, uint32_t h, uint32_t flags,
 /* Same as wm_create_window but also opens a shadow window in
  * the kernel WM at the same scanout position with the same
  * dimensions, owned by the calling pid.  The kernel WM
- * doesn't compose any more (chapter 108d), but it still owns
+ * doesn't compose any more (chapter 117), but it still owns
  * input — pointer hit-testing, focus, keyboard delivery —
  * and routes events to per-pid queues.  The shadow makes
  * `wm_poll_event` deliver real input.
  *
- * `title` is purely cosmetic in chapter 108d (decoration paint
+ * `title` is purely cosmetic in chapter 117 (decoration paint
  * is wsd-owned); pass "" or the app's name for use in the
  * taskbar title display. */
 int  wm_create_window_input(uint32_t w, uint32_t h, uint32_t flags,
                             const char *title,
                             struct wm_window *out);
 
-/* Chapter 108d — create a window at an explicit (x, y) on the
+/* Chapter 117 — create a window at an explicit (x, y) on the
  * scanout, without perturbing the cascade counter for
  * subsequent cascade-positioned clients.  Used by the
  * desktop wallpaper (0, 0) and the taskbar (0, scanout_h -
@@ -195,7 +195,7 @@ int  wm_window_dirty(struct wm_window *win,
  * pixels should change). */
 int  wm_window_move(struct wm_window *win, uint32_t x, uint32_t y);
 
-/* chapter 108e — restore a minimized window by id.  Used
+/* chapter 118 — restore a minimized window by id.  Used
  * by the taskbar (which sees windows via WM_LIST but does
  * NOT own them) to bring a window back from the minimized
  * state when the user clicks its cell.  No-op on a window
@@ -209,7 +209,7 @@ int  wm_window_restore_id(uint32_t win_id);
  * me again later".  No-op on an already-hidden window. */
 int  wm_window_minimize_id(uint32_t win_id);
 
-/* chapter 108e — refresh `win->fb` after a wsd-side resize.
+/* chapter 118 — refresh `win->fb` after a wsd-side resize.
  * Mandatory on the GUI_EVENT_RESIZE that arrives when the
  * user drags the bottom-right grip: at that point the
  * kernel has already torn down our old win_fb mapping (the

@@ -1,5 +1,5 @@
 /*
- * kernel/core/strace.c — chapter 100 syscall tracer ring.
+ * kernel/core/strace.c — chapter 102 syscall tracer ring.
  *
  * See strace.h for the design.  This file is small on purpose:
  * the entire "tracer" is a ring buffer + a textual formatter,

@@ -1,8 +1,8 @@
-/* userspace/libc/setjmp.h — non-local jumps, chapter 128a.
+/* userspace/libc/setjmp.h — non-local jumps, chapter 165.
  *
  * Tiny C99 setjmp/longjmp for our user libc.  Two functions,
  * one fixed-size opaque-ish buffer.  No signal-mask plumbing
- * (no sigsetjmp/siglongjmp — those land with chapter 128b's
+ * (no sigsetjmp/siglongjmp — those land with chapter 166's
  * signal wrappers).
  *
  * Buffer layout (22 × uint64_t = 176 bytes, 16-byte aligned):
@@ -19,7 +19,7 @@
  *      13..20 d8..d15      ── FP callee-saved (LOWER 64 bits of
  *                             v8..v15).  Reserved here so the
  *                             buffer layout doesn't change when
- *                             chapter 129 turns FP on at EL0;
+ *                             chapter 171 turns FP on at EL0;
  *                             until then the asm leaves these
  *                             slots untouched and longjmp does
  *                             not restore them.

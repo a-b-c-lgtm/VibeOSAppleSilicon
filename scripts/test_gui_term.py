@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_gui_term.py — chapter 79b smoke test.
+"""scripts/test_gui_term.py — chapter 79 smoke test.
 
 Boots the OS headless, then drives the GUI terminal end-to-end:
 
@@ -22,7 +22,7 @@ breakage diagnosable from CI.
 
 Pre-79b this test pretended typing via QMP keyboard reached sh
 directly; in fact the keys went to whichever window had focus
-(the launcher), which is why the milestone-42 vintage of this
+(the launcher), which is why the earlier vintage of this
 test stopped passing once /bin/launcher landed.  79b also makes
 it the *correct* test: the only path that exercises the pty
 plumbing is one that drives the *gui_term window* via QMP, and
@@ -40,7 +40,7 @@ FB_H = 800
 
 WIN_W   = 720
 WIN_H   = 440
-# Chapter 108d: wsd cascade slot for the 2nd cascade-positioned
+# Chapter 117: wsd cascade slot for the 2nd cascade-positioned
 # window (launcher is the 1st at (100,100)).  gui_term uses
 # wm_create_window_input which goes through the cascade, so it lands
 # at (140,140).  NO_DECORATION → no title bar.

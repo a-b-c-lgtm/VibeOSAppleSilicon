@@ -6,9 +6,9 @@
  * highest-priority pending interrupt from the CPU interface, runs
  * its handler, and signals end-of-interrupt.
  *
- * Milestone 2 only routed the ARM generic timer (PPI 27).
- * Chapter 88 added SGIs (IDs 0..15) for IPIs; everything else
- * still falls through to the catch-all log+EOI.  When chapter 22
+ * Initially this only routed the ARM generic timer (PPI 27).
+ * Chapter 89 added SGIs (IDs 0..15) for IPIs; everything else
+ * still falls through to the catch-all log+EOI.  When chapter 21
  * (virtio-mmio) gets enough devices to justify it, this switch
  * becomes a registered-handler array.
  */
@@ -38,7 +38,7 @@ void irq_dispatch(struct exception_frame *frame)
 
     /* SGIs (IDs 0..15) are inter-processor interrupts.  They get
      * dispatched through the IPI module which knows the per-vector
-     * handler (chapter 88).  Today the only IPIs that fire are
+     * handler (chapter 89).  Today the only IPIs that fire are
      * IPI_PING (smoke test) and IPI_HALT (parking secondaries on
      * shutdown); ipi_handle returns whether the interrupt should
      * trigger a reschedule on return.  Note: IPI_HALT never

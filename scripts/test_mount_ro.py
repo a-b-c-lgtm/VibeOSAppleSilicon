@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_mount_ro.py — chapter 113 step 7: MOUNT_RO + EROFS_VFS
+"""scripts/test_mount_ro.py — chapter 132 step 7: MOUNT_RO + EROFS_VFS
 hardening verification.
 
 For each MOUNT_RO mount registered by vfs_init() —
@@ -119,7 +119,7 @@ def expect(cond, msg, extra=None):
         FAILS.append(msg)
 
 def main():
-    print("[chapter 113 step 7] MOUNT_RO + EROFS_VFS hardening")
+    print("[chapter 132 step 7] MOUNT_RO + EROFS_VFS hardening")
     reformat_data()
 
     q = boot()

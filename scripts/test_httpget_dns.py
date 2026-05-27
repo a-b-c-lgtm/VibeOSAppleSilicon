@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_httpget_dns.py — milestone-57 userspace-DNS smoke test.
+"""scripts/test_httpget_dns.py — userspace-DNS smoke test.
 
 End-to-end check that the SYS_RESOLVE wrapper works from a real
 userspace program: we invoke `httpget` with a hostname (not an
@@ -129,7 +129,7 @@ def main():
             print(f"FAIL: bogus resolve result {ip}"); return 1
         print(f"PASS: userspace resolve -> {ip} (via SYS_RESOLVE)")
 
-        print("\nMILESTONE 57 (userspace DNS): TESTS PASSED")
+        print("\nuserspace DNS: TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

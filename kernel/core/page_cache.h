@@ -1,7 +1,7 @@
 /*
- * kernel/core/page_cache.h — chapter 90 unified page cache.
+ * kernel/core/page_cache.h — chapter 91 unified page cache.
  *
- * The block cache (chapter 14) caches 512-byte sectors keyed by
+ * The block cache (chapter 13) caches 512-byte sectors keyed by
  * LBA.  That's the right layer for OSFS-1 metadata and ELF loads
  * (where the whole point is to amortise virtio_blk round trips),
  * but it's the wrong layer for "I want to mmap a file."  The
@@ -15,7 +15,7 @@
  * meaning) and offset_bytes is page-aligned.  Each entry owns
  * one 4 KiB pmem page and a refcount.
  *
- * Today (chapter 90) the only producer is anonymous & ramfs-
+ * Today (chapter 91) the only producer is anonymous & ramfs-
  * backed mmap.  Future chapters wire in OSFS-1 file content
  * (so re-reading the wallpaper doesn't re-walk the disk) and
  * the ELF text-segment dedupe.

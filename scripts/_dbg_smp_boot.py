@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-_dbg_smp_boot.py — chapter 86 smoke test.
+_dbg_smp_boot.py — chapter 87 smoke test.
 
 Boot the kernel under QEMU `-smp 2` and capture serial output for
 20 seconds.  Prints the boot log so we can confirm:
@@ -12,7 +12,7 @@ Boot the kernel under QEMU `-smp 2` and capture serial output for
     [smp] all CPUs online
 
 Kept (per the debug-scripts policy) as a reference snapshot of how
-the SMP bring-up looked when chapter 86 first landed.
+the SMP bring-up looked when chapter 87 first landed.
 """
 import os, select, socket, subprocess, sys, time
 
@@ -63,7 +63,7 @@ while time.time() < end:
 
 print("LEN:", len(buf))
 print(buf.decode("ascii", "replace"))
-print("\n--- chapter 86 markers ---")
+print("\n--- chapter 87 markers ---")
 need = [
     b"[smp] bringing up additional cores",
     b"[smp] DTB reports 2 cpu(s)",

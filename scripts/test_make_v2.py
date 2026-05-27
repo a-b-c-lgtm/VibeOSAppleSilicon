@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""scripts/test_make_v2.py -- chapter 133b expanded /bin/make.
+"""scripts/test_make_v2.py -- chapter 192 expanded /bin/make.
 
-Chapter 126 shipped a 351-LoC /bin/make that handled exactly
+Chapter 162 shipped a 351-LoC /bin/make that handled exactly
 the toy shape `target: deps\n\tcmd...`.  No variables, no
 $(VAR) expansion, no $@ / $< / $^, no pattern rules, no
 .PHONY, no recipe prefixes, no line continuation.  That was
@@ -9,7 +9,7 @@ fine for one-off "build me one .c file" demos but a real
 multi-file project cannot describe its build with that
 vocabulary.
 
-Chapter 133b expands /bin/make so it can drive the Makefiles
+Chapter 192 expands /bin/make so it can drive the Makefiles
 real C projects ship.  The added vocabulary:
 
   1. Variable definitions:  CC = /bin/gcc
@@ -170,7 +170,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 133b] expanded /bin/make")
+    print("[chapter 192] expanded /bin/make")
     reformat_data()
     q = boot()
     s = conn()

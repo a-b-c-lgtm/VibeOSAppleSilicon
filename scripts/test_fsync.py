@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""scripts/test_fsync.py — chapter 82 durability test.
+"""scripts/test_fsync.py — chapter 83 durability test.
 
-Validates that the OSFS-2 write-back cache (chapter 82) has both
+Validates that the OSFS-2 write-back cache (chapter 83) has both
 required durability properties:
 
   Test A.  fsync forces a write to survive a hard reboot.
@@ -227,22 +227,22 @@ def test_c_lost_without_sync():
 # --------------------------------------------------------------------
 
 def main():
-    print("[chapter 82] reformatting build/data.img ...")
+    print("[chapter 83] reformatting build/data.img ...")
     reformat_data()
 
     failed = []
 
-    print("\n[chapter 82] Test A: fsync makes writes durable across hard reboot")
+    print("\n[chapter 83] Test A: fsync makes writes durable across hard reboot")
     ok, why = test_a_fsync_persistence()
     if not check("file written + fsync'd survives hard kill", ok, why):
         failed.append("A")
 
-    print("\n[chapter 82] Test B: background flusher catches un-sync'd writes")
+    print("\n[chapter 83] Test B: background flusher catches un-sync'd writes")
     ok, why = test_b_background_flusher()
     if not check("file un-sync'd but >5 s old survives hard kill", ok, why):
         failed.append("B")
 
-    print("\n[chapter 82] Test C: writes without sync OR flush window are lost")
+    print("\n[chapter 83] Test C: writes without sync OR flush window are lost")
     ok, why = test_c_lost_without_sync()
     if not check("file un-sync'd and immediately killed is GONE", ok, why):
         failed.append("C")

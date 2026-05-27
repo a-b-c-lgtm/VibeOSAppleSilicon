@@ -51,35 +51,35 @@ enum {
     SYS_KILL     = 27,
     SYS_SET_FG_PID = 28,
 
-    /* Milestone 65 — fork + exec.  See kernel/core/syscall.h for
+    /* Fork + exec.  See kernel/core/syscall.h for
      * the full contract.  fork() returns the child pid in the
      * parent and 0 in the child; execv() never returns on success. */
     SYS_FORK     = 29,
     SYS_EXEC     = 30,
 
-    /* Chapter 77 — Catchable signals.  See userspace/libc/signal.h
+    /* Chapter 76 — Catchable signals.  See userspace/libc/signal.h
      * for the user-facing wrappers (signal / sigaction).  Issue
      * these manually only if you need the raw 3-arg shape. */
     SYS_SIGACTION = 31,
     SYS_SIGRETURN = 32,
 
-    /* Chapter 78 — SIGCHLD + waitpid.  See waitpid() below for
+    /* Chapter 77 — SIGCHLD + waitpid.  See waitpid() below for
      * the public wrapper; SYS_WAIT is preserved as the legacy
      * "any child, blocking" shape. */
     SYS_WAITPID  = 33,
 
-    /* Chapter 79b — pseudo-terminal allocation. */
+    /* Chapter 79 — pseudo-terminal allocation. */
     SYS_OPENPTY  = 34,
 
-    /* Chapter 82 — durability for OSFS-2 (no-op for other fds). */
+    /* Chapter 83 — durability for OSFS-2 (no-op for other fds). */
     SYS_FSYNC    = 35,
 
-    /* Chapter 85 — directory namespace.  See kernel/core/syscall.h
+    /* Chapter 86 — directory namespace.  See kernel/core/syscall.h
      * for the full contract. */
     SYS_MKDIR      = 36,
     SYS_LISTDIR_AT = 37,
 
-    /* Milestone 40 — minimal in-kernel window manager. */
+    /* Minimal in-kernel window manager. */
     SYS_GUI_CREATE_WINDOW  = 40,
     SYS_GUI_DESTROY_WINDOW = 41,
     SYS_GUI_PRESENT        = 42,
@@ -88,21 +88,21 @@ enum {
     SYS_GUI_FLUSH          = 45,
     SYS_GUI_POLL_EVENT     = 46,
 
-    /* Milestone 47 — taskbar / always-on-top windows + window list. */
+    /* Taskbar / always-on-top windows + window list. */
     SYS_GUI_CREATE_WINDOW_EX = 47,
     SYS_GUI_LIST_WINDOWS   = 48,
     SYS_GUI_RAISE_WINDOW   = 49,
 
-    /* Milestone 50 — userspace desktop environment.  Lets the
+    /* Userspace desktop environment.  Lets the
      * desktop, taskbar, notify, etc. discover the actual
      * scanout size at runtime instead of hardcoding 1280x800. */
     SYS_GUI_GET_SCREEN_SIZE = 50,
     SYS_GUI_SET_MINIMIZED   = 51,
 
-    /* Chapter 102 -- measure text in the kernel's default font. */
+    /* Chapter 104 -- measure text in the kernel's default font. */
     SYS_GUI_MEASURE_TEXT    = 52,
 
-    /* Chapter 108a -- userspace access to window pixel buffers.
+    /* Chapter 114 -- userspace access to window pixel buffers.
      * See kernel/core/syscall.h for the contract; the userspace
      * wrappers are gui_window_fb / gui_window_damage /
      * gui_window_unmap below. */
@@ -110,28 +110,28 @@ enum {
     SYS_GUI_UNMAP_WINDOW    = 54,
     SYS_GUI_DAMAGE          = 55,
 
-    /* Milestone 56 — sockets (active-open client side). */
+    /* Sockets (active-open client side). */
     SYS_SOCKET_CONNECT  = 60,
     SYS_SOCKET_STATE    = 61,
     SYS_SOCKET_SHUTDOWN = 62,
 
-    /* Milestone 57 — DNS resolver. */
+    /* DNS resolver. */
     SYS_RESOLVE         = 63,
 
-    /* Chapter 104 / M93 — sockets (passive-open server side).
+    /* Chapter 106 — sockets (passive-open server side).
      * listen creates a TCP_LISTEN slot bound to a port; accept
      * blocks until a fully-handshaken child is on the queue
      * and returns a fresh socket fd. */
     SYS_SOCKET_LISTEN   = 64,
     SYS_SOCKET_ACCEPT   = 65,
 
-    /* Chapter 90 — mmap + page cache.  See kernel/core/syscall.h
+    /* Chapter 91 — mmap + page cache.  See kernel/core/syscall.h
      * for the full contract; mmap_uapi.h has the prot/flags
      * constants (mirrored below for userspace consumers). */
     SYS_MMAP    = 70,
     SYS_MUNMAP  = 71,
 
-    /* Chapter 91 — userspace threads + futex.  See
+    /* Chapter 92 — userspace threads + futex.  See
      * kernel/core/syscall.h for the full contract; this
      * header's clone() / futex_wait() / futex_wake() wrappers
      * (further below) are the public API. */
@@ -139,33 +139,33 @@ enum {
     SYS_FUTEX_WAIT  = 73,
     SYS_FUTEX_WAKE  = 74,
 
-    /* Chapter 92 — clone with explicit CPU placement + getcpu.
+    /* Chapter 93 — clone with explicit CPU placement + getcpu.
      * The clone2() / getcpu() wrappers (further below) are the
      * public API; clone_cpu() / thread_spawn_on() in libc/thread.h
      * are the friendlier names callers actually reach for. */
     SYS_CLONE2      = 75,
     SYS_GETCPU      = 76,
-    /* Chapter 93 — clone with extended argument struct + flags.
+    /* Chapter 94 — clone with extended argument struct + flags.
      * The clone3() wrapper below is the public API; the
      * thread_spawn_files() helper in libc/thread.h is the
      * friendlier name callers actually reach for. */
     SYS_CLONE3      = 77,
 
-    /* Chapter 95 — wall-clock time via PL031 RTC.  See the
+    /* Chapter 96 — wall-clock time via PL031 RTC.  See the
      * gettimeofday() / time() wrappers further below for the
      * public API. */
     SYS_GETTIMEOFDAY = 78,
 
-    /* Chapter 96 — synthesise a square wave through the
+    /* Chapter 97 — synthesise a square wave through the
      * virtio-sound stream.  See beep() wrapper further below. */
     SYS_BEEP        = 79,
 
-    /* Chapter 100 — per-thread syscall tracer.  See trace_me()
+    /* Chapter 102 — per-thread syscall tracer.  See trace_me()
      * wrapper further below; the kernel-side ring is exposed via
      * /proc/<pid>/trace. */
     SYS_TRACE_ME    = 80,
 
-    /* Chapter 107 — named-IPC service bus.  See srv_bind /
+    /* Chapter 112 — named-IPC service bus.  See srv_bind /
      * srv_accept / srv_connect wrappers further below.  All
      * three accept ASCII "/srv/<name>" paths; messages are
      * length-prefixed datagrams capped at SRV_MSG_MAX (64 KiB).
@@ -175,7 +175,7 @@ enum {
     SYS_SRV_ACCEPT  = 82,
     SYS_SRV_CONNECT = 83,
 
-    /* Chapter 108d — userspace WSD foundation.  Single-
+    /* Chapter 117 — userspace WSD foundation.  Single-
      * caller-wins claim on the active scanout framebuffer; the
      * caller's AS gets a RW user mapping of the FB's physical
      * pages, RW from EL0, non-executable, NOT inherited by
@@ -187,7 +187,7 @@ enum {
     SYS_WIN_FB_FREE    = 87,
     SYS_FB_PRESENT     = 88,
 
-    /* chapter 108e -- userspace decorations + cursor.  wsd uses
+    /* chapter 118 -- userspace decorations + cursor.  wsd uses
      * these to poll the pointer state (sprite + hit-test),
      * reposition kernel "input shadow" windows when the user
      * drags a title bar, and inject a synthetic GUI_EVENT_CLOSE
@@ -198,7 +198,7 @@ enum {
     SYS_GUI_MOVE_WINDOW  = 90,
     SYS_GUI_DELIVER_EVENT = 91,
 
-    /* chapter 108e -- toggle wsd-routed pointer-passthrough on
+    /* chapter 118 -- toggle wsd-routed pointer-passthrough on
      * a kernel WM shadow.  When `on != 0`, the kernel WM's
      * pointer router skips this window entirely; wsd becomes
      * the sole authority on which window receives MOUSE_DOWN /
@@ -207,7 +207,7 @@ enum {
      * flows via the kernel's focus tracker, which wsd keeps in
      * sync by calling gui_raise_window after each click-to-raise. */
     SYS_GUI_SET_INPUT_PASSTHROUGH = 92,
-    /* chapter 108e -- in-place resize of an owned win_fb.
+    /* chapter 118 -- in-place resize of an owned win_fb.
      * Owner-only.  See kernel/core/syscall.h for the full
      * contract; tl;dr: kernel allocs new pages, copies the
      * top-left of the old contents, uninstalls every existing
@@ -215,21 +215,21 @@ enum {
      * mappers must re-call SYS_WIN_FB_MAP afterwards. */
     SYS_WIN_FB_RESIZE = 93,
 
-    /* Chapter 112 — entropy source.  See getrandom() wrapper
+    /* Chapter 123 — entropy source.  See getrandom() wrapper
      * further below for the public API.  Backed by virtio-rng +
      * ChaCha20 CSPRNG; do NOT use the bytes returned for TLS if
      * /proc/random/strong reads 0 (a future chapter exposes that
      * flag; today the only signal is the kernel boot log warning). */
     SYS_GETRANDOM     = 94,
 
-    /* Chapter 113 — read-only snapshot of the kernel's mount
+    /* Chapter 132 — read-only snapshot of the kernel's mount
      * table.  Returns the number of entries written into the
      * caller's `struct mount_info[]`, clamped to the caller's
      * `max`.  See `struct mount_info` and `mounts()` below for
      * the userspace interface. */
     SYS_MOUNTS        = 95,
 
-    /* Chapter 114 — userspace filesystem servers.
+    /* Chapter 140 — userspace filesystem servers.
      *   mount_kernel(prefix, fds_out[2], flags) -> mount_id / -errno
      *   umount_kernel(mount_id)                 -> 0 / -errno
      * On success mount_kernel installs two pipe fds in the
@@ -237,12 +237,12 @@ enum {
      * replies.  Subsequent opens of any path under `prefix`
      * route through the channel and reach the daemon as p9
      * messages (struct p9_msg, defined in userfs.h).  flags
-     * masks against MOUNT_RO (chapter 114e); pass 0 for a
+     * masks against MOUNT_RO (chapter 145); pass 0 for a
      * read-write mount.                                     */
     SYS_MOUNT         = 96,
     SYS_UMOUNT        = 97,
 
-    /* Chapter 114e — kernel state snapshots for /bin/procd.
+    /* Chapter 145 — kernel state snapshots for /bin/procd.
      * Public ABI structs in userspace/libc/proc_stat.h.
      * Only procd is expected to use these; ordinary apps go
      * through /proc files served by procd. */
@@ -250,19 +250,19 @@ enum {
     SYS_THREAD_SNAPSHOT = 99,
     SYS_STRACE_RENDER   = 100,
 
-    /* Chapter 116b — POSIX lseek for the new stdio FILE * layer.
+    /* Chapter 150 — POSIX lseek for the new stdio FILE * layer.
      * Returns the resulting absolute offset or -errno (-ESPIPE
      * on un-seekable kinds, -EINVAL for a bad whence, -ENOSYS
      * for SEEK_END on filesystems that can't size yet). */
     SYS_LSEEK           = 101,
 
-    /* Chapter 117 — POSIX stat / fstat.  See userspace/libc/sys/stat.h
+    /* Chapter 153 — POSIX stat / fstat.  See userspace/libc/sys/stat.h
      * for the user-facing wrappers and struct stat alias. */
     SYS_STAT            = 102,
     SYS_FSTAT           = 103,
 };
 
-/* Chapter 95 — POSIX-shaped wall-clock value.  Layout matches
+/* Chapter 96 — POSIX-shaped wall-clock value.  Layout matches
  * kernel/core/syscall.h byte-for-byte; do not reorder.  The
  * 4-byte _pad keeps the total struct size a multiple of 8. */
 struct timeval {
@@ -271,13 +271,13 @@ struct timeval {
     uint32_t _pad;
 };
 
-/* Chapter 95 — POSIX-shaped time_t.  64-bit signed; Y2038-safe.
+/* Chapter 96 — POSIX-shaped time_t.  64-bit signed; Y2038-safe.
  * The kernel ABI is 64-bit too (see struct timeval) — even
  * though the underlying PL031 hardware register is only 32-bit,
  * the kernel promotes the value before exporting it. */
 typedef int64_t time_t;
 
-/* Chapter 93 — argument struct for clone3.  Layout matches
+/* Chapter 94 — argument struct for clone3.  Layout matches
  * kernel/core/syscall.h byte-for-byte; do not reorder.  The
  * 4-byte _pad keeps the total size a multiple of 8. */
 struct clone_args {
@@ -290,11 +290,11 @@ struct clone_args {
     uint32_t _pad;
 };
 
-/* Chapter 93 — clone3 flag bits.  Only CLONE_FILES (bit 0) is
+/* Chapter 94 — clone3 flag bits.  Only CLONE_FILES (bit 0) is
  * defined today.  Any other bit returns -EINVAL from the kernel. */
 #define CLONE_FILES  0x01ULL
 
-/* Chapter 90 mmap constants — must match kernel/core/mmap_uapi.h. */
+/* Chapter 91 mmap constants — must match kernel/core/mmap_uapi.h. */
 #define PROT_NONE      0x0
 #define PROT_READ      0x1
 #define PROT_WRITE     0x2
@@ -305,11 +305,11 @@ struct clone_args {
 #define MAP_FAILED     ((void *)-1L)
 
 /* Signal numbers (POSIX subset) — match kernel/core/thread.h.
- * The kernel's sys_kill accepts any sig in 1..31; chapter 128b's
+ * The kernel's sys_kill accepts any sig in 1..31; chapter 166's
  * libc raise() builds on that to make every signal in this table
  * deliverable to the calling process.  SIGINT is also delivered
  * by Ctrl-C in cooked mode; SIGCHLD is posted to the parent on
- * child exit (chapter 78); everything else gets delivered only
+ * child exit (chapter 77); everything else gets delivered only
  * when something calls kill() / raise() explicitly. */
 #define SIGHUP   1
 #define SIGINT   2
@@ -325,12 +325,12 @@ struct clone_args {
 #define SIGPIPE 13
 #define SIGALRM 14
 #define SIGTERM 15
-#define SIGCHLD 17    /* posted to the parent on child exit (chapter 78) */
+#define SIGCHLD 17    /* posted to the parent on child exit (chapter 77) */
 
 /* waitpid options (matches POSIX where it overlaps). */
 #define WNOHANG  1
 
-/* ── Chapter 116d — POSIX errno convention ────────────────────
+/* ── Chapter 152 — POSIX errno convention ────────────────────
  *
  * Every kernel SVC returns either a non-negative success value
  * or a negative errno in x0.  `__svc_check` mirrors the
@@ -348,7 +348,7 @@ struct clone_args {
  *
  * Before this chapter, the wrapper returned the raw -errno so
  * the ~99 existing apps could print `-rc`.  The migration was
- * the bulk of chapter 116d's diff — see the chapter writeup.  */
+ * the bulk of chapter 152's diff — see the chapter writeup.  */
 extern int __errno_value;
 
 static inline long __svc_check(long r)
@@ -452,7 +452,7 @@ static inline long write(int fd, const void *buf, size_t len)
  * when `flags & O_CREAT`.  Our kernel ignores the mode bits today
  * (no permission enforcement yet), but autoconf-generated probes
  * and ported source from libiberty / GNU make / coreutils all call
- * the 3-arg form, so the prototype has to accept it.  Chapter 131d. */
+ * the 3-arg form, so the prototype has to accept it.  Chapter 178. */
 static inline int open(const char *name, int flags, ...)
 {
     return (int)_svc2(SYS_OPEN, (long)(uintptr_t)name, (long)flags);
@@ -468,7 +468,7 @@ static inline int close(int fd)
     return (int)_svc1(SYS_CLOSE, fd);
 }
 
-/* ── Chapter 116b — POSIX lseek ────────────────────────────
+/* ── Chapter 150 — POSIX lseek ────────────────────────────
  *
  * Re-position the fd's read/write cursor.  Returns the new
  * absolute offset, or -errno (-ESPIPE on un-seekable kinds,
@@ -487,7 +487,7 @@ static inline off_t lseek(int fd, off_t off, int whence)
     return (off_t)_svc3(SYS_LSEEK, fd, (long)off, whence);
 }
 
-/* ── Chapter 117 — stat / fstat (raw syscall wrappers) ────────
+/* ── Chapter 153 — stat / fstat (raw syscall wrappers) ────────
  *
  * The user-facing `stat` / `fstat` functions live in
  * `userspace/libc/sys/stat.h` so they can use struct stat,
@@ -499,12 +499,12 @@ struct __kstat_raw {
     uint32_t _pad;
     uint64_t st_size;
     uint64_t st_mtime;
-    /* Chapter 131d — POSIX-shape `st_dev` / `st_ino`.  Append-only;
+    /* Chapter 178 — POSIX-shape `st_dev` / `st_ino`.  Append-only;
      * see comment on struct stat in sys/stat.h for the meaning of
      * the values our kernel writes today. */
     uint64_t st_dev;
     uint64_t st_ino;
-    /* Chapter 131e — POSIX `st_uid` / `st_gid` (always 0, no user
+    /* Chapter 179 — POSIX `st_uid` / `st_gid` (always 0, no user
      * system) so bfd/archive.c assignments compile. */
     uint32_t st_uid;
     uint32_t st_gid;
@@ -538,7 +538,7 @@ static inline void yield(void)
     _svc0(SYS_YIELD);
 }
 
-/* chapter 112b: cross-guarded with vendor/bearssl-shim/string.h so
+/* chapter 125: cross-guarded with vendor/bearssl-shim/string.h so
  * TUs that include both syscall.h and bearssl.h (e.g. tls_socket.c,
  * httpsd.c, tlstest.c --handshake) don't get a duplicate-with-
  * different-linkage error from gcc.  The shim is non-static (it
@@ -585,7 +585,7 @@ static inline int spawn(const char *path, const char *args)
                                   (long)(uintptr_t)args);
 }
 
-/* Milestone 65 — POSIX-style fork().
+/* POSIX-style fork().
  *
  * On success returns 0 in the child and the child's pid in the
  * parent.  On failure returns -errno (in the parent only).
@@ -599,7 +599,7 @@ static inline int fork(void)
     return (int)_svc0(SYS_FORK);
 }
 
-/* Milestone 65 — POSIX-style execv().
+/* POSIX-style execv().
  *
  * Replaces the calling process's address space with the program
  * loaded from `path`.  `argv` is a NULL-terminated array of
@@ -633,7 +633,7 @@ static inline int wait(int *code_out)
     return (int)_svc1(SYS_WAIT, (long)(uintptr_t)code_out);
 }
 
-/* Generalised reaper (chapter 78).
+/* Generalised reaper (chapter 77).
  *   pid > 0   : wait for that specific child only.
  *   pid <= 0  : wait for any child (same shape as wait()).
  *   options & WNOHANG : poll-only; returns 0 if a matching child
@@ -664,9 +664,9 @@ static inline void *sbrk(long inc)
     return (void *)(uintptr_t)r;
 }
 
-/* Chapter 90 \u2014 mmap a file or anonymous region.  See
+/* Chapter 91 \u2014 mmap a file or anonymous region.  See
  * mmap_uapi.h for the full contract.  Returns the mapped VA on
- * success or MAP_FAILED on error.  In chapter 90 `addr` is
+ * success or MAP_FAILED on error.  In chapter 91 `addr` is
  * ignored (no MAP_FIXED yet) and the kernel always picks a
  * fresh range from the per-AS mmap bump pointer. */
 static inline void *mmap(void *addr, size_t len, int prot, int flags,
@@ -679,7 +679,7 @@ static inline void *mmap(void *addr, size_t len, int prot, int flags,
     return (void *)(uintptr_t)r;
 }
 
-/* Chapter 90 \u2014 unmap a range previously returned by mmap.
+/* Chapter 91 \u2014 unmap a range previously returned by mmap.
  * `addr` must be the exact start of an existing mmap; `len` is
  * currently ignored (whole vma is removed).  Returns 0 on
  * success or -errno on failure. */
@@ -688,7 +688,7 @@ static inline int munmap(void *addr, size_t len)
     return (int)_svc2(SYS_MUNMAP, (long)(uintptr_t)addr, (long)len);
 }
 
-/* ── Chapter 91 — userspace threads (clone) + futex ─────────────
+/* ── Chapter 92 — userspace threads (clone) + futex ─────────────
  *
  * clone(entry, arg, stack_top, tls)
  *   Spawn a new thread sharing the calling thread's address
@@ -707,7 +707,7 @@ static inline int munmap(void *addr, size_t len)
  *   bogus pointer.  The futex word must be 32-bit aligned.
  *
  * futex_wake(uaddr, n)
- *   Wake threads blocked on `uaddr`.  Chapter 91 floor: `n`
+ *   Wake threads blocked on `uaddr`.  Chapter 92 floor: `n`
  *   must be > 0; the kernel currently treats it as "wake all".
  *   Returns 1 (at least one wake attempted) or 0 (n was 0).
  *
@@ -740,7 +740,7 @@ static inline int futex_wake(volatile int *uaddr, int n)
                       (long)n);
 }
 
-/* ── Chapter 92 — clone with explicit CPU placement + getcpu ───
+/* ── Chapter 93 — clone with explicit CPU placement + getcpu ───
  *
  * clone2(entry, arg, stack_top, tls, cpu_id)
  *   Same as clone() but pins the new thread to absolute CPU
@@ -773,7 +773,7 @@ static inline int getcpu(void)
     return (int)_svc0(SYS_GETCPU);
 }
 
-/* ── Chapter 93 — clone3: extended-args clone with flags ──────
+/* ── Chapter 94 — clone3: extended-args clone with flags ──────
  *
  * clone3(struct clone_args *a)
  *   POSIX-style clone with an extensible argument struct and
@@ -819,7 +819,7 @@ static inline unsigned long uptime_ms(void)
     return (unsigned long)_svc0(SYS_UPTIME_MS);
 }
 
-/* Chapter 95 — wall-clock time.  Reads the kernel's PL031 RTC
+/* Chapter 96 — wall-clock time.  Reads the kernel's PL031 RTC
  * snapshot + uptime delta into *tv.  Returns 0 on success or a
  * negative errno (-EFAULT for a bad pointer).
  *
@@ -828,7 +828,7 @@ static inline unsigned long uptime_ms(void)
  * tv->tv_sec will count from 0 (Unix epoch), which userspace can
  * detect by checking whether tv_sec is wildly in the past.
  *
- * Signature follows POSIX (chapter 131d): the second argument
+ * Signature follows POSIX (chapter 178): the second argument
  * is a long-obsolete `struct timezone *` that POSIX defines as
  * "set tz to NULL".  We accept any pointer and ignore it; this
  * lets libiberty/mkstemps.c (and other host-libc-style callers)
@@ -869,7 +869,7 @@ static inline int sleep_ms(unsigned long ms)
     return (int)_svc1(SYS_SLEEP_MS, (long)ms);
 }
 
-/* Chapter 130a — POSIX `usleep`.  Doom's i_timer.c and several
+/* Chapter 172 — POSIX `usleep`.  Doom's i_timer.c and several
  * other upstream-friendly programs sleep for sub-tick amounts
  * (typically 1_000 us = 1 ms inside polling loops).  Our
  * scheduler tick is 100 ms, so anything under that rounds up
@@ -887,8 +887,8 @@ static inline int usleep(unsigned int usec)
     return sleep_ms(ms);
 }
 
-/* Chapter 130a — POSIX `isatty`.  We don't have terminals yet
- * (chapter 30 input multiplexing is per-window, not per-fd),
+/* Chapter 172 — POSIX `isatty`.  We don't have terminals yet
+ * (chapter 29 input multiplexing is per-window, not per-fd),
  * so every fd reports "not a TTY".  Programs that gate
  * interactive prompts on isatty (most of them) take their
  * batch-mode path, which is what we want. */
@@ -898,7 +898,7 @@ static inline int isatty(int fd)
     return 0;
 }
 
-/* Chapter 131d — POSIX `sleep(unsigned int seconds)`.  Returns
+/* Chapter 178 — POSIX `sleep(unsigned int seconds)`.  Returns
  * the number of seconds left unslept if interrupted; we never
  * deliver signals during sleep_ms so it always returns 0.
  * Implemented on top of `sleep_ms` to share the same scheduler
@@ -913,7 +913,7 @@ static inline unsigned int sleep(unsigned int seconds)
     return 0;
 }
 
-/* Chapter 131d — POSIX `_exit(int)`.  Unlike `exit()` this does
+/* Chapter 178 — POSIX `_exit(int)`.  Unlike `exit()` this does
  * NOT run atexit handlers / .fini_array / stdio flushes — it
  * goes straight to SYS_EXIT.  Required by libiberty's pex-unix
  * after a failed exec in the child, where re-entering atexit
@@ -930,7 +930,7 @@ static inline void _exit(int code)
 /* `link(old, new)` lives in unistd.h — it needs errno.h, and
  * syscall.h is deliberately includes-light. */
 
-/* Chapter 96 — synthesise a square wave on the virtio-snd PCM
+/* Chapter 97 — synthesise a square wave on the virtio-snd PCM
  * stream.  Blocks for approximately `duration_ms` while the
  * device consumes the samples.
  *
@@ -944,7 +944,7 @@ static inline int beep(unsigned int freq_hz, unsigned int duration_ms)
     return (int)_svc2(SYS_BEEP, (long)freq_hz, (long)duration_ms);
 }
 
-/* Chapter 100 — enable per-thread syscall tracing on self.  After
+/* Chapter 102 — enable per-thread syscall tracing on self.  After
  * this returns 0, every SVC issued by the calling thread is
  * recorded into a kernel-side ring (size STRACE_RING_CAP); read
  * the textual trace from `/proc/<getpid()>/trace`.  Idempotent;
@@ -957,7 +957,7 @@ static inline int trace_me(void)
     return (int)_svc0(SYS_TRACE_ME);
 }
 
-/* Chapter 112 — fill `buf` with `len` bytes of cryptographically-
+/* Chapter 123 — fill `buf` with `len` bytes of cryptographically-
  * random data sourced from the kernel CSPRNG (which pulls its
  * seed from the virtio-rng device when present).
  *
@@ -975,7 +975,7 @@ static inline long getrandom(void *buf, unsigned long len, unsigned int flags)
                  (long)flags);
 }
 
-/* Chapter 113 — kernel mount-table introspection.
+/* Chapter 132 — kernel mount-table introspection.
  *
  * `mounts(out, max)` writes up to `max` entries into `out`.  Each
  * entry's `prefix` is NUL-terminated (e.g. "/data", "/proc"); the
@@ -1001,7 +1001,7 @@ static inline long mounts(struct mount_info *out, int max)
     return _svc2(SYS_MOUNTS, (long)(uintptr_t)out, (long)max);
 }
 
-/* Chapter 114 — userspace filesystem servers.  See SYS_MOUNT
+/* Chapter 140 — userspace filesystem servers.  See SYS_MOUNT
  * for the full ABI.  `prefix` must start with '/', not end
  * with '/', and not already be registered.  On success,
  * fds_out[0] is a pipe-read fd (incoming requests) and
@@ -1028,7 +1028,7 @@ static inline long umount_kernel(int mount_id)
     return _svc1(SYS_UMOUNT, (long)mount_id);
 }
 
-/* Chapter 114e \u2014 kernel state snapshots for procd.  See
+/* Chapter 145 \u2014 kernel state snapshots for procd.  See
  * userspace/libc/proc_stat.h for struct definitions.  These are
  * the only consumers of the three syscalls; ordinary apps go
  * through /proc files instead of calling them directly. */
@@ -1095,7 +1095,7 @@ static inline int unlink(const char *path)
     return (int)_svc1(SYS_UNLINK, (long)(uintptr_t)path);
 }
 
-/* Chapter 85 \u2014 directory namespace.
+/* Chapter 86 \u2014 directory namespace.
  *
  * mkdir(path, mode) creates a single directory.  All parent
  * components must already exist (no "mkdir -p" semantics here
@@ -1103,7 +1103,7 @@ static inline int unlink(const char *path)
  * start with /data/.  Returns 0 on success, -errno on failure.
  *
  * The POSIX `mode` argument is accepted for source-compat with
- * portable ports (chapter 130a DoomGeneric is the first such
+ * portable ports (chapter 172 DoomGeneric is the first such
  * caller).  This OS has no per-file permission bits yet, so
  * the mode is ignored \u2014 every directory is created world-
  * accessible. */
@@ -1161,7 +1161,7 @@ static inline int kill(int pid, int sig)
  * delivered to that pid.  Pass 0 to clear (Ctrl-C consumed
  * silently).  Always succeeds; returns the previous fg pid.
  *
- * Auto-routing (chapter 79b): if the calling thread's fd 0 is a
+ * Auto-routing (chapter 79): if the calling thread's fd 0 is a
  * pty slave, this writes the pty's fg_pid field instead of the
  * global console fg_pid.  This means /bin/sh's existing
  * set_fg_pid(child) calls work transparently when sh is run
@@ -1171,7 +1171,7 @@ static inline int set_fg_pid(int pid)
     return (int)_svc1(SYS_SET_FG_PID, (long)pid);
 }
 
-/* Allocate a pty (chapter 79b).  On success returns 0 and writes
+/* Allocate a pty (chapter 79).  On success returns 0 and writes
  * the master fd into *master_out and the slave fd into
  * *slave_out.  The master is intended for the controlling app
  * (e.g. gui_term); the slave is meant to be dup2'd onto fds
@@ -1184,7 +1184,7 @@ static inline int openpty(int *master_out, int *slave_out)
                       (long)(uintptr_t)slave_out);
 }
 
-/* Chapter 82 \u2014 force every dirty cache block backing `fd` to
+/* Chapter 83 \u2014 force every dirty cache block backing `fd` to
  * disk before returning.  For OSFS-2 file fds this triggers a
  * synchronous flush of the kernel's write-back cache and only
  * returns once every virtio-blk write has acked.  For every
@@ -1287,7 +1287,7 @@ static inline long __sys_getenv_all(char *buf, size_t cap)
     return _svc2(SYS_GETENV_ALL, (long)(uintptr_t)buf, (long)cap);
 }
 
-/* ── GUI (milestone 40 minimal window manager) ──────────────────
+/* ── GUI (minimal window manager) ──────────────────
  *
  * All windows render into a kernel-side BGRA8 buffer; the WM owns
  * decorations (title bar + 1px border) and composites every
@@ -1340,12 +1340,12 @@ static inline long __sys_getenv_all(char *buf, size_t cap)
 #define GUI_KEY_PGUP          0x107u
 #define GUI_KEY_PGDN          0x108u
 
-/* Window flags (milestone 47, milestone 50, milestone 63). */
+/* Window flags. */
 #define GUI_WIN_FLAG_NO_DECORATION   0x1u
 #define GUI_WIN_FLAG_ALWAYS_ON_TOP   0x2u
 #define GUI_WIN_FLAG_PIN_TO_BOTTOM   0x4u
 #define GUI_WIN_FLAG_MINIMIZED       0x8u   /* read-only status bit */
-#define GUI_WIN_FLAG_RESIZABLE       0x10u  /* milestone 63: user can drag the
+#define GUI_WIN_FLAG_RESIZABLE       0x10u  /* user can drag the
                                               * grip in the bottom-right of
                                               * the title-bar-bordered rect.
                                               * Apps that opt in must handle
@@ -1433,7 +1433,7 @@ static inline int gui_draw_text(int id,
     return (int)_svc1(SYS_GUI_DRAW_TEXT, (long)(uintptr_t)&a);
 }
 
-/* Chapter 102 -- measure a string's rendered width in pixels in
+/* Chapter 104 -- measure a string's rendered width in pixels in
  * the kernel's default font (TTF DejaVu Sans @ 16 px today).
  * Stops at '\n'. Returns the pixel width as a non-negative int,
  * or 0 on EFAULT (the kernel returns -EFAULT but we don't expose
@@ -1449,14 +1449,14 @@ static inline int gui_measure_text(const char *s)
     return (int)r;
 }
 
-/* ── Chapter 108a: direct window-buffer access ─────────────── */
+/* ── Chapter 114: direct window-buffer access ─────────────── */
 
 /* Descriptor returned by gui_window_fb().  `pixels` points at a
  * page-aligned BGRA framebuffer for the window; rows are
  * `stride` bytes apart (today always `w*4`); dimensions match
  * the window's content area.
  *
- * Chapter 108c added the `id` field so libgui's draw_* and
+ * Chapter 116 added the `id` field so libgui's draw_* and
  * gui_window_dirty helpers can take a gui_fb* alone and still
  * issue the SYS_GUI_DAMAGE call without the app having to pass
  * the window id everywhere alongside it.  Pre-108c callers that
@@ -1483,7 +1483,7 @@ struct gui_damage_args {
     uint32_t x, y, w, h;
 };
 
-/* Chapter 108a -- map this process's view onto a window's pixel
+/* Chapter 114 -- map this process's view onto a window's pixel
  * buffer.  On success returns 0 and populates *out with a
  * page-aligned BGRA framebuffer the app can draw into directly.
  * The mapping persists across multiple gui_poll_event /
@@ -1491,7 +1491,7 @@ struct gui_damage_args {
  * startup and reuse the pointer forever.
  *
  * The window must NOT have been created with
- * GUI_WIN_FLAG_RESIZABLE (chapter 108a defers resize coherence).
+ * GUI_WIN_FLAG_RESIZABLE (chapter 114 defers resize coherence).
  *
  * Returns -1 on error (the kernel return code is lost; callers
  * who need it can call the raw _svc1 form directly).  In
@@ -1519,7 +1519,7 @@ static inline int gui_window_fb(int id, struct gui_fb *out)
     return 0;
 }
 
-/* Chapter 108a -- tell the WM that the rect (x,y,w,h) of the
+/* Chapter 114 -- tell the WM that the rect (x,y,w,h) of the
  * mapped framebuffer has been written and needs to make it to
  * the screen.  Coordinates are window-content relative;
  * over-large rects are silently clipped to the window so a
@@ -1535,7 +1535,7 @@ static inline int gui_window_damage(int id,
     return (int)_svc1(SYS_GUI_DAMAGE, (long)(uintptr_t)&a);
 }
 
-/* Chapter 108a -- drop a previous gui_window_fb mapping.
+/* Chapter 114 -- drop a previous gui_window_fb mapping.
  * Implicit on gui_destroy_window / process exit, so most apps
  * never need to call this; useful in tests that want to verify
  * the AS layer has actually released the VA range. */
@@ -1544,7 +1544,7 @@ static inline int gui_window_unmap(int id)
     return (int)_svc1(SYS_GUI_UNMAP_WINDOW, (long)id);
 }
 
-/* ── Chapter 108d: framebuffer mapping for WSD ──────── */
+/* ── Chapter 117: framebuffer mapping for WSD ──────── */
 
 /* Layout matches struct fb_map_args_k in kernel/core/wsd_fb.c
  * byte-for-byte; do not reorder. */
@@ -1579,7 +1579,7 @@ static inline int fb_map_scanout(struct fb_map_args *out)
     return (int)_svc1(SYS_FB_MAP_SCANOUT, (long)(uintptr_t)out);
 }
 
-/* ── Chapter 108d: per-window shareable framebuffer ── */
+/* ── Chapter 117: per-window shareable framebuffer ── */
 
 /* Layout matches struct win_fb_alloc_args_k in
  * kernel/core/win_fb.c byte-for-byte; do not reorder.  The
@@ -1650,7 +1650,7 @@ static inline int win_fb_free(uint32_t id)
     return (int)_svc1(SYS_WIN_FB_FREE, (long)id);
 }
 
-/* chapter 108e — resize an owned win_fb in place.  Owner-
+/* chapter 118 — resize an owned win_fb in place.  Owner-
  * only.  Allocates a fresh backing of new_w*new_h*4 bytes
  * (page-rounded), copies the top-left of the old contents
  * over, then uninstalls EVERY existing mapping (owner +
@@ -1669,7 +1669,7 @@ static inline int win_fb_resize(uint32_t id,
                       (long)id, (long)new_w, (long)new_h);
 }
 
-/* Chapter 108d — userspace-driven GPU flush.  Tell
+/* Chapter 117 — userspace-driven GPU flush.  Tell
  * the kernel to submit a TRANSFER_TO_HOST_2D + RESOURCE_FLUSH
  * for the given scanout rect.  Passing w=h=0 means "entire
  * scanout".  Used by wsd's compositor; legacy GUI apps don't
@@ -1691,7 +1691,7 @@ static inline int gui_poll_event(struct gui_event *out)
     return (int)_svc1(SYS_GUI_POLL_EVENT, (long)(uintptr_t)out);
 }
 
-/* chapter 108e -- userspace decorations + cursor.  All three
+/* chapter 118 -- userspace decorations + cursor.  All three
  * are wsd-private in practice; nothing else in the tree links
  * against them.  Kept here (and not in a wsd-only header) so
  * any future userspace tool that wants the same hooks (e.g.
@@ -1734,7 +1734,7 @@ static inline int gui_deliver_event(int id, const struct gui_event *ev)
                       (long)id, (long)(uintptr_t)ev);
 }
 
-/* chapter 108e -- turn on/off wsd-routed pointer passthrough on
+/* chapter 118 -- turn on/off wsd-routed pointer passthrough on
  * a kernel WM shadow.  See SYS_GUI_SET_INPUT_PASSTHROUGH for the
  * routing semantics; on success the kernel pointer router stops
  * (or resumes) auto-delivering MOUSE events to this shadow.
@@ -1745,7 +1745,7 @@ static inline int gui_set_input_passthrough(int id, int on)
                       (long)id, (long)on);
 }
 
-/* ─── Milestone 47: window list + raise + extended create ─── */
+/* ─── Window list + raise + extended create ─── */
 
 struct gui_create_window_ex_args {
     uint32_t w, h;
@@ -1810,7 +1810,7 @@ static inline int gui_set_minimized(int id, int on)
     return (int)_svc2(SYS_GUI_SET_MINIMIZED, (long)id, (long)on);
 }
 
-/* ----- Milestone 56: sockets ---------------------------------
+/* ----- Sockets ---------------------------------
  *
  * `socket_connect` opens a TCP connection to `ip4`:`port`,
  * waits for the three-way handshake to complete, and returns a
@@ -1843,7 +1843,7 @@ static inline int socket_shutdown(int fd)
     return (int)_svc1(SYS_SOCKET_SHUTDOWN, (long)fd);
 }
 
-/* ----- Chapter 104: server-side sockets ----------------------
+/* ----- Chapter 106: server-side sockets ----------------------
  *
  * `socket_listen(port, backlog)` returns a *listening* fd bound
  * to TCP port `port`.  The listening fd is not readable/
@@ -1881,7 +1881,7 @@ static inline int resolve(const char *name, uint32_t *out_ip4_be)
     return (int)_svc2(SYS_RESOLVE, (long)name, (long)out_ip4_be);
 }
 
-/* ----- Chapter 107: named-IPC service bus -------------------
+/* ----- Chapter 112: named-IPC service bus -------------------
  *
  * A service binds a `/srv/<name>` path with `srv_bind`, then
  * loops over `srv_accept` to harvest one fd per connecting

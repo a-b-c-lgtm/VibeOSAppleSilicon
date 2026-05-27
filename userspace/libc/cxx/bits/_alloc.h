@@ -1,4 +1,4 @@
-// userspace/libc/cxx/bits/_alloc.h — chapter 132f
+// userspace/libc/cxx/bits/_alloc.h — chapter 186
 //
 // Internal helper: provide std::allocator + std::char_traits in
 // one place so both <string> and <memory> can include it without

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""_dbg_bare_host.py -- manual probe (chapter 112h).
+"""_dbg_bare_host.py -- manual probe (chapter 131).
 
 Goal: confirm canonicalize_url's case (6) default flip works
 end-to-end against a real public site.
@@ -11,7 +11,7 @@ prompt, then types `browser news.ycombinator.com` (no scheme,
 no proxy env).  Pre-112h the bare hostname would have been
 prefixed with the chapter-106b proxy (http://127.0.0.1:80/)
 and 502'd; post-112h it should be prefixed with https:// and
-go through the native TLS path added in chapters 112d-112g.
+go through the native TLS path added in chapters 127-130.
 
 PASS iff we see both:
   * a `[browser] resolved news.ycombinator.com -> <ipv4>`

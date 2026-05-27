@@ -1,4 +1,4 @@
-/* userspace/errnotest/errnotest.c — chapter 116a smoke test.
+/* userspace/errnotest/errnotest.c — chapter 149 smoke test.
  *
  * Drives the new errno plumbing:
  *

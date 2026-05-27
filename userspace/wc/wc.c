@@ -7,7 +7,7 @@
  * No -l/-w/-c flags yet; no stdin path (we have no pipes).  When
  * pipes land, this picks up "wc <stdin>" for free if argc==1.
  *
- * Chapter 116d: drives the FILE * layer.  stdin is wired to
+ * Chapter 152: drives the FILE * layer.  stdin is wired to
  * fd 0 by stdio.h's default table, so the argc==1 path will
  * pick up pipes for free.
  */

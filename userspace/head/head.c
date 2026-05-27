@@ -6,7 +6,7 @@
  * Stops reading once N newlines have been emitted; doesn't slurp
  * the rest of the file.
  *
- * Chapter 116d: drives the FILE * layer.
+ * Chapter 152: drives the FILE * layer.
  */
 
 #include "../libc/syscall.h"

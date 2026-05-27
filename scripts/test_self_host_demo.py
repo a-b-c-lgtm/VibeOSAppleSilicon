@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/test_self_host_demo.py — chapter 125 smoke test.
+scripts/test_self_host_demo.py — chapter 161 smoke test.
 
 Real GCC self-hosting (stage1 → stage2 → stage3 fixed point)
 is out of reach for /bin/cc.  What IS in reach is showing the
@@ -12,14 +12,14 @@ five dependent intermediate computations.
 
 It is a single boot, a single compile, a single run.  If
 this works, /bin/cc has demonstrated that everything it
-learned in chapters 121/123 composes — printf calls do not
+learned in chapters 157/123 composes — printf calls do not
 clobber locals; long left-associative chains do not exhaust
 the expression-stack; dependent variables in sequence do
 not collide on the same frame slot.
 
 The same source ships on /data so the harness can also
 verify "on-disk source, in-guest compile" still works (the
-chapter 124 contract).
+chapter 160 contract).
 """
 import os, sys, time, subprocess, tempfile
 
@@ -79,7 +79,7 @@ def seed_data_with_demo():
 
 
 def main():
-    print("[chapter 125] self-host bootstrap demo (upper bound of /bin/cc)")
+    print("[chapter 161] self-host bootstrap demo (upper bound of /bin/cc)")
     seed_data_with_demo()
     q = boot()
     s = conn()

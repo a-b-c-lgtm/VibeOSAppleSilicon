@@ -1,5 +1,5 @@
 /*
- * kernel/core/random.h — kernel CSPRNG, chapter 112.
+ * kernel/core/random.h — kernel CSPRNG, chapter 123.
  *
  * Public API for getting random bytes inside the kernel.  Backed
  * by virtio-rng when present (driver in kernel/device/virtio_rng.c);
@@ -12,7 +12,7 @@
  * Called by:
  *   - sys_getrandom() (syscall 94, exposed to userspace by
  *     userspace/libc/syscall.h::getrandom)
- *   - future TLS code in libtls (chapter 114+)
+ *   - future TLS code in libtls (chapter 140+)
  *
  * Thread-safety: a single mutex serialises CSPRNG state updates;
  * concurrent callers see consistent, non-overlapping output.

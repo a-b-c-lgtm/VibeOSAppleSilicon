@@ -1,20 +1,20 @@
 /* userspace/libc/errno.h -- POSIX errno for osdev userspace
- * (chapter 116a, convention flipped in 116d).
+ * (chapter 149, convention flipped in chapter 152).
  *
  * Today: a process-global `int __errno_value` exposed via the
  * standard `errno` macro.  Set automatically by every syscall
  * wrapper that returns a negative kernel errno (see
- * `__svc_check` in syscall.h).  As of chapter 116d, syscall
+ * `__svc_check` in syscall.h).  As of chapter 152, syscall
  * wrappers follow the POSIX shape: on failure they return -1
  * and set `errno`.  Callers must read `errno` to recover the
  * specific error; the old `-rc` trick is gone.
  *
- * Per-thread errno is deferred until chapter 116e (or whenever
- * userspace threading grows a real TLS layout).  For now every
- * thread in a multi-threaded process shares the same
- * `__errno_value` slot.  Single-threaded programs (everything
- * we ship today, and everything GCC's bring-up forks) are
- * correct.  The browser parser thread does not inspect errno.
+ * Per-thread errno is deferred until userspace threading grows
+ * a real TLS layout.  For now every thread in a multi-threaded
+ * process shares the same `__errno_value` slot.  Single-threaded
+ * programs (everything we ship today, and everything GCC's
+ * bring-up forks) are correct.  The browser parser thread does
+ * not inspect errno.
  *
  * The E* constants match the kernel's vfs.h / syscall.h values
  * so callers doing `if (errno == ENOENT)` after a kernel-issued
@@ -88,7 +88,7 @@ extern int __errno_value;
 #define ETIMEDOUT     110
 #define ECONNREFUSED  111
 
-/* ── Chapter 116d / 131d — strerror ───────────────────────────
+/* ── Chapter 152 / 131d — strerror ───────────────────────────
  *
  * Returns a static string for each errno we set anywhere in the
  * tree.  Unknown numbers come back as "Unknown error" rather
@@ -99,7 +99,7 @@ extern int __errno_value;
  * Returns `char *` (not `const char *`) to match POSIX and
  * libiberty/xstrerror.c's extern declaration; we never write
  * through the pointer, but the standard signature is mandatory
- * — chapter 131d hit a conflicting-types error compiling
+ * — chapter 178 hit a conflicting-types error compiling
  * libiberty/xstrerror.c against our libc until this was fixed.  */
 static inline char *strerror(int e)
 {

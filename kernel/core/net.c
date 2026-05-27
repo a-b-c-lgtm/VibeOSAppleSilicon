@@ -1,12 +1,12 @@
 /*
- * kernel/core/net.c — milestone-53 in-kernel net stack.
+ * kernel/core/net.c — in-kernel net stack.
  *
  * See net.h for the design rationale.  Three responsibilities,
  * one per section below: ARP cache, RX dispatch, and TX builders.
  *
  * Kept deliberately small (~400 LOC) and policy-light: there's
  * no socket layer here, no DHCP, no TCP, and no IP fragmentation.
- * Those are scheduled for milestones 54/55.
+ * Those live in separate modules.
  */
 
 #include "net.h"
@@ -50,7 +50,7 @@ static uint8_t g_mac[NET_MAC_LEN];
 static uint8_t g_ip [NET_IPV4_LEN];
 static uint8_t g_gw [NET_IPV4_LEN];
 static uint8_t g_msk[NET_IPV4_LEN];
-static uint8_t g_dns[NET_IPV4_LEN];   /* M57: DNS server (0 = unset) */
+static uint8_t g_dns[NET_IPV4_LEN];   /* DNS server (0 = unset) */
 
 /* Forward decl: print_ipv4 is defined later but needed by
  * net_set_dns (which logs the new server). */
@@ -59,11 +59,11 @@ static void print_ipv4(const uint8_t ip[NET_IPV4_LEN]);
 /* Forward decl: rx_dispatch is defined further down (in the RX
  * dispatch section).  We need to call it from the loopback
  * drain helper to inject queued local-bound frames as if they
- * arrived from virtio-net.  See chapter 106. */
+ * arrived from virtio-net.  See chapter 108. */
 static void rx_dispatch(const uint8_t *frame, uint32_t len);
 
 /* ----------------------------------------------------------------
- * Chapter 106 -- loopback enqueue / drain
+ * Chapter 108 -- loopback enqueue / drain
  * ----------------------------------------------------------------
  *
  * When net_ipv4_send_from detects a local destination, it builds
@@ -93,7 +93,7 @@ static void rx_dispatch(const uint8_t *frame, uint32_t len);
  * guarantee forward progress even if some pathological loop
  * keeps refilling the queue.
  *
- * Chapter 106b: bumped to 64 entries (~95 KiB BSS).  At 16
+ * Chapter 110: bumped to 64 entries (~95 KiB BSS).  At 16
  * entries, an httpd write of HTTPD_SEND_CHUNK (16 KiB, ~12
  * MSS-sized segments) plus inbound ACKs overflowed the queue
  * any time the receiver thread didn't drain between writes.
@@ -242,7 +242,7 @@ int net_arp_resolve(const uint8_t ip[NET_IPV4_LEN],
 {
     if (net_arp_lookup(ip, out_mac)) return 1;
     if (net_arp_request(ip) < 0)     return 0;
-    /* Same approach used by the milestone-52 driver self-test:
+    /* Same approach used by the virtio-net driver self-test:
      * we don't have a sleep primitive at boot time, so we spin.
      * Drain the RX ring periodically so any inbound ARP reply
      * gets routed through the dispatcher and into the cache. */
@@ -323,7 +323,7 @@ static int ip_on_local_subnet(const uint8_t ip[NET_IPV4_LEN])
 }
 
 /* ----------------------------------------------------------------
- * Chapter 106 -- loopback predicates and source-address selection
+ * Chapter 108 -- loopback predicates and source-address selection
  * ----------------------------------------------------------------
  *
  * Two halves of one feature:
@@ -395,7 +395,7 @@ int net_ipv4_send_from(const uint8_t src_ip[NET_IPV4_LEN],
     uint8_t frame[ETH_HDR_LEN + 1500];
     if (IPV4_HDR_LEN + payload_len > 1500) return -1;
 
-    /* Chapter 106: loopback short-circuit.
+    /* Chapter 108: loopback short-circuit.
      *
      * If the destination is one of our own addresses (127/8 or
      * the DHCP-assigned g_ip), don't touch virtio-net at all.
@@ -526,7 +526,7 @@ static void rx_handle_ipv4(const uint8_t *frame, uint32_t len)
      * to the client's MAC with dst-IP=0.0.0.0.  We don't yet
      * support multicast.
      *
-     * Chapter 106: also accept loopback destinations -- 127/8 or
+     * Chapter 108: also accept loopback destinations -- 127/8 or
      * our own g_ip -- so the TX short-circuit in net_ipv4_send_from
      * (which re-injects local-bound frames here) lands in the
      * upper layers correctly.  net_is_local_ip already encodes
@@ -562,7 +562,7 @@ static void rx_dispatch(const uint8_t *frame, uint32_t len)
 int net_poll(void)
 {
     int n = virtio_net_drain_rx();
-    /* Chapter 106: drain any loopback frames the TX path queued
+    /* Chapter 108: drain any loopback frames the TX path queued
      * up since the last poll.  Done AFTER the wire drain so any
      * fresh inbound traffic gets a turn first; done BEFORE
      * tcp_poll so the loopback-driven state transitions land

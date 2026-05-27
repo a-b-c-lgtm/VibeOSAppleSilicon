@@ -237,7 +237,7 @@ def main():
               f"(WM -> fontd IPC working, AA glyphs flowing)")
 
         print()
-        print("CHAPTER 108B: USERSPACE FONT SERVER TESTS PASSED")
+        print("CHAPTER 113B: USERSPACE FONT SERVER TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=2.0)

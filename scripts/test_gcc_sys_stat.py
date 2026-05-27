@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""scripts/test_gcc_sys_stat.py -- chapter 132j sys/ headers on /bin.
+"""scripts/test_gcc_sys_stat.py -- chapter 190 sys/ headers on /bin.
 
-Chapter 132i shipped the 24 user-facing libc headers + 16 GCC
+Chapter 189 shipped the 24 user-facing libc headers + 16 GCC
 freestanding headers on /bin and proved `#include <stdio.h>`
 works in-guest.  But `unistd.h` and `sys/*.h` were left out
 because the OSFS-1 directory had no subdirectory support.
 
-Chapter 132j takes the simplest viable path: keep OSFS-1's flat
+Chapter 190 takes the simplest viable path: keep OSFS-1's flat
 namespace, but allow `/` inside the 20-byte name field.  An
 entry literally named `sys/stat.h` is byte-exact-matched by the
 kernel's path resolver when cpp opens `/bin/sys/stat.h`.
@@ -153,7 +153,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 132j] in-guest #include <sys/stat.h>")
+    print("[chapter 190] in-guest #include <sys/stat.h>")
     reformat_data()
     q = boot()
     s = conn()

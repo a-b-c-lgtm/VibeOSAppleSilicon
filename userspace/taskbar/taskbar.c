@@ -1,6 +1,6 @@
 /*
- * userspace/taskbar/taskbar.c — milestone-47 desktop shell taskbar,
- * ported to /srv/wm in chapter 108d.
+ * userspace/taskbar/taskbar.c — desktop shell taskbar,
+ * ported to /srv/wm in chapter 117.
  *
  * A `screen_w x 28` borderless always-on-top window pinned to the
  * bottom of the framebuffer.  Polls wm_list_windows every ~150 ms
@@ -17,16 +17,16 @@
  * (that would be reflexive and visually noisy) and does NOT show
  * any other ALWAYS_ON_TOP windows (taskbars don't list taskbars).
  *
- * Chapter 108d port notes:
+ * Chapter 117 port notes:
  *   - wsd owns the per-window FB and compose; wmclient maps the
  *     FB into our AS so paint primitives stay in-process.
  *   - wm_create_window_at puts us at (0, scanout_h - BAR_H) without
  *     perturbing the cascade for cascade-positioned apps.
  *   - wm_list_windows returns wsd's window table including titles
  *     so we don't need a separate per-window title RPC.
- *   - Focus / minimize state wasn't tracked in chapter 108d,
+ *   - Focus / minimize state wasn't tracked in chapter 117,
  *     so cells rendered as plain non-focused entries there.
- *     chapter 108e moved input/focus routing into wsd and
+ *     chapter 118 moved input/focus routing into wsd and
  *     finished the click-to-raise path.
  */
 #include "../libc/syscall.h"
@@ -97,7 +97,7 @@ static int32_t g_clock_x = 1280 - 80 - 8;
 
 static struct wm_window g_win;
 
-/* chapter 108e — per-cell state captured at last render so
+/* chapter 118 — per-cell state captured at last render so
  * the click handler can resolve "the user clicked at x="
  * back to a win_id WITHOUT re-listing (the list could have
  * changed between the click arriving and our handling it,
@@ -169,7 +169,7 @@ static void draw_cell(int idx, const struct wm_win_desc *info)
     int y = 4;
     int w = CELL_W;
     int h = BAR_H - 8;
-    /* chapter 108e — when a window is minimized, draw its
+    /* chapter 118 — when a window is minimized, draw its
      * cell in the dim CELL_MIN_* palette so the user can
      * see at a glance which apps are hidden and which are
      * visible.  The cell is still clickable; clicking a
@@ -246,7 +246,7 @@ static void render(const struct wm_win_desc *infos, int n)
         if (info->title[0] == 0) continue;
         if (s_eq(info->title, "launcher")) continue;
         draw_cell(n_cells, info);
-        /* chapter 108e — remember which win_id this cell
+        /* chapter 118 — remember which win_id this cell
          * paints, so the click handler can resolve a click
          * x-coordinate back to the right window. */
         g_cells[n_cells].win_id    = info->win_id;
@@ -267,7 +267,7 @@ static void render(const struct wm_win_desc *infos, int n)
 static int g_known_count = -1;       /* count from last render */
 static int g_last_clock_sec = -1;    /* last second value rendered */
 
-/* Chapter 128d: taskbar consumes POSIX `struct tm` + strftime
+/* Chapter 168: taskbar consumes POSIX `struct tm` + strftime
  * directly now that <time.h> exposes them.  The old
  * format_clock helper hand-formatted from struct civil_time. */
 
@@ -313,7 +313,7 @@ static int needs_redraw(const struct wm_win_desc *infos, int n)
      * render() would walk them) and compare to what we last
      * painted.  Triggers a redraw when:
      *   - a window appeared / disappeared
-     *   - a window's minimized bit flipped (chapter 108e)
+     *   - a window's minimized bit flipped (chapter 118)
      *   - the order changed (a raise reorders WM_LIST)
      *   - the launcher's visibility flipped (drives the
      *     Start button's pressed/idle look) */
@@ -403,7 +403,7 @@ int main(void)
             draw_clock();
         }
 
-        /* chapter 108e — drain whatever pointer events the
+        /* chapter 118 — drain whatever pointer events the
          * kernel shadow has queued for us since the last
          * tick.  A MOUSE_DOWN with LEFT inside one of our
          * cells maps back to that cell's win_id (captured at

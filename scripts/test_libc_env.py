@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_libc_env.py -- chapter 116c env arena smoke test.
+"""scripts/test_libc_env.py -- chapter 151 env arena smoke test.
 
 Boots the OS and runs `/bin/envtest`, then asserts the new
 POSIX-shaped env API behaves correctly:
@@ -136,7 +136,7 @@ FAIL_RE = re.compile(rb"\[envtest\]\s+(T\d+)\s+FAIL")
 
 
 def main():
-    print("[chapter 116c] env.h POSIX surface (getenv/setenv/unsetenv/putenv/environ)")
+    print("[chapter 151] env.h POSIX surface (getenv/setenv/unsetenv/putenv/environ)")
     reformat_data()
 
     q = boot()

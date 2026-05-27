@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_rtc.py — chapter 95 smoke test.
+"""scripts/test_rtc.py — chapter 96 smoke test.
 
 Boots the kernel, drops to /bin/sh, runs `/bin/date`, and asserts:
 
@@ -147,7 +147,7 @@ def main():
             return 1
         print(f"PASS: wall clock advanced {delta} s between two `date` "
               f"calls (expected ~1-2)")
-        print("PASS: chapter 95 RTC smoke test")
+        print("PASS: chapter 96 RTC smoke test")
         return 0
     finally:
         q.kill(); q.wait()

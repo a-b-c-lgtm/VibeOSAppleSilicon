@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_pixapp.py — chapter 108a bring-up helper.
+"""scripts/_dbg_pixapp.py — chapter 114 bring-up helper.
 
 Boots osdev, runs `pixapp` in the foreground over serial, and
 dumps everything the kernel + the app print to stdout for
-analysis.  Used during chapter 108a debugging when the
+analysis.  Used during chapter 114 debugging when the
 regression test reports "pixapp did not finish initial paint"
 but we don't yet know whether the WM, the address-space
 install, the libc wrapper, or pixapp itself is at fault.

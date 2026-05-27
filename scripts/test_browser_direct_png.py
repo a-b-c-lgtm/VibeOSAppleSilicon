@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_direct_png.py — chapter 98 end-to-end test.
+"""scripts/test_browser_direct_png.py — chapter 99 end-to-end test.
 
 User-visible bug being regressed against: navigating the browser
 directly to a PNG URL used to feed the raw image bytes through
 the HTML tokenizer, rendering garbled text ("IHDR PLTE IDAT ...")
 instead of the picture.
 
-Chapter 98 added a content-type sniff in load_page(): if the
+Chapter 99 added a content-type sniff in load_page(): if the
 fetched body starts with the PNG signature, the decoded BGRA is
 pre-installed in the per-page image cache under p->url and the
 parser is fed a tiny synthetic wrapper:
@@ -210,7 +210,7 @@ def main():
 
         print(f"PASS: direct PNG navigation rendered the image "
               f"(red={red} green={green} blue={blue})")
-        print("PASS: chapter 98 direct PNG navigation smoke test")
+        print("PASS: chapter 99 direct PNG navigation smoke test")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

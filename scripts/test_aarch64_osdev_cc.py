@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/test_aarch64_osdev_cc.py — chapter 131b smoke test.
+# scripts/test_aarch64_osdev_cc.py — chapter 176 smoke test.
 #
 # NOT in scripts/sweep.sh (host-tool sanity, like 131a's
 # test_binutils_target.py).  Run manually after

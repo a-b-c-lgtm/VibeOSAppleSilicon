@@ -1,7 +1,7 @@
 /* userspace/pipetest/pipetest.c — kernel pipe self-test.
  *
  * Single-process exerciser for SYS_PIPE / SYS_DUP2 / pipe_read /
- * pipe_write / pipe_unref.  No fork yet (milestone 30 only adds
+ * pipe_write / pipe_unref.  No fork yet (the pipes chapter only adds
  * the kernel primitives), so all writes/reads happen in the same
  * thread.  Proves:
  *

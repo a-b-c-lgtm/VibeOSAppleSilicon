@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_forms.py - chapter 109 forms submit regression.
+"""scripts/test_browser_forms.py - chapter 119 forms submit regression.
 
 Boots the OS into the desktop, opens the GUI browser on the local
 /mnt/forms.html fixture, clicks the first submit button via the

@@ -1,13 +1,13 @@
 /*
- * Bitmap font abstraction — Chapter 23.
+ * Bitmap font abstraction — Chapter 22.
  *
- * Originally (chapter 23) this described a fixed-cell monospaced
+ * Originally (chapter 22) this described a fixed-cell monospaced
  * bitmap font: one byte per scan row, MSB = leftmost pixel,
  * `cell_height` rows per glyph, every glyph the same width.
  *
- * Chapter 102 had grown this into a discriminated union (bitmap or
+ * Chapter 104 had grown this into a discriminated union (bitmap or
  * TTF) so the in-kernel renderer could speak to both faces.
- * Chapter 108b moved the TrueType rasteriser out of the kernel
+ * Chapter 115 moved the TrueType rasteriser out of the kernel
  * (it now lives in /bin/fontd, talking to clients over chapter-107
  * IPC) and the kernel-side struct collapsed back to its chapter-23
  * shape: one always-available bitmap font for early boot, panic

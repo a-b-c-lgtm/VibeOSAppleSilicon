@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_libc_stat.py -- chapter 117 stat / fstat / dirent / access smoke test.
+"""scripts/test_libc_stat.py -- chapter 153 stat / fstat / dirent / access smoke test.
 
 Boots the OS, runs /bin/stattest, and asserts the new POSIX
 file-metadata surface:
@@ -130,7 +130,7 @@ FAIL_RE = re.compile(rb"\[stattest\]\s+FAIL:\s+(.+)")
 
 
 def main():
-    print("[chapter 117] stat/fstat/dirent/access POSIX surface")
+    print("[chapter 153] stat/fstat/dirent/access POSIX surface")
     reformat_data()
 
     q = boot()

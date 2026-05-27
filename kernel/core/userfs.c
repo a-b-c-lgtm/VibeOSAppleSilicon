@@ -1,5 +1,5 @@
 /*
- * kernel/core/userfs.c — userspace filesystem servers (chapter 114).
+ * kernel/core/userfs.c — userspace filesystem servers (chapter 140).
  *
  * Implements the kernel half of the simplified-9P RPC: the
  * `g_userfs_ops` vtable, request/reply marshalling over a pair
@@ -29,7 +29,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Chapter 114f — per-request deadline.  5 s is well clear of
+/* Chapter 146 — per-request deadline.  5 s is well clear of
  * any sensible filesystem operation (the slowest legitimate
  * thing in this codebase is a full procfs walk at boot,
  * measured in tens of ms) but short enough that a wedged
@@ -172,7 +172,7 @@ int userfs_call(struct userfs_channel *c,
     req.length   = req_len;
     req.status   = 0;
 
-    /* Chapter 114f — every step of the round-trip shares one
+    /* Chapter 146 — every step of the round-trip shares one
      * absolute deadline.  Snapshot it once at the top so a
      * slow header-write doesn't get the full 5s and then a
      * slow reply-read also get a full 5s (which would let a

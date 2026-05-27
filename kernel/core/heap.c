@@ -27,9 +27,9 @@
  * ----------------
  * The implicit-list walk is O(N) per allocation, which is fine for
  * a teaching kernel where N is in the thousands.  Once N grows
- * past that — chapter 13's threading work pushes it up — we will
+ * past that — chapter 12's threading work pushes it up — we will
  * upgrade to an explicit segregated free list.  Keeping the
- * milestone-3 implementation linear lets the book chapter focus
+ * implementation linear lets the book chapter focus
  * on the *invariants* (alignment, coalescing, the in-use bit)
  * rather than the data structure.
  */
@@ -39,7 +39,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Heap region — set by kheap_init().  Before milestone 6 these
+/* Heap region — set by kheap_init().  Earlier in the book these
  * came from linker-script symbols.  Now the page allocator hands
  * us a chunk and we manage it from there. */
 static uint8_t *heap_start = NULL;
@@ -156,7 +156,7 @@ void kfree(void *ptr)
     if (ptr == NULL)
         return;
 
-    /* M58 DIAG: bounds-check pointer to confirm it's inside the heap. */
+    /* Bounds-check pointer to confirm it's inside the heap. */
     if ((uint8_t *)ptr < heap_start || (uint8_t *)ptr >= heap_end) {
         serial_puts("[heap] PANIC: kfree of out-of-range ptr ");
         serial_puthex((uint64_t)(uintptr_t)ptr);

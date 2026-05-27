@@ -1,5 +1,5 @@
 /*
- * userspace/libfs/userfs.c — chapter 114 user-space filesystem
+ * userspace/libfs/userfs.c — chapter 140 user-space filesystem
  * boilerplate.  See userfs.h for the public API.
  *
  * The serve loop is single-threaded: read one request fully,

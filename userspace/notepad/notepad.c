@@ -1,9 +1,9 @@
 /*
- * userspace/notepad/notepad.c — milestone-43 GUI text editor,
- *                                upgraded in chapters 82 + 84.
+ * userspace/notepad/notepad.c — GUI text editor,
+ *                                upgraded in chapters 83 + 84.
  *
  * A small but real "editor in a window" built on top of the WM
- * (chapter 48) and the virtio-input keyboard (chapter 47).
+ * (chapter 47) and the virtio-input keyboard (chapter 46).
  *
  * Features:
  *   - Window with edit area + status bar at the bottom.
@@ -14,14 +14,14 @@
  *   - Ctrl-S saves the buffer.  If the editor was launched with a
  *     path argument (e.g. `notepad /data/foo.txt`), Ctrl-S saves
  *     to that path.  If launched bare, Ctrl-S opens a modal Save
- *     As dialog (chapter 84) so the user can name the file and
+ *     As dialog (chapter 85) so the user can name the file and
  *     choose to overwrite an existing one.  Re-saves after a
  *     successful Save As go straight to the chosen path.
  *   - Ctrl-Q / ESC quits without saving (ESC inside the Save As
  *     dialog cancels the dialog instead of quitting).
  *   - Status bar shows: filename, line/total, modified flag, hints.
  *
- * Chapter 82 changes:
+ * Chapter 83 changes:
  *   - Default save target moved from /tmp/untitled.txt to
  *     /data/untitled.txt (now that OSFS-2 is the canonical writable
  *     mount).  Existing /tmp paths still work for ephemeral notes.
@@ -30,7 +30,7 @@
  *     RAM until the periodic flusher runs (5 s); fsync makes
  *     "Saved." status mean what users expect: it survives reboot.
  *
- * Chapter 84 changes:
+ * Chapter 85 changes:
  *   - Save As dialog over /data/.  Lists existing entries (so the
  *     user can see what would be overwritten), provides a text
  *     field for the new filename, and shows a "(will overwrite)"
@@ -44,11 +44,11 @@
  *     in the tree; see Makefile NOTEPAD_OBJS.  The split lets
  *     future GUI apps reuse the same dialog without copy-paste.
  *
- * Chapter 108d changes:
+ * Chapter 117 changes:
  *   - Ported off the kernel-WM syscalls (gui_create_window /
  *     gui_fill_rect / gui_draw_text / gui_flush / gui_poll_event /
  *     gui_destroy_window) onto the wsd-backed libgui primitives.
- *     The kernel WM no longer composes pixels in chapter 108d --
+ *     The kernel WM no longer composes pixels in chapter 117 --
  *     wsd does -- so apps draw into their own per-window FB
  *     (struct wm_window::fb), push damage rects with
  *     wm_window_dirty, and pull keyboard events from
@@ -61,9 +61,9 @@
 #include "../libgui/draw.h"
 #include "../libgui/wmclient.h"
 #include "../libgui/save_dialog.h"
-#include "../libc/printf.h"      /* chapter 127 build status marker */
+#include "../libc/printf.h"      /* chapter 163 build status marker */
 
-/* chapter 108e -- WIN_W/WIN_H are now just the CREATE-time
+/* chapter 118 -- WIN_W/WIN_H are now just the CREATE-time
  * defaults.  COLS/ROWS that used to be derived macros are
  * runtime helpers below (after g_win is declared) that read
  * the live FB dims; that way a grip-resize via
@@ -92,10 +92,10 @@
 #define STATUS_FG    GUI_BGRA(0xF0, 0xF0, 0xFF)
 #define MOD_FG       GUI_BGRA(0xFF, 0xC0, 0x40)  /* amber for "*" */
 
-/* Ctrl-letter keystrokes from virtio_input (see chapter 47). */
+/* Ctrl-letter keystrokes from virtio_input (see chapter 46). */
 #define CTRL_S   0x13
 #define CTRL_Q   0x11
-/* Chapter 108 -- system clipboard.  Line-granular for v1: no
+/* Chapter 113 -- system clipboard.  Line-granular for v1: no
  * selection model yet, so Ctrl-C copies the current line,
  * Ctrl-X cuts the current line (copy + delete), Ctrl-V pastes
  * (newlines in the payload split into separate inserted lines).
@@ -104,7 +104,7 @@
 #define CTRL_C   0x03
 #define CTRL_X   0x18
 #define CTRL_V   0x16
-/* Chapter 127 -- the Build button.  Ctrl-B writes the current
+/* Chapter 163 -- the Build button.  Ctrl-B writes the current
  * buffer to /tmp/np_src.c, drops a one-rule Makefile at
  * /tmp/np_build.mk, and spawns /bin/make on it.  The child's
  * exit code is reported via set_status and also printed on
@@ -122,7 +122,7 @@ static int   g_top_row = 0;
 static int   g_dirty   = 0;
 static struct wm_window g_win;
 
-/* chapter 108e -- LIVE FB-derived dimensions.  These
+/* chapter 118 -- LIVE FB-derived dimensions.  These
  * helpers replace the old WIN_W/WIN_H/COLS/ROWS macros at
  * every render-time call site.  Reading off g_win.fb means
  * a wsd resize that lands via wm_window_remap_fb (in the
@@ -145,7 +145,7 @@ static char  g_path[MAX_PATH];
 static char  g_status[128];
 static int   g_status_until_render = 0;   /* one-shot status overrides */
 
-/* Path-chosen flag (chapter 84): when 0, the next Ctrl-S opens
+/* Path-chosen flag (chapter 85): when 0, the next Ctrl-S opens
  * the Save As dialog; when 1, Ctrl-S writes straight to g_path.
  * Bare-launch starts at 0; argv-launch starts at 1. */
 static int   g_path_chosen = 0;
@@ -228,7 +228,7 @@ static int load_file(const char *path)
 /* O_WRONLY (1) | O_CREAT (0100=64) | O_TRUNC (01000=512) = 577. */
 #define OPEN_WRITE_TRUNC 577
 
-/* Chapter 127 forward decls -- build_buffer (defined just below)
+/* Chapter 163 forward decls -- build_buffer (defined just below)
  * calls these; the bodies live with the render helpers further
  * down.  Without these the implicit-decl rule would conflict
  * with the explicit forward decls in the clipboard block. */
@@ -245,7 +245,7 @@ static int save_file(const char *path)
         if (r != g_line_count - 1)
             (void)write(fd, "\n", 1);
     }
-    /* Chapter 82 — force the kernel's write-back cache to disk
+    /* Chapter 83 — force the kernel's write-back cache to disk
      * before we declare "saved".  Without this, all the writes
      * above are buffered in 4 KiB cache slots; close() does not
      * imply durability (fsync does).  fsync on a non-OSFS-2 fd
@@ -256,7 +256,7 @@ static int save_file(const char *path)
     return 0;
 }
 
-/* Chapter 127 -- write the live buffer to `path` without
+/* Chapter 163 -- write the live buffer to `path` without
  * touching g_dirty / g_path.  Used by Build so pressing
  * Ctrl-B never makes notepad think the user's actual file
  * has been saved. */
@@ -275,7 +275,7 @@ static int write_buffer_to(const char *path)
     return 0;
 }
 
-/* Chapter 127 -- the Build button.  Always builds to a fixed
+/* Chapter 163 -- the Build button.  Always builds to a fixed
  * scratch path so the test can find the output reliably, and
  * never modifies whatever file the user is currently editing.
  * The Makefile we generate uses the chapter-126 grammar:
@@ -326,7 +326,7 @@ static void shift_left(char *line, int from, int len_total)
 static void insert_char(char c);
 static void newline(void);
 
-/* ---------------- chapter 108: clipboard ---------------- */
+/* ---------------- chapter 113: clipboard ---------------- */
 
 /* Copy the current line (no trailing newline) to /srv/clipboard.
  * Sets g_status so the user sees a confirmation; failure is
@@ -369,7 +369,7 @@ static void clip_cut_line(void)
 /* Paste -- insert clipboard payload at the cursor.  Newlines in
  * the payload become real newline() calls so multi-line cuts
  * round-trip cleanly.  Bytes outside ASCII printable + \n are
- * silently dropped (chapter 96 covered why we don't want random
+ * silently dropped (chapter 97 covered why we don't want random
  * control bytes editing the buffer). */
 static void clip_paste(void)
 {
@@ -557,7 +557,7 @@ static void render_status(void)
  * it as a "redraw what's underneath" callback without causing a
  * flicker: if this routine damaged, the user would see the bare
  * editor for one compose pass before the dialog overlay landed
- * in the back-buffer and the second damage ran.  See chapter 84. */
+ * in the back-buffer and the second damage ran.  See chapter 85. */
 static void render_to_buffer(void)
 {
     scroll_to_cursor();
@@ -579,7 +579,7 @@ static void render_to_buffer(void)
                       FG_BGRA, BG_BGRA, 0);
     }
 
-    /* Cursor (block). Chapter 102 -- the kernel font is now
+    /* Cursor (block). Chapter 104 -- the kernel font is now
      * proportional, so the cursor's x position must come from
      * measuring the text up to the cursor column rather than from
      * `col * GLYPH_W`. Same for the cursor block's width: we use
@@ -643,7 +643,7 @@ static void set_status(const char *s, int frames)
  * overlay on top and issue a single wm_window_dirty at the end.
  * Calling wm_window_dirty here would briefly show the bare
  * editor (without the dialog) to the user every frame, producing
- * a per-keystroke flicker.  See chapter 84 for the full
+ * a per-keystroke flicker.  See chapter 85 for the full
  * explanation. */
 static void editor_repaint_under(void *ud)
 {
@@ -706,7 +706,7 @@ int main(int argc, char **argv)
         g_path_chosen = 0;
     }
 
-    /* chapter 108e -- mark RESIZABLE so wsd paints the
+    /* chapter 118 -- mark RESIZABLE so wsd paints the
      * bottom-right grip and accepts grip-drags.  The
      * GUI_EVENT_RESIZE handler below remaps the FB and
      * triggers a full repaint; render_to_buffer reads the
@@ -732,7 +732,7 @@ int main(int argc, char **argv)
             wm_destroy_window(&g_win);
             return 0;
         case GUI_EVENT_RESIZE:
-            /* chapter 108e -- wsd resized our backing FB and
+            /* chapter 118 -- wsd resized our backing FB and
              * tore down our old mapping in the same kernel
              * syscall.  We MUST remap before drawing or the
              * next render_to_buffer would translation-fault

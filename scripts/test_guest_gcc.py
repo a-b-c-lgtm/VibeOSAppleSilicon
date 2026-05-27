@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/test_guest_gcc.py - chapter 132e smoke test.
+# scripts/test_guest_gcc.py - chapter 185 smoke test.
 #
 # NOT in scripts/sweep.sh.  Host-side toolchain sanity, run
 # manually after editing the wrapper, libc, or the gcc patch /
@@ -9,7 +9,7 @@
 # each other).
 #
 # What it pins down (iterative; this file grows phase-by-phase
-# the same way chapter 131d -> 131e did):
+# the same way chapter 178 -> 131e did):
 #
 #   Phase 1 (this commit): gmp / mpfr / mpc cross-configure
 #                          under --host=aarch64-osdev with our
@@ -152,7 +152,7 @@ def main():
         if name == "gmp":
             # GMP picks an assembly backend per ABI; force the
             # plain C path so it works with our minimal assembler
-            # support out of the box.  Same flag chapter 132b used
+            # support out of the box.  Same flag chapter 182 used
             # for the host build.
             args += ["--disable-assembly", "ABI=64"]
         if name == "mpfr":
@@ -283,7 +283,7 @@ def _tail_log(path, n):
 
 
 def _stub_libcody(gcc_build):
-    """Chapter 132f trap A: libcody is C++ code that needs the
+    """Chapter 186 trap A: libcody is C++ code that needs the
     full STL (<memory>, <string>, <vector>, ...).  We ship a
     C-only libc; cross-building libcody is a multi-chapter
     rabbit hole on its own.  But cc1 (the C frontend) doesn't

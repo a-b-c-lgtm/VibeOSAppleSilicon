@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # scripts/test_doom_link.py
 # ─────────────────────────────────────────────────────────────────────────────
-# Chapter 133e — in-guest Doom link.
+# Chapter 195 — in-guest Doom link.
 #
 # Boots the OS, extracts pre-built /bin/doomgeneric_objs.tar onto
 # /data (the 80 vendor .o files cross-built by the host so the
@@ -13,7 +13,7 @@
 #
 # Verifies that /data/doomgeneric.elf is produced and is a
 # plausible AArch64 ET_EXEC.  The full compile-then-link end-to-
-# end run lives in scripts/test_doom_full.py + chapter 133f.
+# end run lives in scripts/test_doom_full.py + chapter 196.
 # ─────────────────────────────────────────────────────────────────────────────
 import os, sys, time, socket, subprocess, signal
 
@@ -226,7 +226,7 @@ def main():
         # if we had it.  Simplest: shell out a one-shot reader.
         #
         # We use the existence of the file + the size sanity as
-        # the structural check; chapter 133f will run the binary.
+        # the structural check; chapter 196 will run the binary.
         out = send_cmd(sock, "/bin/wc /data/doomgeneric.elf",
                        timeout=30, idle=3.0)
         # Our /bin/wc prints "<lines> <words> <bytes> <path>"

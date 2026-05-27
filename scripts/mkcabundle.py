@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-mkcabundle.py -- Chapter 112e/112f: build a framed CA bundle for
+mkcabundle.py -- Chapter 128/112f: build a framed CA bundle for
 osdev's in-guest TLS trust store.
 
 Reads CA certificates from one or more inputs and writes a
@@ -16,9 +16,9 @@ Two input formats are accepted, freely intermixable:
     The file is scanned for `static const unsigned char CERT1[] =
     { ... };` and the CERT1[] bytes are appended.  (CERT1 is the
     CA that signed CERT0 in a chain-*.h pair, NOT the leaf --
-    see chapter 112e for the rationale.)
+    see chapter 128 for the rationale.)
 
-  * PEM (chapter 112f):
+  * PEM (chapter 129):
         --pem path/to/roots.pem
     The file is scanned for one or more
     `-----BEGIN CERTIFICATE-----` / `-----END CERTIFICATE-----`
@@ -49,14 +49,14 @@ Why a custom format instead of PEM-at-rest:
 Why CERT1 and not CERT0 for the .h path:
 
   - CERT0 is the end-entity certificate.  Trusting that as an
-    anchor amounts to public-key pinning -- chapter 112b shape,
+    anchor amounts to public-key pinning -- chapter 125 shape,
     not the goal.
   - CERT1 is the CA that signed CERT0.  Trusting it means the
     validator actually verifies CERT0's signature against
     CERT1's public key.  In a 3-tier chain (root -> intermediate
     -> leaf) the intermediate is what gets baked into CHAIN[];
     the root sits separately in cert-root-*.pem and is what
-    chapter 112f bakes into the bundle via --pem so the
+    chapter 129 bakes into the bundle via --pem so the
     validator does the full recursive walk.
 
 Usage:

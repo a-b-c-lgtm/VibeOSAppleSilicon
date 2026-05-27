@@ -1,4 +1,4 @@
-/* userspace/fptest/fptest.c — chapter 129 FP/SIMD-at-EL0 regression.
+/* userspace/fptest/fptest.c — chapter 171 FP/SIMD-at-EL0 regression.
  *
  * Exercises that:
  *   1. Plain double arithmetic runs at EL0 without taking
@@ -181,7 +181,7 @@ static void test_setjmp_fp(void)
 
 int main(void)
 {
-    printf("fptest: chapter 129 FP/SIMD-at-EL0 regression\n");
+    printf("fptest: chapter 171 FP/SIMD-at-EL0 regression\n");
 
     test_basic_fp();
     test_yield_preserves_fp();

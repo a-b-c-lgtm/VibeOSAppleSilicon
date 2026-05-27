@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/test_gcc_target.py — chapter 132a host-tool smoke test.
+# scripts/test_gcc_target.py — chapter 181 host-tool smoke test.
 #
 # NOT added to scripts/sweep.sh because this exercises host
 # source files, not the kernel.  Run manually when you suspect
@@ -26,8 +26,8 @@
 #   6. Print PASS and exit 0.  Anything else exits 1 with FAIL.
 #
 # We don't try to actually configure or build the cross compiler
-# here — that's chapter 132b's job (it needs GMP/MPFR/MPC, which
-# 132a deliberately defers).  Chapter 132a's contract is only
+# here — that's chapter 182's job (it needs GMP/MPFR/MPC, which
+# 132a deliberately defers).  Chapter 181's contract is only
 # that the source tree's configure machinery KNOWS the triple.
 
 import os

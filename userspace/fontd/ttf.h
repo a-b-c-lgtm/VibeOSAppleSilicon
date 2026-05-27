@@ -1,8 +1,8 @@
 /*
- * userspace/fontd/ttf.h — chapter 108b.
+ * userspace/fontd/ttf.h — chapter 115.
  *
  * Userspace port of the TTF rasteriser that previously lived in
- * kernel/device/ttf.{c,h} (chapter 102).  Same algorithms, same
+ * kernel/device/ttf.{c,h} (chapter 104).  Same algorithms, same
  * pixel output — only the headers and the heap allocator differ.
  *
  * The kernel version had to share `struct bitmap_font` and
@@ -12,7 +12,7 @@
  *
  * One face per process: fontd parses DejaVu Sans at startup,
  * caches glyphs at multiple pixel sizes on demand, and answers
- * IPC requests from the WM (and, in chapter 108c, from
+ * IPC requests from the WM (and, in chapter 116, from
  * userspace libgui clients).
  */
 

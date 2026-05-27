@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_clipboard_paste.py -- chapter 108 cross-app paste.
+"""scripts/test_clipboard_paste.py -- chapter 113 cross-app paste.
 
 Proves that bytes copied in process A really do reach the input
 of process B via /srv/clipboard.  The previous chapter-108
@@ -221,7 +221,7 @@ def main():
         #    intermediate IPC log to assert against now -- the
         #    audit line in step 7 is the proof.
 
-        print("\nCROSS-APP PASTE (chapter 114): ALL TESTS PASSED")
+        print("\nCROSS-APP PASTE (chapter 140): ALL TESTS PASSED")
         return 0
     finally:
         try:

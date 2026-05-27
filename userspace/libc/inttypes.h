@@ -1,4 +1,4 @@
-/* userspace/libc/inttypes.h — chapter 130a.
+/* userspace/libc/inttypes.h — chapter 172.
  *
  * Minimum-viable <inttypes.h>: the PRI / SCN format-string
  * macros that upstream code uses with printf for fixed-width

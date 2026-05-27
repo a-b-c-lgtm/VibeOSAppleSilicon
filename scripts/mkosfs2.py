@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """scripts/mkosfs2.py - format an OSFS-2 disk image.
 
-OSFS-2 is the writable on-disk filesystem introduced in chapter 81.
+OSFS-2 is the writable on-disk filesystem introduced in chapter 82.
 This tool produces a freshly-formatted image suitable for the kernel
 to mount on the second virtio-blk device (`build/data.img`).
 
@@ -13,14 +13,14 @@ Layout (matches kernel/core/osfs2.h):
     Block 1           block bitmap (1 bit per block)
     Block 2           inode bitmap (1 bit per inode)
     Block 3..66       inode table (64 blocks * 32 inodes/block = 2048 inodes)
-    Block 67          journal header                       (chapter 83)
-    Block 68..99      journal data slots (32 × 4 KiB)      (chapter 83)
+    Block 67          journal header                       (chapter 84)
+    Block 68..99      journal data slots (32 × 4 KiB)      (chapter 84)
     Block 100..N-1    data blocks
 
 Inode (128 bytes):
     u32 type            0=free, 1=file, 2=dir
     u32 size            in bytes
-    u32 nlink           hard-link count (always 1 in chapter 81)
+    u32 nlink           hard-link count (always 1 in chapter 82)
     u32 mode            permission bits (cosmetic)
     u32 ctime_ms
     u32 mtime_ms
@@ -57,7 +57,7 @@ INODE_TABLE_BLOCKS = INODE_COUNT // INODES_PER_BLOCK   # 64
 BLOCK_BITMAP_BLOCK = 1
 INODE_BITMAP_BLOCK = 2
 INODE_TABLE_BLOCK  = 3
-# Chapter 83 — single-active-transaction physical-block journal.
+# Chapter 84 — single-active-transaction physical-block journal.
 # One header block + one data slot per cache slot (32, see
 # kernel/core/osfs2_cache.c).  Sized to match exactly the maximum
 # transaction the cache can present at flush time.
@@ -70,7 +70,7 @@ ROOT_INODE         = 1
 DIRENT_SIZE        = 64
 DIRENTS_PER_BLOCK  = BLOCK_SIZE // DIRENT_SIZE    # 64
 
-# Superblock layout (chapter 83 extended): magic[8] + 12 × u32.
+# Superblock layout (chapter 84 extended): magic[8] + 12 × u32.
 #   block_size, total_blocks, inode_count,
 #   block_bitmap_block, inode_bitmap_block,
 #   inode_table_block,  inode_table_blocks,
@@ -112,8 +112,8 @@ def format_image(out: Path, files):
         INODE_TABLE_BLOCKS,
         DATA_START_BLOCK,
         ROOT_INODE,
-        JOURNAL_HEADER_BLOCK,    # chapter 83
-        JOURNAL_DATA_BLOCKS,     # chapter 83
+        JOURNAL_HEADER_BLOCK,    # chapter 84
+        JOURNAL_DATA_BLOCKS,     # chapter 84
         0,                       # reserved
     )
     image[0 : len(sb)] = sb

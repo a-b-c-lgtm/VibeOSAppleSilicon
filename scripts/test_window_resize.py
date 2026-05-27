@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""scripts/test_window_resize.py -- chapter 108e resize regression.
+"""scripts/test_window_resize.py -- chapter 118 resize regression.
 
 Exercises the SYS_WIN_FB_RESIZE + wm_window_remap_fb plumbing
-added in chapter 108e:
+added in chapter 118:
 
   1. Boot to desktop.  Launcher is a Start-menu panel anchored
      above the taskbar at (0, 540) via wm_create_window_at,
@@ -327,7 +327,7 @@ def main():
         print(f"PASS: top-left body still notepad BG post-shrink "
               f"({final_body})")
 
-        print("CHAPTER 108e: ALL RESIZE TESTS PASSED")
+        print("CHAPTER 118: ALL RESIZE TESTS PASSED")
         return 0
     finally:
         try: q.kill()

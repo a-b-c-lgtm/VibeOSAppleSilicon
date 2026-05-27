@@ -1,4 +1,4 @@
-/* psci.c — chapter 86 PSCI conduit + CPU_ON wrapper.
+/* psci.c — chapter 87 PSCI conduit + CPU_ON wrapper.
  *
  * Lives in arch/ because the call site is hand-written hvc/smc
  * inline asm.  All the higher-level "wake the secondary core"

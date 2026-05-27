@@ -1,5 +1,5 @@
 /*
- * userspace/libc/clipboard.h — chapter 114 file-based client.
+ * userspace/libc/clipboard.h — chapter 140 file-based client.
  *
  * The clipboard is now a userfs filesystem mounted at
  * /clipboard.  A single file, /clipboard/text, holds the
@@ -22,7 +22,7 @@
  *   clip_get         convenience: open + read + close
  *   clip_clear       convenience: open(O_TRUNC) + close
  *
- * What this header no longer defines (chapter 108 -> 114)
+ * What this header no longer defines (chapter 113 -> 114)
  * -------------------------------------------------------
  *
  *   struct clip_msg, CLIP_OP_*, CLIP_SOCK_PATH,

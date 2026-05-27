@@ -1,5 +1,5 @@
 /*
- * userspace/libc/thread.h — chapter 91 user-space threading.
+ * userspace/libc/thread.h — chapter 92 user-space threading.
  *
  * Three layers, smallest first:
  *
@@ -13,7 +13,7 @@
  *      Spec-equivalent to a Drepper 2-state futex mutex; the
  *      3-state "no waiters" variant would shave a futex_wake
  *      syscall off the uncontended unlock path but is not
- *      worth the complexity for chapter 91.
+ *      worth the complexity for chapter 92.
  *
  *   3. thread_spawn(entry, arg) / thread_join(tid).  These
  *      build on top of clone() + waitpid() to provide a tiny
@@ -21,7 +21,7 @@
  *      is mmap'd anonymously and never freed (see the floor
  *      caveat below).
  *
- * Floor caveats (chapter 91):
+ * Floor caveats (chapter 92):
  *   - No TLS scaffolding.  TPIDR_EL0 is set to 0 by default;
  *     callers can pass a value via clone() if they want, but
  *     libc itself does not use it (no per-thread errno yet).
@@ -177,7 +177,7 @@ static inline void mutex_unlock(mutex_t *m)
     atomic_store32_u((volatile uint32_t *)&m->state, 0);
     /* Wake one (or more — the kernel currently treats `n>=1`
      * as "wake all").  Multiple wakes risk a thundering herd
-     * but the chapter 91 floor doesn't care; we'd either need
+     * but the chapter 92 floor doesn't care; we'd either need
      * a 3-state mutex or per-mutex waiter counting to avoid
      * the wasteful wake-then-block dance. */
     (void)futex_wake((volatile int *)&m->state, 1);
@@ -219,7 +219,7 @@ static inline void mutex_unlock(mutex_t *m)
                                               so the cost in physical
                                               memory is what's
                                               actually touched.  Same
-                                              spirit as M64's main-
+                                              spirit as the earlier main-
                                               thread bump (16→64 KiB)
                                               when the GUI thread
                                               first hit the same
@@ -262,7 +262,7 @@ static inline int thread_join(int tid)
     return code;
 }
 
-/* ── Chapter 92 — thread_spawn_on (CPU-pinned) ─────────────────
+/* ── Chapter 93 — thread_spawn_on (CPU-pinned) ─────────────────
  *
  * Same as thread_spawn but pins the new thread to absolute CPU
  * `cpu_id` for its lifetime.  cpu_id == -1 inherits the calling
@@ -296,7 +296,7 @@ static inline int thread_spawn_on(clone_entry_t entry, void *arg,
     return tid;
 }
 
-/* ── Chapter 93 — thread_spawn_files (shared fd table) ─────────
+/* ── Chapter 94 — thread_spawn_files (shared fd table) ─────────
  *
  * Same as thread_spawn_on but the new thread *shares* the
  * calling thread's fd_table (CLONE_FILES).  Both threads see

@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_net.c — milestone-52 virtio-net driver.
+ * kernel/device/virtio_net.c — virtio-net driver.
  *
  * See virtio_net.h for the public contract and the buffer-layout
  * diagram.  This file follows the same shape as virtio_input.c

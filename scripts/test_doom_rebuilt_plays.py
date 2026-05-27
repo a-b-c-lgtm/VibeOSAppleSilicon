@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-test_doom_rebuilt_plays.py — chapter 133f.
+test_doom_rebuilt_plays.py — chapter 196.
 
 Acceptance test for the in-guest-built doomgeneric.
 

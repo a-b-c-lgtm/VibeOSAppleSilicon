@@ -52,7 +52,7 @@
 extern void cswitch_to(uint64_t *save_sp, uint64_t load_sp);
 extern void thread_trampoline(void);   /* defined in arch/context_switch.S */
 extern void user_trampoline(void);     /* defined in arch/context_switch.S */
-extern void user_clone_trampoline(void); /* chapter 91 — SYS_CLONE child   */
+extern void user_clone_trampoline(void); /* chapter 92 — SYS_CLONE child   */
 
 /* Frame offsets — must match save_context / cswitch_to. */
 #define OFF_X30      240
@@ -63,7 +63,7 @@ extern void user_clone_trampoline(void); /* chapter 91 — SYS_CLONE child   */
 /* ------------------------------------------------------------------
  * Bookkeeping
  *
- * Chapter 89 made `current`, the runqueue, and the EXITED-thread
+ * Chapter 90 made `current`, the runqueue, and the EXITED-thread
  * stack-to-free slot per-CPU; they live in `struct cpu` now (see
  * arch/cpu.h).  The accessors below abstract that for the rest of
  * the file:
@@ -75,7 +75,7 @@ extern void user_clone_trampoline(void); /* chapter 91 — SYS_CLONE child   */
  * touch only this CPU's runq under this CPU's runq_lock.  The
  * remote variant (runq_push_remote) takes a target CPU id, locks
  * that CPU's runq, pushes, and IPIs the target so it can pick the
- * thread up.  No thread ever migrates between CPUs in chapter 89:
+ * thread up.  No thread ever migrates between CPUs in chapter 90:
  * once a thread is on CPU N's runqueue, it stays on CPU N for
  * life.  This deliberately sidesteps the cross-CPU TLB shootdown
  * problem (no need to broadcast `tlbi vmalle1is` when an address
@@ -101,7 +101,7 @@ static inline void set_self(struct thread *t)
     cpu_current()->current = t;
 }
 
-/* Chapter 89 compatibility shim.  Pre-SMP, `g_current` was a
+/* Chapter 90 compatibility shim.  Pre-SMP, `g_current` was a
  * plain `static struct thread *` global.  Keep that spelling for
  * the rest of this file via a macro that expands to the per-CPU
  * accessor.  Each read becomes one MRS TPIDR_EL1 + a load — the
@@ -113,10 +113,10 @@ static inline void set_self(struct thread *t)
  *   `g_current->state = THREAD_RUNNING` --> `cpu_current()->current->state = ...` */
 #define g_current (cpu_current()->current)
 
-/* Chapter 87 — atomic counter for thread/process id allocation.
+/* Chapter 88 — atomic counter for thread/process id allocation.
  * Plain `g_next_id++` was correct on uniprocessor because no
  * other CPU could observe the load without seeing the matching
- * store.  Once chapter 89's scheduler runs thread_create on
+ * store.  Once chapter 90's scheduler runs thread_create on
  * CPU 1 the same `++` becomes a lost-update race.  Switching
  * to atomic_add_return32 is free in the uncontended case (one
  * extra LDAXR/STLXR pair vs. a plain LDR/STR) and removes the
@@ -229,7 +229,7 @@ static void runq_push_remote(uint32_t cpu_id, struct thread *t)
 static inline void runq_push(struct thread *t) { runq_push_local(t); }
 static inline struct thread *runq_pop(void)    { return runq_pop_local(); }
 
-/* Chapter 92 — push `t` onto its HOME CPU's runqueue.  If
+/* Chapter 93 — push `t` onto its HOME CPU's runqueue.  If
  * t->home_cpu is the current CPU this is a plain runq_push_local;
  * otherwise it routes via runq_push_remote and an IPI_RESCHED so
  * the target wakes from WFI promptly.  Used by the wake-side code
@@ -263,7 +263,7 @@ static void thread_set_name(struct thread *t, const char *src)
  * itself: the parent's wait() needs to read exit_code first.  The
  * struct is freed inside thread_wait when the child is reaped.
  *
- * Chapter 89: this slot is per-CPU (struct cpu::stack_to_free).
+ * Chapter 90: this slot is per-CPU (struct cpu::stack_to_free).
  * Two CPUs can each have a thread call thread_exit() at the same
  * moment; a single global slot would lose one of the two.  Each
  * CPU drains its own slot at the top of yield(). */
@@ -322,9 +322,9 @@ void thread_init(void)
     /* Empty env: two NUL bytes mark an empty list. */
     boot->env[0]     = '\0';
     boot->env[1]     = '\0';
-    /* Chapter 92 — boot thread runs on CPU 0 (we're the boot CPU). */
+    /* Chapter 93 — boot thread runs on CPU 0 (we're the boot CPU). */
     boot->home_cpu   = 0;
-    /* Chapter 93 — fdt is allocated by vfs_init_fdtable; NULL
+    /* Chapter 94 — fdt is allocated by vfs_init_fdtable; NULL
      * in advance so the function knows we want a fresh table
      * (a non-NULL value would mean "caller already attached one
      * via CLONE_FILES" and the alloc would be skipped). */
@@ -369,7 +369,7 @@ struct thread *thread_create(thread_entry_fn entry,
     for (int s = 0; s < 32; s++) t->sig_handlers[s] = 0;
     t->sig_restorer = 0;
     t->strace     = NULL;  /* opt-in via sys_trace_me; never inherited */
-    /* Chapter 92 — kernel thread inherits the creating CPU as
+    /* Chapter 93 — kernel thread inherits the creating CPU as
      * its home.  thread_create is the "spawn here" path; the
      * remote variant is thread_create_on. */
     t->home_cpu   = cpu_current_id();
@@ -406,7 +406,7 @@ struct thread *thread_create(thread_entry_fn entry,
     } else {
         t->env[0] = '\0'; t->env[1] = '\0';
     }
-    /* Chapter 93 — fresh refcounted fd_table per thread_create. */
+    /* Chapter 94 — fresh refcounted fd_table per thread_create. */
     t->fdt = NULL;
     vfs_init_fdtable(t);
     all_push(t);
@@ -442,7 +442,7 @@ struct thread *thread_create(thread_entry_fn entry,
 
 /*
  * thread_create_on — like thread_create but enqueues onto a chosen
- * CPU's runqueue.  Used by the chapter 89 SMP smoke test and
+ * CPU's runqueue.  Used by the chapter 90 SMP smoke test and
  * eventually by anything else that wants to balance kernel work
  * across CPUs.
  *
@@ -485,10 +485,10 @@ struct thread *thread_create_on(uint32_t cpu_id,
     for (int s = 0; s < 32; s++) t->sig_handlers[s] = 0;
     t->sig_restorer = 0;
     t->strace     = NULL;
-    /* Chapter 92 — explicit placement.  home_cpu is the
+    /* Chapter 93 — explicit placement.  home_cpu is the
      * caller-supplied target. */
     t->home_cpu   = cpu_id;
-    /* Chapter 93 — fresh refcounted fd_table per thread_create_on. */
+    /* Chapter 94 — fresh refcounted fd_table per thread_create_on. */
     t->fdt = NULL;
     vfs_init_fdtable(t);
     all_push(t);
@@ -555,10 +555,10 @@ int thread_secondary_init_idle(const char *name)
     for (int s = 0; s < 32; s++) idle->sig_handlers[s] = 0;
     idle->sig_restorer = 0;
     idle->strace     = NULL;
-    /* Chapter 92 — idle's home is the CPU it lives on. */
+    /* Chapter 93 — idle's home is the CPU it lives on. */
     idle->home_cpu   = cpu_current_id();
     idle->sp         = 0;   /* filled in by first cswitch_to */
-    /* Chapter 93 — idle threads carry a private (unused) fd table
+    /* Chapter 94 — idle threads carry a private (unused) fd table
      * just like every other thread; cheaper than special-casing
      * the close path on idle. */
     idle->fdt        = NULL;
@@ -616,9 +616,9 @@ struct thread *user_thread_create(uint64_t user_entry_va,
     for (int s = 0; s < 32; s++) t->sig_handlers[s] = 0;
     t->sig_restorer = 0;
     t->strace     = NULL;
-    /* Chapter 92 — user thread runs on the creating CPU.  All
+    /* Chapter 93 — user thread runs on the creating CPU.  All
      * existing user_thread_create callers (sys_spawn family,
-     * sys_exec) run on CPU 0, so this preserves the chapter 91
+     * sys_exec) run on CPU 0, so this preserves the chapter 92
      * floor automatically. */
     t->home_cpu   = cpu_current_id();
     /* Inherit cwd from the spawning thread (the kernel-side
@@ -651,7 +651,7 @@ struct thread *user_thread_create(uint64_t user_entry_va,
     } else {
         t->env[0] = '\0'; t->env[1] = '\0';
     }
-    /* Chapter 93 — fresh refcounted fd_table per user_thread_create. */
+    /* Chapter 94 — fresh refcounted fd_table per user_thread_create. */
     t->fdt = NULL;
     vfs_init_fdtable(t);
     all_push(t);
@@ -678,7 +678,7 @@ struct thread *user_thread_create(uint64_t user_entry_va,
 }
 
 /*
- * user_thread_create_shared — chapter 91.
+ * user_thread_create_shared — chapter 92.
  *
  * Like user_thread_create, with three differences:
  *
@@ -701,7 +701,7 @@ struct thread *user_thread_create(uint64_t user_entry_va,
  *   3. The thread is born with NO file descriptors copied from
  *      the parent (FDs are explicitly per-thread in this floor).
  *      Pre-chapter-91 every fork/spawn/exec inherited fds; in
- *      chapter 91 the threading test does not need shared fds
+ *      chapter 92 the threading test does not need shared fds
  *      and per-thread fds are simpler than reference-counted
  *      fd tables.  Document the limitation in the chapter.
  *
@@ -716,7 +716,7 @@ struct thread *user_thread_create_shared(uint64_t user_entry_va,
                                          uint64_t arg,
                                          uint64_t tls)
 {
-    /* Chapter 91 entry point — preserves the original "spawn on
+    /* Chapter 92 entry point — preserves the original "spawn on
      * the creating CPU" semantics by passing cpu_id = -1 to the
      * chapter-92 _on() variant. */
     return user_thread_create_shared_on(user_entry_va, user_sp_top,
@@ -731,7 +731,7 @@ struct thread *user_thread_create_shared_on(uint64_t user_entry_va,
                                             uint64_t tls,
                                             int cpu_id)
 {
-    /* Chapter 92 entry point — preserves the original "fresh
+    /* Chapter 93 entry point — preserves the original "fresh
      * fd_table per thread" semantics by passing share_fdt = 0. */
     return user_thread_create_shared_files_on(user_entry_va, user_sp_top,
                                               name, as, arg, tls,
@@ -739,7 +739,7 @@ struct thread *user_thread_create_shared_on(uint64_t user_entry_va,
 }
 
 /*
- * user_thread_create_shared_files_on — chapter 93.
+ * user_thread_create_shared_files_on — chapter 94.
  *
  * Same as user_thread_create_shared_on, with one extra knob:
  * `share_fdt`.  When non-zero AND the caller (g_current) has an
@@ -747,7 +747,7 @@ struct thread *user_thread_create_shared_on(uint64_t user_entry_va,
  * fd_table by reference (fd_table_share bumps the refcount)
  * instead of allocating a fresh one.  When zero (the default
  * preserved by the legacy _on entry point) the new thread gets
- * its own private table just like chapter 92 did.
+ * its own private table just like chapter 93 did.
  *
  * This is the kernel-side primitive sitting under SYS_CLONE3
  * with CLONE_FILES — see sys_clone3.
@@ -808,7 +808,7 @@ struct thread *user_thread_create_shared_files_on(uint64_t user_entry_va,
     for (int s = 0; s < 32; s++) t->sig_handlers[s] = 0;
     t->sig_restorer = 0;
     t->strace     = NULL;
-    /* Chapter 92 — pin the new thread to the resolved CPU. */
+    /* Chapter 93 — pin the new thread to the resolved CPU. */
     t->home_cpu   = target_cpu;
     /* Inherit cwd / env from the creating thread (same logic as
      * user_thread_create — the new thread is logically part of
@@ -840,9 +840,9 @@ struct thread *user_thread_create_shared_files_on(uint64_t user_entry_va,
     } else {
         t->env[0] = '\0'; t->env[1] = '\0';
     }
-    /* Chapter 93 — fd table policy depends on share_fdt:
+    /* Chapter 94 — fd table policy depends on share_fdt:
      *   share_fdt == 0:  allocate a fresh refcounted fd_table
-     *                    just like chapter 91/92 (the default
+     *                    just like chapter 92/92 (the default
      *                    seen by every existing caller of the
      *                    plain `_on` entry point).
      *   share_fdt != 0:  adopt the parent's fd_table by
@@ -883,7 +883,7 @@ struct thread *user_thread_create_shared_files_on(uint64_t user_entry_va,
 
     t->sp = (uint64_t)(uintptr_t)frame;
 
-    /* Chapter 92 — route to home_cpu's runqueue.  When
+    /* Chapter 93 — route to home_cpu's runqueue.  When
      * target_cpu == cpu_current_id() this is runq_push_local;
      * otherwise it goes to the remote CPU's runq + IPI_RESCHED. */
     runq_push_to(t);
@@ -900,7 +900,7 @@ void thread_rename(struct thread *t, const char *new_name)
 }
 
 /* ----------------------------------------------------------------
- * Chapter 99 — /proc snapshot helpers.
+ * Chapter 101 — /proc snapshot helpers.
  *
  * Each helper grabs g_all_lock (with IRQs masked, like every
  * other writer of this list), walks g_all_head, and copies the
@@ -975,7 +975,7 @@ int thread_snapshot_pid(int pid, struct thread_snap *out)
     return hit;
 }
 
-/* Chapter 100 — render /proc/<pid>/trace.  Holds g_all_lock for
+/* Chapter 102 — render /proc/<pid>/trace.  Holds g_all_lock for
  * the duration of the render so the target thread cannot exit
  * and be freed underneath us.  The rendered text is bounded
  * (PROCFS_MAX_FILE = 8 KiB) and the formatter takes no other
@@ -1038,7 +1038,7 @@ int thread_live_count(void)
  * with explicit overrides).
  *
  * Sockets are NOT inherited — the single-owner refcount model
- * for tcp_cid (M64) does not yet handle multi-thread close
+ * for tcp_cid does not yet handle multi-thread close
  * races.  Apps that need this can re-connect in the child.
  */
 void thread_inherit_fds(struct thread *child, struct thread *parent)
@@ -1047,8 +1047,8 @@ void thread_inherit_fds(struct thread *child, struct thread *parent)
         const struct fd_entry *src = &parent->fdt->fds[fd];
         if (!src->in_use) continue;
         if (src->kind == FD_SOCKET) continue;
-        if (src->kind == FD_SOCKET_LISTEN) continue;  /* chapter 104 */
-        /* Chapter 107 — /srv listeners are single-owner like
+        if (src->kind == FD_SOCKET_LISTEN) continue;  /* chapter 106 */
+        /* Chapter 112 — /srv listeners are single-owner like
          * TCP listeners; the kernel-side registry keys on pid
          * via srv_listen.owner_pid and an inherited listener
          * fd would let the child accept on the parent's name
@@ -1093,7 +1093,7 @@ void thread_inherit_fds(struct thread *child, struct thread *parent)
             dst->pty->s2m->w_refs++;
         }
         else if (dst->kind == FD_USERFS_FILE && dst->userfs_ch) {
-            /* Chapter 114 — the channel tracks how many fd
+            /* Chapter 140 — the channel tracks how many fd
              * entries (across all processes) reference it; the
              * child's close will decrement, so the parent's
              * open must be matched by an increment here. */
@@ -1145,7 +1145,7 @@ struct thread *thread_fork_user(struct thread *parent,
     t->parent_id  = parent->id;
     t->exit_code  = 0;
     t->state      = THREAD_READY;
-    /* Chapter 92 — set home_cpu for the SMP scheduler.  Every
+    /* Chapter 93 — set home_cpu for the SMP scheduler.  Every
      * other thread-creation path in this file does this; fork
      * was missed in the chapter-92 sweep, leaving home_cpu as
      * whatever garbage kmalloc returned.  When that garbage was
@@ -1173,7 +1173,7 @@ struct thread *thread_fork_user(struct thread *parent,
      * exec() resets them — see sys_exec. */
     for (int s = 0; s < 32; s++) t->sig_handlers[s] = parent->sig_handlers[s];
     t->sig_restorer = parent->sig_restorer;
-    /* Chapter 100 — tracing is NOT inherited.  POSIX strace
+    /* Chapter 102 — tracing is NOT inherited.  POSIX strace
      * follows exec but not fork by default; we match that. */
     t->strace     = NULL;
 
@@ -1216,8 +1216,8 @@ struct thread *thread_fork_user(struct thread *parent,
      * one side in either thread leaves the other intact.  See
      * thread_inherit_fds for the full rules (also called from
      * sys_spawn{,_pipe,_redir} so a shell with a pty stdio
-     * propagates the pty into its children — chapter 79b). */
-    /* Chapter 93 — fork() copies the fd_table (it does not share
+     * propagates the pty into its children — chapter 79). */
+    /* Chapter 94 — fork() copies the fd_table (it does not share
      * it).  We allocate a fresh refcounted table on the child,
      * then thread_inherit_fds populates it slot-by-slot from
      * the parent.  CLONE_FILES sharing is opt-in via SYS_CLONE3
@@ -1229,7 +1229,7 @@ struct thread *thread_fork_user(struct thread *parent,
     all_push(t);
 
     /* Build the 816-byte exception/cswitch frame (272 GPR/ELR/SPSR
-     * + 16 SP_EL0+pad + 528 FP state since chapter 129). */
+     * + 16 SP_EL0+pad + 528 FP state since chapter 171). */
     uint8_t *frame_top   = stack + THREAD_STACK_SIZE;
     uintptr_t top_aligned = ((uintptr_t)frame_top) & ~((uintptr_t)0xF);
     uint8_t *frame        = (uint8_t *)(top_aligned - FRAME_SIZE);
@@ -1297,12 +1297,12 @@ void yield(void)
      * thread_sleep_ms() loop tests the wall clock independently
      * so it doesn't need state-mutation help here.
      *
-     * CHAPTER 92 — both CPUs may now run this walk.  We hold
+     * CHAPTER 93 — both CPUs may now run this walk.  We hold
      * g_all_lock for the iteration so a concurrent fork/exit on
      * the other CPU can't be modifying the list, and we route
      * each wake via runq_push_to so a CPU-0-pinned sleeper that
      * gets noticed first by CPU 1 still lands on CPU 0's runq
-     * (preserving home_cpu affinity).  Pre-chapter 92 this walk
+     * (preserving home_cpu affinity).  Pre-chapter 93 this walk
      * was gated on cpu_current_id() == 0 because runq_push went
      * to the LOCAL runq — so CPU 1 would have stolen sleepers
      * onto itself and silently corrupted their AS-on-stack. */
@@ -1315,7 +1315,7 @@ void yield(void)
                 t->state = THREAD_READY;
                 runq_push_to(t);
             }
-            /* Chapter 114f — deadline-aware blockers (any thread
+            /* Chapter 146 — deadline-aware blockers (any thread
              * parked via thread_block_on_until) get re-readied
              * here too, looking like a regular wake to the caller.
              * wake_at_ms == 0 means "no deadline" so we skip
@@ -1335,7 +1335,7 @@ void yield(void)
 
     if (!next) {
         /* Runq empty.  If this CPU has an idle thread and we're
-         * not already running it, switch to it now (chapter 89).
+         * not already running it, switch to it now (chapter 90).
          * Otherwise keep running prev.  Restore the caller's
          * IRQ state since we never go through eret. */
         struct thread *idle = cpu_current()->idle;
@@ -1357,7 +1357,7 @@ void yield(void)
      * If prev->state is EXITED, WAITING, or SLEEPING we also do
      * not re-enqueue. */
 
-    /* Chapter 92 — prev==next fast-path.  Can happen if a
+    /* Chapter 93 — prev==next fast-path.  Can happen if a
      * cross-CPU wake fired while we were inside thread_block_on
      * (between state=BLOCKED and the actual cswitch); the wake
      * marked us READY and pushed us back onto our home runq,
@@ -1383,10 +1383,10 @@ void yield(void)
     if (next->as != prev->as)
         address_space_activate(next->as);
 
-    /* M58 DIAG: trap any thread whose saved kernel sp lies outside
+    /* Trap any thread whose saved kernel sp lies outside
      * the heap region OR a known kernel stack region.  Heap is
      * 0x80000000..0x90000000 (256 MiB).  Boot stack is the
-     * linker-defined [stack_bottom, stack_top) region.  Chapter 89
+     * linker-defined [stack_bottom, stack_top) region.  Chapter 90
      * adds the secondary boot stacks region for per-CPU idle
      * threads, which run on .secondary_stacks (not heap). */
     extern uint8_t stack_bottom[], stack_top[];
@@ -1425,7 +1425,7 @@ void thread_sleep_ms(uint64_t ms)
      * the wake-up walk simple (it doesn't have to special-case
      * current) and is robust to spurious wakeups. */
     while (timer_ticks() * (uint64_t)TICK_INTERVAL_MS < target) {
-        /* Chapter 79b: if a signal has landed (e.g. Ctrl-C from
+        /* Chapter 79: if a signal has landed (e.g. Ctrl-C from
          * gui_term while we're inside `sleep 30`), break out
          * early.  The dispatcher's pre-eret sig_pending check
          * will then terminate the thread with code 128+SIGINT
@@ -1460,7 +1460,7 @@ void thread_block_on(void *token)
      * state to RUNNING.  blocked_on was cleared by the waker. */
 }
 
-/* Chapter 114f — deadline-aware block.  Stashes the absolute
+/* Chapter 146 — deadline-aware block.  Stashes the absolute
  * monotonic deadline in wake_at_ms so the yield-time sleeper
  * walk can re-ready us when the wall clock crosses it.  The
  * walk routes a deadline-expired BLOCKED thread through the
@@ -1482,7 +1482,7 @@ void thread_block_on_until(void *token, uint64_t deadline_ms)
     g_current->wake_at_ms = 0;
 }
 
-/* Chapter 92 — global-lock helpers used by the futex slow path.
+/* Chapter 93 — global-lock helpers used by the futex slow path.
  *
  * thread_global_lock takes g_all_lock with IRQs masked and
  * returns the saved DAIF cookie so the caller can release
@@ -1529,11 +1529,11 @@ void thread_block_on_held(void *token, uint64_t flags)
 void thread_wake_blocked(void *token)
 {
     if (!token) return;
-    /* Chapter 92 — hold g_all_lock while iterating so the walk
+    /* Chapter 93 — hold g_all_lock while iterating so the walk
      * is safe on either CPU and route each wake via
      * runq_push_to so a thread blocked on CPU 0 that gets woken
      * by CPU 1 (e.g. a futex unlock from the parser thread on
-     * CPU 1) lands back on CPU 0's runq.  Pre-chapter 92 this
+     * CPU 1) lands back on CPU 0's runq.  Pre-chapter 93 this
      * was unsynchronised and used runq_push (always local) — fine
      * when only CPU 0 ran user code, broken once CPU 1 does. */
     uint64_t f = irq_save_disable();
@@ -1628,12 +1628,12 @@ void thread_exit(int code)
      * doesn't keep painting orphans after the app dies. */
     wm_destroy_owner((uint64_t)g_current->id);
 
-    /* Chapter 108d — if this thread was holding the
+    /* Chapter 117 — if this thread was holding the
      * framebuffer mapping (i.e. it was the WSD), release the
      * single-owner slot so a respawned WSD can re-claim. */
     wsd_fb_release_owner((uint64_t)g_current->id);
 
-    /* Chapter 108d — release every shareable per-
+    /* Chapter 117 — release every shareable per-
      * window backing object this pid owned or mapped.  Must
      * run BEFORE address_space_destroy so the mapping-AS
      * pointers in g_table[] never dangle. */
@@ -1645,7 +1645,7 @@ void thread_exit(int code)
      * consumer waiting on read, and the pipeline hangs. */
     vfs_close_all(g_current);
 
-    /* Chapter 114 — state MUST flip to EXITED only after
+    /* Chapter 140 — state MUST flip to EXITED only after
      * vfs_close_all returns.  Userfs-backed close() goes
      * through pipe_read which calls thread_block_on() —
      * that overwrites state to BLOCKED and the matching wake
@@ -1702,7 +1702,7 @@ void thread_exit(int code)
         struct thread *p = thread_lookup(g_current->parent_id);
         if (p && p->state == THREAD_WAITING) {
             p->state = THREAD_READY;
-            /* Chapter 92 — a child can exit on a different CPU
+            /* Chapter 93 — a child can exit on a different CPU
              * than its parent runs on (e.g. parser thread on
              * CPU 1 dies while main is on CPU 0).  Route the
              * waker back to the parent's home CPU. */
@@ -1758,7 +1758,7 @@ void thread_signal_pid(int pid, int sig)
      * as they wake. */
     t->sig_pending |= ((uint32_t)1 << sig);
 
-    /* Chapter 79b — if the target is currently THREAD_BLOCKED
+    /* Chapter 79 — if the target is currently THREAD_BLOCKED
      * (e.g. sh sitting in pipe_read on the pty's m2s ring),
      * wake it so the next syscall return path notices the
      * pending signal.  Without this, Ctrl-C from gui_term
@@ -1777,7 +1777,7 @@ void thread_signal_pid(int pid, int sig)
     if (t->state == THREAD_BLOCKED || t->state == THREAD_SLEEPING) {
         t->blocked_on = NULL;
         t->state      = THREAD_READY;
-        /* Chapter 92 — the signal might be raised from any CPU
+        /* Chapter 93 — the signal might be raised from any CPU
          * (e.g. a Ctrl-C arriving on the gui_term thread on
          * CPU 1 against a sleep'ing shell on CPU 0).  Route
          * the wake back to the target's home CPU. */

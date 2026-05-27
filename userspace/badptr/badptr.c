@@ -1,10 +1,11 @@
-/* userspace/badptr/badptr.c — milestone 16 syscall-pointer test.
+/* userspace/badptr/badptr.c — syscall-pointer test.
  *
  * Tries to trick the kernel into reading kernel memory into a
  * user-controlled buffer by passing a kernel address as the buf
- * argument to sys_read.  Pre-milestone-16 the kernel would have
+ * argument to sys_read.  Before the kernel/user boundary chapter
+ * the kernel would have
  * happily memcpy'd 16 bytes from /motd into kernel address
- * 0x230000000 (clobbering the heap).  After milestone 16 the
+ * 0x230000000 (clobbering the heap).  After that chapter the
  * uaccess_check / copy_from_user bounds check rejects this with
  * -EFAULT and the program prints the failure cleanly.
  *

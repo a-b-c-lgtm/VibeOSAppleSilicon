@@ -1,4 +1,4 @@
-/* userspace/chldtest/chldtest.c \u2014 chapter 78 SIGCHLD + waitpid test.
+/* userspace/chldtest/chldtest.c \u2014 chapter 77 SIGCHLD + waitpid test.
  *
  * Five checks, all gated on `[chldtest] FAIL` lines:
  *

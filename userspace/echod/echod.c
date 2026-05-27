@@ -1,5 +1,5 @@
 /*
- * userspace/echod/echod.c -- chapter 104 / M93 demo daemon.
+ * userspace/echod/echod.c -- chapter 106 demo daemon.
  *
  * The smallest interesting program that exercises the new
  * server-side socket syscalls (`socket_listen` + `socket_accept`).
@@ -21,7 +21,7 @@
  * is unallocated in our environment and easy to remember.
  *
  * Why one connection at a time?  We don't have non-blocking
- * accept or select() yet (chapter 105 territory).  An echo
+ * accept or select() yet (chapter 107 territory).  An echo
  * daemon serialised on `socket_accept` is sufficient to prove
  * the new syscalls work end-to-end and keeps the source tiny.
  */

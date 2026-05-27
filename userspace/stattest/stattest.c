@@ -1,4 +1,4 @@
-/* userspace/stattest/stattest.c -- chapter 117 smoke test.
+/* userspace/stattest/stattest.c -- chapter 153 smoke test.
  *
  * Drives the new POSIX shape:
  *   1. stat("/mnt/hello.txt") returns S_IFREG with a real size.

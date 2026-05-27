@@ -95,7 +95,7 @@ cswitch_to:
     mrs     x16, sp_el0
     stp     x16, xzr, [sp, #272]    /* sp_el0 (+ pad for 16-byte align) */
 
-    /* Chapter 129 — save FP/SIMD state into the frame.
+    /* Chapter 171 — save FP/SIMD state into the frame.
      *
      * Layout from offset 288:
      *   288..303  q0,  q1
@@ -145,12 +145,12 @@ cswitch_to:
     ldr     x16, [sp, #0]           /* x16 = save_sp pointer       */
     mov     x17, sp
 
-    /* M58 DIAG: trap if the SP we are about to save is outside the
+    /* Trap if the SP we are about to save is outside the
      * heap range [0x80000000, 0x90000000), the boot-stack range
-     * [stack_bottom, stack_top], OR (chapter 89) the secondary
+     * [stack_bottom, stack_top], OR (chapter 90) the secondary
      * boot-stack range [secondary_stacks_bottom,
-     * secondary_stacks_top].  Originally caught the M58
-     * boot->sp=0x400d8310 corruption; chapter 89 added the third
+     * secondary_stacks_top].  Originally caught a
+     * boot->sp=0x400d8310 corruption; chapter 90 added the third
      * range so per-CPU idle threads (which run on .secondary_stacks)
      * pass the check. */
     mov     x6, #0x80000000
@@ -172,7 +172,7 @@ cswitch_to:
     b.hi    9005f                   /* above boot stack -> try secondary */
     b       9001f                   /* in boot stack -> OK */
 9005:
-    /* Try secondary boot stacks (chapter 89: idle threads on
+    /* Try secondary boot stacks (chapter 90: idle threads on
      * CPU >= 1 live here). */
     adrp    x6, secondary_stacks_bottom
     add     x6, x6, :lo12:secondary_stacks_bottom
@@ -284,7 +284,7 @@ cswitch_to:
     ldr     x16, [sp, #272]
     msr     sp_el0, x16
 
-    /* Chapter 129 — restore FP/SIMD state before GPRs.  Same
+    /* Chapter 171 — restore FP/SIMD state before GPRs.  Same
      * layout as the save side at offset 288.  Doing this here
      * (before the GPR restore) keeps x16/x17 free as scratch
      * for fpsr/fpcr; the subsequent ldp x16, x17 from offset 128
@@ -431,7 +431,7 @@ user_trampoline:
  * The child's first user-mode instruction is therefore
  *   entry(arg)
  * with TPIDR_EL0 set up so libc's per-thread state can be reached
- * via `mrs <reg>, tpidr_el0` (chapter 91 doesn't actually use TLS
+ * via `mrs <reg>, tpidr_el0` (chapter 92 doesn't actually use TLS
  * yet — the slot is reserved so future per-thread errno / __thread
  * variables don't need another syscall to set up). */
 .global user_clone_trampoline

@@ -19,7 +19,7 @@ cd "$(dirname "$0")/.."
 # pages it explicitly sees there.  Override with QEMU_MEM=16G ...
 QEMU_MEM=${QEMU_MEM:-8G}
 
-# CPU count baked into the dumped DTB's /cpus node.  Chapter 86
+# CPU count baked into the dumped DTB's /cpus node.  Chapter 87
 # (PSCI secondary boot) reads this to decide how many cores to
 # wake.  Must match (or be >= ) the `-smp` value passed to QEMU
 # when running the kernel; extra DTB cpus that aren't actually

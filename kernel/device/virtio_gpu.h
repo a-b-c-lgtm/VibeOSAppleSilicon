@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_gpu.h — milestone-38 virtio-gpu driver (2D).
+ * kernel/device/virtio_gpu.h — virtio-gpu driver (2D).
  *
  * Smallest-possible path that puts pixels onto a real display through
  * QEMU's virtio-gpu emulation:
@@ -19,7 +19,7 @@
  * The cursor queue (virtqueue 1) is required to exist by the spec but
  * QEMU does not enforce it for the commands we issue.  We omit it.
  *
- * Design choices for milestone 38:
+ * Design choices for the initial bring-up:
  *   - One scanout (output 0).  QEMU defaults to a single output unless
  *     `-device virtio-gpu-device,max_outputs=...` is set.
  *   - One resource (id = 1) sized to the scanout's reported geometry.

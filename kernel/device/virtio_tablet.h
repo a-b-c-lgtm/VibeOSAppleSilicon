@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_tablet.h — milestone-41 virtio-input tablet.
+ * kernel/device/virtio_tablet.h — virtio-input tablet.
  *
  * On the QEMU `virt` machine the simplest pointing device is the
  * `-device virtio-tablet-device`, which speaks Linux evdev with

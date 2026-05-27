@@ -1,18 +1,18 @@
 /*
  * kernel/core/mmap_uapi.h — shared kernel/userspace mmap constants.
  *
- * Chapter 90 ships a deliberately-tiny subset of the POSIX mmap
+ * Chapter 91 ships a deliberately-tiny subset of the POSIX mmap
  * interface.  Numbers picked to match Linux/glibc where it costs
  * nothing — that way userspace code can be ported without a
  * translation table.
  *
- * What chapter 90 supports:
+ * What chapter 91 supports:
  *   PROT_READ | PROT_WRITE          (PROT_EXEC ignored, treated as 0)
  *   MAP_PRIVATE
  *   MAP_ANONYMOUS                   (must be paired with MAP_PRIVATE)
  *   MAP_PRIVATE | (regular file fd) at PROT_READ                 only
  *
- * What chapter 90 does NOT support (returns -EINVAL):
+ * What chapter 91 does NOT support (returns -EINVAL):
  *   MAP_SHARED                       (no writeback path yet)
  *   MAP_FIXED                        (kernel always picks the VA)
  *   PROT_NONE                        (would need guard-page support)
@@ -23,7 +23,7 @@
 #ifndef MMAP_UAPI_H
 #define MMAP_UAPI_H
 
-/* prot bits.  PROT_EXEC is accepted but ignored — chapter 90 maps
+/* prot bits.  PROT_EXEC is accepted but ignored — chapter 91 maps
  * everything UXN=1 (no EL0 exec) because the only producer right
  * now is data, not code. */
 #define PROT_NONE   0x0

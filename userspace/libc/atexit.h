@@ -51,12 +51,12 @@ static inline int atexit(void (*fn)(void))
  * default no-op.  Marking it weak here would put two weak
  * symbols in scope; the linker may then pick crt0's no-op
  * and silently skip the atexit chain (see test_atexit.py
- * regression observed end of chapter 131e).
+ * regression observed end of chapter 179).
  *
  * Multi-TU vendor builds (binutils ld: ~150 .o files all
  * carrying their own copy of this header via <stdlib.h>)
  * suppress the body via OSDEV_LIBC_NO_GLOBAL_DEFS — the
- * same guard chapter 130a's Doom shim uses.  The vendor
+ * same guard chapter 172's Doom shim uses.  The vendor
  * build's CFLAGS sets -DOSDEV_LIBC_NO_GLOBAL_DEFS so no
  * vendor TU emits __cxa_finalize; crt0's weak no-op then
  * satisfies the call (vendor code doesn't atexit anyway). */

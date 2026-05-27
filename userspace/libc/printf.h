@@ -11,13 +11,13 @@
  *
  *     %d  / %i      signed int (decimal)
  *     %u            unsigned int (decimal)
- *     %o            unsigned int (octal)              -- chapter 128f
+ *     %o            unsigned int (octal)              -- chapter 170
  *     %x  / %X      unsigned int (hex; lowercase / uppercase)
  *     %p            pointer (printed as 0x%lx)
  *     %s            NUL-terminated string (NULL prints as "(null)")
  *     %c            single character
  *     %n            store running output count into a (int *) arg
- *                   -- chapter 128f, mostly for GCC's expect-self-
+ *                   -- chapter 170, mostly for GCC's expect-self-
  *                   reporting diagnostics
  *     %%            literal '%'
  *
@@ -211,9 +211,9 @@ static inline int _fmt_vformat(struct _fmt_sink *s, const char *fmt, va_list ap)
         /* Flags. */
         int left_justify = 0;
         int zero_pad     = 0;
-        int force_sign   = 0;     /* '+' flag (chapter 128f) */
-        int space_sign   = 0;     /* ' ' flag (chapter 128f) */
-        int alt_form     = 0;     /* '#' flag (chapter 128f) */
+        int force_sign   = 0;     /* '+' flag (chapter 170) */
+        int space_sign   = 0;     /* ' ' flag (chapter 170) */
+        int alt_form     = 0;     /* '#' flag (chapter 170) */
         for (;;) {
             if      (*fmt == '-') { left_justify = 1; fmt++; }
             else if (*fmt == '0') { zero_pad     = 1; fmt++; }

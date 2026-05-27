@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_gpu.c — milestone-38 virtio-gpu (2D) driver.
+ * kernel/device/virtio_gpu.c — virtio-gpu (2D) driver.
  *
  * Mirrors the structure of virtio_blk.c: probe the same MMIO bus,
  * run the modern handshake, set up one virtqueue, then issue

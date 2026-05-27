@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/test_xgcc_build.py — chapter 132c host smoke test.
+# scripts/test_xgcc_build.py — chapter 183 host smoke test.
 #
 # NOT added to scripts/sweep.sh because this exercises the
 # host cross compiler, not anything inside the guest.  Run
@@ -19,18 +19,18 @@
 #      14.2.0 (matches our pinned source).
 #   4. Run `aarch64-osdev-gcc -E -dM -xc /dev/null` to dump the
 #      predefined macros; assert `__osdev__` is in the list.
-#      This is the only thing that proves chapter 132a's
+#      This is the only thing that proves chapter 181's
 #      TARGET_OS_CPP_BUILTINS hook actually fired during the
 #      build — without it the cross compiler would silently
 #      look just like aarch64-elf-gcc.
 #   5. Run `aarch64-osdev-gcc -print-prog-name=as` and assert
-#      it points at our binutils prefix (chapter 131a), not at
+#      it points at our binutils prefix (chapter 175), not at
 #      a system `as` somewhere.  This proves the configure-time
 #      PATH=$(TOOLCHAIN_PREFIX)/bin trick actually worked.
 #   6. Print PASS, exit 0.
 #
 # We deliberately don't try to compile anything yet — that's
-# chapter 132d (link/startfile specs, libc bridge, hello.c
+# chapter 184 (link/startfile specs, libc bridge, hello.c
 # end-to-end).
 
 import os

@@ -1,9 +1,9 @@
 /*
  * kernel/core/walltime.h — wall-clock time API.
  *
- * Chapter 95 of the book.  Until now the only notion of time the
+ * Chapter 96 of the book.  Until now the only notion of time the
  * kernel had was the monotonic tick counter from `timer.c`
- * (chapter 10), which counts milliseconds since boot.  That is
+ * (chapter 8), which counts milliseconds since boot.  That is
  * great for measuring elapsed time inside the kernel, but it
  * cannot answer "what time is it?" — there is no datum.
  *
@@ -20,8 +20,8 @@
  * (and on some hosts a VM exit) per syscall — wasteful when the
  * generic timer already gives us microsecond resolution between
  * boot and now.  The downside is that we don't pick up host clock
- * adjustments after boot; that's fine for chapter 95 (NTP is a
- * future milestone).
+ * adjustments after boot; that's fine for chapter 96 (NTP is a
+ * future enhancement).
  *
  * The boot snapshot also avoids the PL031 second-rollover race:
  * RTCDR ticks once a second, so two reads spanning a tick can
@@ -50,7 +50,7 @@
  *
  * Safe to call before or after the timer subsystem is armed,
  * but uptime-derived microseconds will only advance after the
- * timer interrupt is enabled (chapters 10/89).
+ * timer interrupt is enabled (chapters 8/89).
  *
  * Returns 1 on success (RTC found, snapshot taken) or 0 if no
  * "arm,pl031" node was discoverable; the latter is non-fatal —

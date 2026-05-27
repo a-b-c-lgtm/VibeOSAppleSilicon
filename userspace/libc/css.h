@@ -37,7 +37,7 @@
  *                     value string, but no special precedence)
  *
  *   Values are kept as raw strings (lightly trimmed).  The layout
- *   engine in M62 will tokenize them at use time.  This is a
+ *   engine will tokenize them at use time.  This is a
  *   deliberate split: the parser has zero opinion about what
  *   "10px" or "navy" means.
  *

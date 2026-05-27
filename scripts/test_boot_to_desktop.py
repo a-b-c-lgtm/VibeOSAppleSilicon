@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""scripts/test_boot_to_desktop.py — milestone-46 smoke test.
+"""scripts/test_boot_to_desktop.py — boot-to-desktop smoke test.
 
 Boots the system fully headless, with NO keyboard input.  Asserts:
   1. init logs that it spawned both /bin/launcher and /bin/sh
   2. the WM logs a window-create from launcher
-  3. the launcher is HIDDEN at boot (chapter 109e UX: launcher
+  3. the launcher is HIDDEN at boot (chapter 55 UX: launcher
      is now a Start-menu panel anchored above the taskbar and
      is minimized immediately after its first render; the
      taskbar's Start button toggles visibility) — so the pixel
@@ -153,7 +153,7 @@ def main():
         print(f"  saved screendump: {DUMP_PATH}")
 
         ppm = read_ppm(DUMP_PATH)
-        # chapter 109e: the launcher is now a Start-menu panel,
+        # chapter 55: the launcher is now a Start-menu panel,
         # anchored above the taskbar at (0, FB_H - 28 - 232) =
         # (0, 540), and is MINIMIZED on boot (the taskbar's
         # Start button toggles it).  So the pixel that used to
@@ -182,8 +182,9 @@ def main():
 
         # Verify the wallpaper is actually rendered (not pure-black
          # framebuffer).  Originally this asserted "top brighter
-         # than bottom" because M46 shipped with a procedural
-         # top-to-bottom gradient; M50 replaced that with a real
+         # than bottom" because the early boot-to-desktop shipped with
+         # a procedural top-to-bottom gradient; the userspace desktop
+         # replaced that with a real
          # bitmap wallpaper (currently a photographic image whose
          # luminance varies arbitrarily across the frame), so the
          # gradient direction is no longer a meaningful invariant.
@@ -199,7 +200,7 @@ def main():
             return 1
         print(f"PASS: wallpaper rendered (top {top_px}, bottom {bottom_px})")
 
-        print("\nMILESTONE 46: ALL TESTS PASSED")
+        print("\nALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

@@ -1,12 +1,12 @@
-/* atomic.h — chapter 87 LL/SC atomic vocabulary for AArch64.
+/* atomic.h — chapter 88 LL/SC atomic vocabulary for AArch64.
  *
- * Up to chapter 86 every shared scalar in the kernel was modified
+ * Up to chapter 87 every shared scalar in the kernel was modified
  * by exactly one CPU (CPU 0), so a plain `x++` was correct
  * because `++` on uniprocessor AArch64 is "load, increment,
  * store" with no possibility of another CPU observing the load
  * without seeing the matching store.
  *
- * Once chapter 89's scheduler runs threads on CPU 1 the same
+ * Once chapter 90's scheduler runs threads on CPU 1 the same
  * `x++` becomes a race: both CPUs can read the same value, both
  * increment locally, and both store back, losing one update.
  * The fix is to use the architectural Load-Exclusive /
@@ -59,7 +59,7 @@
  *
  * Inner Shareable (ISH) is the ARM term for "all the CPUs in our
  * cache-coherent cluster" — exactly the set of cores PSCI lit up
- * in chapter 86.  We almost always want ISH; the heavier `OSH`
+ * in chapter 87.  We almost always want ISH; the heavier `OSH`
  * (Outer Shareable) and `SY` (system) include device-side
  * observers and are only needed for MMIO or DMA descriptor
  * publishing.

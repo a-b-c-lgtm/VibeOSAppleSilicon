@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # scripts/fetch_gcc.sh — vendor gcc-14.2.0 source.
 #
-# Chapter 132a needs the gcc source tree on disk so we can
+# Chapter 181 needs the gcc source tree on disk so we can
 # patch the aarch64-osdev triple into it.  We pin to 14.2.0
 # because that matches the host's `aarch64-elf-gcc` (Homebrew
-# install at chapter 132a writing time) — keeping versions
+# install at chapter 181 writing time) — keeping versions
 # matched avoids "host gcc says X about a struct layout, guest
 # gcc says Y" debugging that has bitten us before.
 #

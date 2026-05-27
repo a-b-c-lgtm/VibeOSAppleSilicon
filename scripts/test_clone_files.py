@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_clone_files.py — chapter 93 CLONE_FILES smoke test.
+"""scripts/test_clone_files.py — chapter 94 CLONE_FILES smoke test.
 
 Boots the kernel with -smp 2, drops to /bin/sh, runs `threadtest3`,
 and asserts that:
@@ -153,7 +153,7 @@ def main():
 
         if b"[thread3] OK" not in log:
             print("FAIL: overall thread3 marker missing"); return 1
-        print("PASS: chapter 93 CLONE_FILES smoke test")
+        print("PASS: chapter 94 CLONE_FILES smoke test")
         return 0
     finally:
         q.kill(); q.wait()

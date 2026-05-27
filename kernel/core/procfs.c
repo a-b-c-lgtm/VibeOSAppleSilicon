@@ -1,5 +1,5 @@
 /*
- * kernel/core/procfs.c — chapter 99 read-only /proc pseudo-FS.
+ * kernel/core/procfs.c — chapter 101 read-only /proc pseudo-FS.
  *
  * Each file's content is rendered into a caller buffer on
  * demand.  vfs_open allocates that buffer; close releases it.
@@ -193,7 +193,7 @@ static long render_cpuinfo(char *out, size_t cap)
     pf_putc(out, cap, &pos, '\n');
     /* Per-CPU lines: just the id and "online" flag.  No model
      * name yet (we'd need to decode MIDR_EL1 across vendors).
-     * Chapter 86 documented the PSCI bring-up; we read the
+     * Chapter 87 documented the PSCI bring-up; we read the
      * cpu_state directly from g_cpus[]. */
     for (uint32_t i = 0; i < n; i++) {
         pf_puts(out, cap, &pos, "cpu");
@@ -399,7 +399,7 @@ long procfs_render(const char *path, char *out, size_t cap)
     if (*leaf == '\0') return render_pid_dir(pid, out, cap);
     if (str_eq(leaf, "status"))  return render_pid_status(pid, out, cap);
     if (str_eq(leaf, "cmdline")) return render_pid_cmdline(pid, out, cap);
-    /* Chapter 100 — syscall tracer ring.  Renders+drains on each
+    /* Chapter 102 — syscall tracer ring.  Renders+drains on each
      * open; an unattached thread renders the literal banner
      * "(not traced)\n".  Locking lives in thread.c so we don't
      * need to expose g_all_lock through this file. */
@@ -510,7 +510,7 @@ int procfs_is_dir(const char *path)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 113 — struct fs_ops adapter.
+ * Chapter 132 — struct fs_ops adapter.
  *
  * procfs is the canary for the mount-table refactor: smallest
  * driver, just shipped, stateless (cookie is NULL).  The adapter

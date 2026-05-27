@@ -1,4 +1,4 @@
-/* userspace/libc/cstring.c — chapter 112a.
+/* userspace/libc/cstring.c — chapter 124.
  *
  * Tiny extern-symbol implementations of the libc functions that
  * BearSSL's archive references but our freestanding userspace
@@ -17,7 +17,7 @@
  * return 0 here so the link succeeds even when something pulls
  * x509_minimal in.  Real cert-expiry validation will set the
  * reference time explicitly via `br_x509_minimal_set_time`
- * (chapter 112c).
+ * (chapter 126).
  *
  * NOTE: these are NOT constant-time and NOT optimised.  They are
  * the slowest-possible byte-at-a-time implementations, kept tiny
@@ -85,12 +85,12 @@ size_t strlen(const char *s)
     return n;
 }
 
-/* strdup — chapter 130a (Doom port).
+/* strdup — chapter 172 (Doom port).
  *
  * Several DoomGeneric translation units call strdup to copy
  * command-line strings (-iwad path, -file path), so we ship
  * one extern definition here rather than inline it in every
- * TU.  Uses the chapter 131e extern allocator below (same
+ * TU.  Uses the chapter 179 extern allocator below (same
  * heap as the binutils ld vendor archives), NOT malloc.h's
  * static-inline allocator (which would give a separate
  * per-TU heap and split strdup'd memory from the rest). */
@@ -110,7 +110,7 @@ char *strdup(const char *s)
  * means "epoch", which makes every certificate look not-yet-valid;
  * callers that actually want validation MUST call
  * br_x509_minimal_set_time(ctx, days_since_epoch, seconds_in_day)
- * before starting a handshake.  Chapter 112c provides a helper
+ * before starting a handshake.  Chapter 126 provides a helper
  * built on top of SYS_GETTIMEOFDAY. */
 typedef long time_t;
 time_t time(time_t *out)
@@ -119,7 +119,7 @@ time_t time(time_t *out)
     return 0;
 }
 
-/* chapter 112b: br_prng_seeder_system() stub.
+/* chapter 125: br_prng_seeder_system() stub.
  *
  * BearSSL's ssl_engine.c calls this from br_ssl_engine_init_rand
  * to find an OS-provided entropy source.  The real implementation
@@ -131,7 +131,7 @@ time_t time(time_t *out)
  * Returning NULL ("no seeder available") is the documented BearSSL
  * contract for "the caller MUST call br_ssl_engine_inject_entropy
  * before the first reset()".  tls_socket.c and httpsd.c both do
- * exactly that, pulling 64 bytes from SYS_GETRANDOM (chapter 112's
+ * exactly that, pulling 64 bytes from SYS_GETRANDOM (chapter 123's
  * kernel CSPRNG, seeded from /dev/urandom on the host via the
  * virtio-rng device in the QEMU command line).
  *
@@ -146,7 +146,7 @@ br_prng_seeder_fn br_prng_seeder_system(const char **name)
     return 0;
 }
 
-/* ── Chapter 128c — __assert_fail ───────────────────────────────
+/* ── Chapter 167 — __assert_fail ───────────────────────────────
  *
  * Implementation behind the assert() macro in
  * userspace/libc/assert.h.  Writes a fixed-shape diagnostic to
@@ -241,7 +241,7 @@ void __assert_fail(const char *expr,
     for (;;) { }
 }
 
-/* ── Chapter 131e — extern wrappers for vendor archives ─────────
+/* ── Chapter 179 — extern wrappers for vendor archives ─────────
  *
  * binutils ld pulls in libiberty's strdup.c / vasprintf.c /
  * objalloc.c etc.  Each of those carries its own
@@ -388,7 +388,7 @@ __attribute__((noreturn)) void __cstring_abort(void) __asm__("abort");
 __attribute__((noreturn)) void __cstring_abort(void)
 {
     /* Diagnostic: surface abort() with the call-site LR.  Until
-     * chapter 132f the cstring allocator silently mis-numbered
+     * chapter 186 the cstring allocator silently mis-numbered
      * SYS_SBRK as SYS_GETARGS and abort() in operator new fired
      * with no clue — this one-line write makes the call site
      * obvious from `addr2line` on the LR value. */
@@ -495,7 +495,7 @@ char *__cstring_strstr(const char *h, const char *n)
  * strong def from env.h and override this. */
 __attribute__((weak)) char **environ = (char **)0;
 
-/* ── Chapter 132e — extern POSIX I/O syscalls ─────────────────
+/* ── Chapter 185 — extern POSIX I/O syscalls ─────────────────
  * Cross-built autoconfs (gmp, mpfr, mpc, gcc) compile conftest
  * snippets that reference `open`, `close`, `read`, `write`,
  * `lseek` without including any libc header.  Without an extern
@@ -505,7 +505,7 @@ __attribute__((weak)) char **environ = (char **)0;
  * below are pulled from libosdevc.a only when something
  * references the bare symbol.
  *
- * Syscall numbers (chapter 116 enum): WRITE=1, OPEN=5, READ=6,
+ * Syscall numbers (chapter 148 enum): WRITE=1, OPEN=5, READ=6,
  * CLOSE=7, LSEEK=101.  These match userspace/libc/syscall.h. */
 #define SYS_OPEN_NR   5
 #define SYS_READ_NR   6
@@ -557,7 +557,7 @@ long __cstring_lseek(int fd, long off, int whence)
 }
 
 /* ---------------------------------------------------------------
- * Chapter 132f — soft-float TFmode (binary128 / `long double` on
+ * Chapter 186 — soft-float TFmode (binary128 / `long double` on
  * aarch64) helper trap-stubs.
  *
  * Aarch64's default `long double` is 128-bit IEEE binary128.  GCC
@@ -578,7 +578,7 @@ long __cstring_lseek(int fd, long off, int whence)
  *
  * If GCC's frontend ever actually *evaluates* a `long double`
  * constant at compile time, the stub triggers abort().  We've
- * documented this in chapter 132f as a known limitation: cross-
+ * documented this in chapter 186 as a known limitation: cross-
  * compiling C code that uses `long double` constants will fail
  * at compile time inside our xgcc.  Real binary128 emulation can
  * land later as its own chapter — see `vendor/gcc-14.2.0/libgcc/
@@ -600,7 +600,7 @@ static void __cstring_tf_trap(const char *name)
 {
     static const char head[] = "*** soft-float TFmode helper '";
     static const char tail[] = "' called -- not implemented "
-                               "(chapter 132f); aborting ***\n";
+                               "(chapter 186); aborting ***\n";
     (void)__cstring_write(2, head, sizeof(head) - 1);
     {
         const char *p = name;

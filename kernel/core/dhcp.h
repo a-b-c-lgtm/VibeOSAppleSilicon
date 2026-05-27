@@ -1,5 +1,5 @@
 /*
- * kernel/core/dhcp.h \u2014 milestone-54 DHCPv4 client.
+ * kernel/core/dhcp.h \u2014 DHCPv4 client.
  *
  * One function: `dhcp_acquire()` runs a synchronous DISCOVER /
  * OFFER / REQUEST / ACK exchange against whichever DHCP server

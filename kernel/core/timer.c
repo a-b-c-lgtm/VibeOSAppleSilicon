@@ -30,14 +30,14 @@
 #include <stdint.h>
 
 static uint32_t g_interval_ticks = 0;
-/* Chapter 92 — atomic because both CPUs now take the timer PPI
+/* Chapter 93 — atomic because both CPUs now take the timer PPI
  * and call timer_tick from IRQ context.  A plain `g_ticks++`
  * would lose updates under the resulting cross-CPU race.  The
  * counter is also read from yield()'s sleeper-walk and from
  * SYS_UPTIME_MS, so an atomic load is required to avoid tearing
  * a partial 64-bit read on the slow ARMv8 path.
  *
- * Chapter 106b — DEPRECATED for wall-time use.  Under SMP every
+ * Chapter 110 — DEPRECATED for wall-time use.  Under SMP every
  * CPU takes its own timer PPI every TICK_INTERVAL_MS, so a
  * naive `g_ticks++` per IRQ on N CPUs counts at N× the real
  * rate.  We now read CNTVCT_EL0 directly in timer_ticks() and
@@ -97,7 +97,7 @@ void timer_init(uint32_t interval_ms)
     cntv_ctl_el0_write(1ULL);   /* ENABLE=1, IMASK=0 */
 }
 
-/* Per-CPU re-arm.  Used by chapter 89's secondary_main: the
+/* Per-CPU re-arm.  Used by chapter 90's secondary_main: the
  * down-counter (CNTV_TVAL_EL0) and control register
  * (CNTV_CTL_EL0) are per-CPU, so each CPU has to program its
  * own.  We reuse the already-computed g_interval_ticks; on
@@ -117,7 +117,7 @@ void timer_rearm(void)
 
 uint64_t timer_ticks(void)
 {
-    /* Chapter 106b: derive wall-time "ticks" (units of
+    /* Chapter 110: derive wall-time "ticks" (units of
      * TICK_INTERVAL_MS) from the free-running CNTVCT_EL0 counter
      * rather than the per-IRQ counter `g_ticks`.  Under SMP both
      * CPUs took the timer PPI and each incremented g_ticks, so

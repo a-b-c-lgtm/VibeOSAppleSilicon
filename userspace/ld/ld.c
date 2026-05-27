@@ -2,7 +2,7 @@
  * userspace/ld/ld.c — minimal AArch64 ELF64 linker for our OS.
  *
  * Consumes ET_REL relocatable objects produced by /bin/as
- * (chapter 118), merges their sections, resolves symbols
+ * (chapter 154), merges their sections, resolves symbols
  * across inputs, applies a small reloc set, and writes a
  * single ET_EXEC ELF64-LSB file the kernel ELF loader
  * (kernel/core/elf.c) can mmap and run.
@@ -35,7 +35,7 @@
  *   R_AARCH64_CALL26    — bl <sym>
  *   R_AARCH64_JUMP26    — b  <sym>
  *
- * Out of scope (deferred to chapter 121 / 123 if a real
+ * Out of scope (deferred to chapter 157 / 123 if a real
  * compiler demands them): adrp+add pairs, GOT, PLT, TLS,
  * shared libraries, archive scanning.  /bin/ld takes only
  * loose .o files; /bin/ar (in this same chapter) produces

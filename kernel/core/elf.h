@@ -6,7 +6,7 @@
  * PT_LOAD program headers only.  No relocations, no dynamic
  * linking, no notes, no symbol resolution.
  *
- * As of milestone 15 the loader populates a per-process address
+ * The loader populates a per-process address
  * space (kernel/arch/address_space.h).  PT_LOAD segments are
  * loaded at their link-time VAs (no PA-arithmetic translation any
  * more); each segment's pmem-allocated pages are mapped at the

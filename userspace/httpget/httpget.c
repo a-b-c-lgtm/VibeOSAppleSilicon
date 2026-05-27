@@ -4,16 +4,16 @@
  * Two invocation forms:
  *
  *   httpget <url>
- *       URL form (M58).  <url> is parsed by url_parse(); the
+ *       URL form.  <url> is parsed by url_parse(); the
  *       response is parsed by http_parse() so we can print a
  *       structured summary, follow one Location: redirect, and
  *       handle Content-Length and Transfer-Encoding: chunked.
  *
  *   httpget <host-or-ip> <port> [path]
- *       Legacy form (M56-M57).  Still supported because the
+ *       Legacy form.  Still supported because the
  *       existing socket tests grep raw response bytes.
  *
- * No HTTPS yet -- TLS is parked for a later milestone.  An
+ * No HTTPS yet -- TLS is parked for a later chapter.  An
  * https:// URL prints a clear error and exits non-zero.
  */
 
@@ -100,7 +100,7 @@ static char *drain_to_buf(int fd, size_t *out_len)
     return buf;
 }
 
-/* ---- URL form (M58) ---- */
+/* ---- URL form ---- */
 
 /* Print a NUL-terminated literal via raw write().  We use this for
  * fixed banners that do not need any %-formatting — sidesteps any
@@ -138,7 +138,7 @@ static int fetch_one(const char *raw_url, char **out_redirect)
     }
     if (url_is_tls(&u)) {
         printf("httpget: https:// is not yet supported in this build.\n");
-        printf("        TLS is parked behind a future milestone.\n");
+        printf("        TLS is parked behind a future chapter.\n");
         return -1;
     }
 
@@ -178,7 +178,7 @@ static int fetch_one(const char *raw_url, char **out_redirect)
     n += snprintf(req + n, req_cap - (size_t)n,
                   "User-Agent: hobbyos-httpget/1.0\r\n"
                   "Accept: */*\r\n");
-    /* Chapter 110: read /data/cookies/<host> and inject Cookie:.
+    /* Chapter 120: read /data/cookies/<host> and inject Cookie:.
      * Same jar the browser uses, so both clients see the same
      * session state on this host. */
     {
@@ -225,7 +225,7 @@ static int fetch_one(const char *raw_url, char **out_redirect)
     if (ct) print_slice(ct, ct_len); else write_cstr("no content-type");
     printf(", body=%lu bytes)\n", (unsigned long)resp->body_len);
 
-    /* Chapter 110: capture Set-Cookie headers into /data/cookies/<host>. */
+    /* Chapter 120: capture Set-Cookie headers into /data/cookies/<host>. */
     {
         time_t now = time(0);
         int    stored = 0;
@@ -294,7 +294,7 @@ static int fetch_url(const char *raw_url)
     return status;
 }
 
-/* ---- Legacy 3-arg form (kept verbatim for M56/M57 tests) ---- */
+/* ---- Legacy 3-arg form (kept verbatim for older socket tests) ---- */
 
 static int run_legacy(const char *host, const char *port_s, const char *path)
 {

@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/_dbg_sweep_ch123.sh — 21-test regression sweep for chapter 123.
+# scripts/_dbg_sweep_ch123.sh — 21-test regression sweep for chapter 159.
 # Same shape as the ch-121 sweep, but with the chapter-123 /bin/cc test.
 LOG=/tmp/osdev_sweep_ch123/sweep.log
 mkdir -p "$(dirname "$LOG")"

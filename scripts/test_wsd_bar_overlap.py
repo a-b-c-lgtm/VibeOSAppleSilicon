@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_wsd_bar_overlap.py -- chapter 108e follow-up.
+"""scripts/test_wsd_bar_overlap.py -- chapter 118 follow-up.
 
 The exact scenario from the user's screenshot:
   - gui_term is the FRONT window

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_html_dom.py — milestone-60 driver.
+"""scripts/test_html_dom.py — HTML DOM driver.
 
 Boot the kernel, wait for the shell prompt, run `htmldom /mnt/test.html`
 and assert that the printed tree contains the structural landmarks
@@ -10,7 +10,7 @@ and dom.h folds those tokens into a tree:
   * exactly one [DOCTYPE] "html" attached to it
   * an [ELEM] "html" with lang="en"
   * an [ELEM] "head" inside it, containing meta/title/style
-  * the title text "M59 tokenizer fixture"
+  * the title text "Tokenizer fixture"
   * the style tag with its rawtext body
   * an [ELEM] "body" containing a comment, h1, p, ul (with li's),
     void <img>, <script> with rawtext, and a final <p>
@@ -127,7 +127,7 @@ def main():
     # --- head children ---
     need("meta-charset", lambda t: '[ELEM] "meta" charset="utf-8"' in t)
     need("title-elem",   lambda t: '[ELEM] "title"' in t)
-    need("title-text",   lambda t: '[TEXT] "M59 tokenizer fixture"' in t)
+    need("title-text",   lambda t: '[TEXT] "Tokenizer fixture"' in t)
     need("style-elem",   lambda t: '[ELEM] "style"' in t)
     need("style-rawtext",lambda t: 'body { color: red; }' in t)
 
@@ -183,7 +183,7 @@ def main():
             print("---- output region ----", file=sys.stderr)
             print(text[idx:idx + 4096], file=sys.stderr)
         return 1
-    print("PASS: DOM construction milestone-60 — all checks green")
+    print("PASS: DOM construction — all checks green")
     return 0
 
 

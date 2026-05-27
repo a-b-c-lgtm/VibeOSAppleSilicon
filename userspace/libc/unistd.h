@@ -1,4 +1,4 @@
-/* userspace/libc/unistd.h — chapter 130a, extended in 131d.
+/* userspace/libc/unistd.h — chapter 172, extended in 131d.
  *
  * POSIX `<unistd.h>` shim: a forwarding header that pulls in
  * the syscall wrappers DoomGeneric (and any future POSIX-ish
@@ -8,7 +8,7 @@
  * getpid / sleep / usleep / read / write / close / isatty.
  * All of those already live in syscall.h; just re-export.
  *
- * Chapter 131d adds an inline `execvp` so libiberty's
+ * Chapter 178 adds an inline `execvp` so libiberty's
  * pex-unix.c compiles.  We don't do real $PATH lookup yet —
  * that arrives with the libc.a refactor when env.h becomes
  * safe to include from a forwarding header.  The lookup we
@@ -43,7 +43,7 @@ static inline int execvp(const char *file, char *const argv[])
     return execv(buf, argv);
 }
 
-/* Chapter 131d — POSIX `link(old, new)`.  Hard links are not a
+/* Chapter 178 — POSIX `link(old, new)`.  Hard links are not a
  * thing on our filesystems (no inode refcount machinery in
  * OSFS-2; tmpfs is per-process).  Always returns -1/EPERM so
  * callers fall back to "copy bytes".  libiberty/rename.c is the
@@ -56,7 +56,7 @@ static inline int link(const char *oldpath, const char *newpath)
     return -1;
 }
 
-/* Chapter 131e — POSIX `getuid` / `getgid` / `geteuid` / `getegid`.
+/* Chapter 179 — POSIX `getuid` / `getgid` / `geteuid` / `getegid`.
  * No user system; always returns 0 (root).  bfd/archive.c needs
  * these when writing `ar` archive member headers (uid/gid bytes
  * in the ar_hdr). */
@@ -67,7 +67,7 @@ static inline uid_t geteuid(void) { return 0; }
 static inline gid_t getgid(void)  { return 0; }
 static inline gid_t getegid(void) { return 0; }
 
-/* Chapter 132f — POSIX `alarm(seconds)`.  We don't yet ship a
+/* Chapter 186 — POSIX `alarm(seconds)`.  We don't yet ship a
  * SIGALRM scheduler; fixincludes/server.c calls alarm() as a
  * watchdog around its waitpid(), so we satisfy the declaration
  * and silently no-op.  Returning 0 (no previous alarm pending)

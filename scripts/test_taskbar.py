@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_taskbar.py — milestone-47 smoke test.
+"""scripts/test_taskbar.py — taskbar smoke test.
 
 Boots fully headless.  Verifies:
   1. Both /bin/taskbar and /bin/launcher auto-start.
@@ -15,7 +15,7 @@ Boots fully headless.  Verifies:
      109e UX: launcher is now a Start-menu-style panel, hidden at
      boot, anchored above the taskbar).
 
-Chapter 109e notes: the launcher is no longer one of the taskbar's
+Chapter 55 notes: the launcher is no longer one of the taskbar's
 cells — it lives in a NODECORATION + ALWAYS_ON_TOP window that the
 taskbar's filter explicitly hides from its cell list (the launcher's
 title is the literal string "launcher").  Summon/dismiss is the
@@ -303,7 +303,7 @@ def main():
         print(f"PASS: launcher panel summoned by Start button "
               f"(pixel at (110, {LAUNCHER_Y + 6}) = {launcher_bg})")
 
-        print("\nMILESTONE 47: ALL TESTS PASSED")
+        print("\nALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

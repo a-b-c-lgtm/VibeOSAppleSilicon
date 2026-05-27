@@ -1,4 +1,4 @@
-/* ipi.h — chapter 88 inter-processor interrupt vocabulary.
+/* ipi.h — chapter 89 inter-processor interrupt vocabulary.
  *
  * GICv3 distinguishes three classes of interrupts: SPIs (shared
  * peripherals), PPIs (per-CPU peripherals like the timer), and
@@ -8,13 +8,13 @@
  * is a *vector* — a small enum of "things one CPU might want
  * another CPU to do RIGHT NOW."
  *
- * Why a real IPI mechanism matters at all in chapter 88:
+ * Why a real IPI mechanism matters at all in chapter 89:
  *
- *   - Up to chapter 87 the secondary CPUs sit in WFE forever.
+ *   - Up to chapter 88 the secondary CPUs sit in WFE forever.
  *     They have no way to be told "wake up, you have work."
- *     Once chapter 89's scheduler arrives, CPU 0 will need to
+ *     Once chapter 90's scheduler arrives, CPU 0 will need to
  *     IPI CPU 1 every time it puts a thread on CPU 1's runqueue
- *     — that is IPI_RESCHED (added in chapter 89).
+ *     — that is IPI_RESCHED (added in chapter 90).
  *
  *   - The kernel needs a "halt all CPUs cleanly" path for
  *     panics: today CPU 1 is in WFE so a CPU-0 panic is
@@ -26,7 +26,7 @@
  *   - Future TLB shootdowns (when an mmap unmap on CPU 0 has to
  *     be observable to CPU 1's TLB) are also IPIs.
  *
- * Chapter 88 ships TWO vectors and proves the round-trip works
+ * Chapter 89 ships TWO vectors and proves the round-trip works
  * with a smoke test.  Adding more is a one-line edit.
  *
  * Design choice — one SGI ID per vector, NOT a coalescing
@@ -50,12 +50,12 @@ enum {
                         * counter; sender spin-waits for the bump. */
     IPI_HALT    = 1,   /* "stop forever" — receiver enters WFI loop
                         * with IRQs masked.  Wired but not yet
-                        * triggered from the panic path; chapter 89
+                        * triggered from the panic path; chapter 90
                         * will hook it once secondaries do real work. */
     IPI_RESCHED = 2,   /* "you have a new thread on your runqueue
                         * (or your current may need to step aside)" —
                         * receiver's irq_dispatch sees ipi_handle
-                        * return 1 and calls schedule().  Chapter 89
+                        * return 1 and calls schedule().  Chapter 90
                         * uses this to wake an idle CPU when CPU 0
                         * cross-enqueues a kernel thread to it. */
     /* IPI_TLB     = 3,  // future TLB shootdown */

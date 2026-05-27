@@ -1,4 +1,4 @@
-/* sys/wait.h — chapter 132f
+/* sys/wait.h — chapter 186
  *
  * POSIX-shape <sys/wait.h> for cross-compiling gcc-14.  Our kernel
  * stores a thread's exit_code as a bare int: 0..127 for normal

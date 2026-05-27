@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_css.py — milestone-61 driver.
+"""scripts/test_css.py — CSS parser driver.
 
 Boot the kernel, wait for the shell prompt, run two cssparse
 invocations:
@@ -10,7 +10,8 @@ invocations:
      Assert that the right rules apply to the right elements.
 
 The fixture lives at assets/osfs/test.css; the matching fixture
-HTML is the same assets/osfs/test.html that M59/M60 already used.
+HTML is the same assets/osfs/test.html that the tokenizer and DOM
+tests already used.
 
 Full transcript dropped at /tmp/m61.log.
 
@@ -207,7 +208,7 @@ def main():
             print("---- output region ----", file=sys.stderr)
             print(text[idx:idx + 8192], file=sys.stderr)
         return 1
-    print("PASS: CSS parser + matcher milestone-61 — all checks green")
+    print("PASS: CSS parser + matcher — all checks green")
     return 0
 
 

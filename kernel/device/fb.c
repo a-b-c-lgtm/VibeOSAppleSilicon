@@ -1,5 +1,5 @@
 /*
- * kernel/device/fb.c — framebuffer module (milestone 38).
+ * kernel/device/fb.c — framebuffer module.
  *
  * Owns the contiguous pixel buffer that backs the active virtio-gpu
  * scanout.  All drawing primitives are pure stores into normal

@@ -16,7 +16,7 @@
  *
  * 128-bit divides (__udivti3, __divti3) are not provided yet
  * — none of our currently-shipped C source triggers them.
- * They land in chapter 121 when TCC starts pulling at libgcc
+ * They land in chapter 157 when TCC starts pulling at libgcc
  * for code it can't lower in a single instruction.
  *
  * Including this header in any TU pulls all four definitions
@@ -24,7 +24,7 @@
  * copy without colliding — same convention as the rest of our
  * header-only libc.
  *
- * For chapter 121 onward we ALSO build these into a real
+ * For chapter 157 onward we ALSO build these into a real
  * `/lib/libgcc.a` archive (via the host `aarch64-elf-ar` at
  * build time) so the in-guest /bin/cc driver has a file to
  * point at when it invokes /bin/ld -lgcc.

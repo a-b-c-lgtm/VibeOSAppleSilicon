@@ -1,8 +1,8 @@
-/* spinlock.h — chapter 86 minimal SMP synchronisation primitives.
+/* spinlock.h — chapter 87 minimal SMP synchronisation primitives.
  *
- * Up to chapter 85 the kernel ran strictly uniprocessor: every
+ * Up to chapter 86 the kernel ran strictly uniprocessor: every
  * "lock" was the implicit lock that comes free from "only one CPU
- * can be in kernel code at a time."  Chapter 86 wakes a second
+ * can be in kernel code at a time."  Chapter 87 wakes a second
  * core, so any global mutable state that the secondary touches
  * (right now: the PL011 transmit register and the boot-status
  * reclock counters) needs an explicit lock.
@@ -31,7 +31,7 @@
  * That is the only way to be safe against an IRQ handler that
  * also takes the same lock.  Today no IRQ handler does, but the
  * pattern will start to matter once the GIC delivers IRQs to
- * CPU 1 (chapter 88+).
+ * CPU 1 (chapter 89+).
  *
  * Both primitives are header-only because they are entirely
  * inline asm — there is no .c file to compile and no linker
@@ -53,7 +53,7 @@
  * programmed.
  *
  * For SMP_MAX_CPUS > 8 (some other cluster topology) we'd need to
- * fold Aff1/Aff2 in.  Out of scope for chapter 86.
+ * fold Aff1/Aff2 in.  Out of scope for chapter 87.
  * ------------------------------------------------------------------ */
 static inline uint32_t spinlock_self_cpu_id(void)
 {

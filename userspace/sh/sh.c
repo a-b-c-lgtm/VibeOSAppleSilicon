@@ -101,7 +101,7 @@ static void print_help(void)
     puts("                 cmd >> /tmp/F  (append, route stdout to tmpfs)");
     puts("pipelines      : cmd1 | cmd2 [| cmd3 ...]");
     puts("rm /tmp/...    : delete a writable tmpfs file");
-    puts("mkdir /data/...: create a directory under /data/ (chapter 85)");
+    puts("mkdir /data/...: create a directory under /data/ (chapter 86)");
     puts("line editor    : up/down arrows cycle history; backspace edits;");
     puts("                 left/right arrows move cursor; Ctrl-A/E line start/end;");
     puts("                 Ctrl-K/U/W kill (to EOL/BOL/prev word); Ctrl-Y yank;");
@@ -820,7 +820,7 @@ int main(void)
             continue;
         }
 
-        /* `mkdir <path>...` builtin (chapter 85).  Each argument
+        /* `mkdir <path>...` builtin (chapter 86).  Each argument
          * is taken as a single directory to create.  No -p:
          * intermediate parents must already exist.  Today only
          * /data/<...>/<name> is accepted by the kernel. */
@@ -875,8 +875,8 @@ int main(void)
             if (*cmd == '\0') continue;
         }
 
-        /* `&` background suffix (chapter 79b promised this; it
-         * lands here in chapter 106b because the busy-desktop
+        /* `&` background suffix (chapter 79 promised this; it
+         * lands here in chapter 110 because the busy-desktop
          * repro test needs to start `httpd 8080 &` from the
          * kernel sh before opening gui_term).
          *
@@ -910,7 +910,7 @@ int main(void)
         /* Input redirection: `<` (anywhere, whitespace-bounded
          * or glued to next word).  Currently runs AFTER quote
          * expansion, so `echo '<'` is a syntax error rather than
-         * a literal `<`.  See chapter 37. */
+         * a literal `<`.  See chapter 36. */
         const char *redir_in = 0;
         char redir_path[PATH_MAX];
         {
@@ -954,7 +954,7 @@ int main(void)
         }
 
         /* Output redirection: `>` (truncate) or `>>` (append).
-         * See chapters 41 and 42. */
+         * See chapters 40 and 42. */
         const char *redir_out = 0;
         int redir_out_append = 0;
         char redir_out_path[PATH_MAX];
@@ -1002,7 +1002,7 @@ int main(void)
         /* Pipeline support: `cmd1 | cmd2 [| cmd3 ...]`.  redir_in
          * (if any) wires onto the first segment's stdin; redir_out
          * (if any) wires onto the last segment's stdout.  See
-         * chapters 40 and 41. */
+         * chapters 39 and 41. */
         {
             int has_pipe = 0;
             for (char *q = cmd; *q; q++) if (*q == '|') { has_pipe = 1; break; }
@@ -1260,7 +1260,7 @@ int main(void)
              * set_fg_pid so Ctrl-C still goes to the foreground
              * (in this branch, the foreground is the SHELL).
              *
-             * Chapter 106b: this is the minimum-viable backgrounding
+             * Chapter 110: this is the minimum-viable backgrounding
              * needed to spawn `httpd 8080 &` from /bin/sh before
              * opening a gui_term to drive the browser-in-desktop
              * regression test.  No `jobs`, `fg`, `bg`, `wait %N`

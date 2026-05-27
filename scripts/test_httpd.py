@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_httpd.py -- chapter 105 / M94 /bin/httpd test.
+"""scripts/test_httpd.py -- chapter 107 /bin/httpd test.
 
 Boots the kernel with SLIRP's hostfwd forwarding host:18080 ->
 guest:8080, waits for the shell prompt, runs `httpd 8080 --once`
@@ -12,7 +12,7 @@ GET request for /mnt/hello.txt, and asserts:
   - httpd logs the expected per-request line and exits cleanly.
 
 We use /mnt/hello.txt as the target because it's the smallest
-file we know is always present in /mnt (chapter 12 onwards).
+file we know is always present in /mnt (chapter 11 onwards).
 Reading it back through the network exercises the whole stack:
 
   host TCP  ->  SLIRP hostfwd  ->  guest virtio-net

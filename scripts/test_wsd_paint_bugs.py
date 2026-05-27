@@ -33,7 +33,7 @@ FB_W = 1280
 FB_H = 800
 
 # Launcher geometry — see userspace/launcher/launcher.c.
-# chapter 109e UX: launcher is a Start-menu-style panel,
+# chapter 55 UX: launcher is a Start-menu-style panel,
 # NODECORATION + ALWAYS_ON_TOP, anchored above the taskbar
 # at (0, FB_H - BAR_H - 232) = (0, 540), hidden at boot.
 # The taskbar's Start button toggles it.

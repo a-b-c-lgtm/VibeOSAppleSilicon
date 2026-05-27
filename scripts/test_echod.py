@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_echod.py -- chapter 104 / M93 echod end-to-end test.
+"""scripts/test_echod.py -- chapter 106 echod end-to-end test.
 
 Boots the kernel with SLIRP's hostfwd forwarding host:17777 ->
 guest:7777, waits for the shell prompt, runs `echod 7777 --once`

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_tls_handshake.py -- chapter 112b TLS handshake regression.
+"""scripts/test_tls_handshake.py -- chapter 125 TLS handshake regression.
 
 Boots the kernel, drops to /bin/sh, runs
 
@@ -158,7 +158,7 @@ def main():
             print("FAIL: tlstest never emitted PASS summary")
             print(tail[-2000:].decode("ascii", "replace"))
             return 1
-        print("PASS: chapter 112b in-guest TLS handshake end-to-end")
+        print("PASS: chapter 125 in-guest TLS handshake end-to-end")
         return 0
     finally:
         q.kill(); q.wait()

@@ -7,7 +7,7 @@ Why this exists
 Our userspace HTTP client is plaintext only.  Adding TLS in-kernel
 (or in userspace) is a real engineering project — RSA, AES-GCM,
 certificate-chain validation, the works — and it's parked behind
-M70+.  Until then, this script lets the OS hit any HTTPS site by
+a later chapter.  Until then, this script lets the OS hit any HTTPS site by
 running a tiny reverse proxy on the *host*: the guest speaks HTTP
 to the host, the host speaks HTTPS to the world.
 

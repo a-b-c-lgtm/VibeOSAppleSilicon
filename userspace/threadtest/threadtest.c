@@ -1,4 +1,4 @@
-/* userspace/threadtest/threadtest.c — chapter 91 smoke test.
+/* userspace/threadtest/threadtest.c — chapter 92 smoke test.
  *
  * Spawns N_WORKERS threads that share an address space, each
  * incrementing a shared counter ITERS times under a mutex.

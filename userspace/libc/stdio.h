@@ -1,5 +1,5 @@
 /* userspace/libc/stdio.h — header-only buffered FILE * for osdev
- * (chapter 116b).
+ * (chapter 150).
  *
  * Single-translation-unit pattern, same as printf.h and malloc.h:
  * include from one .c per binary.  Every binary that links this
@@ -53,7 +53,7 @@
 #ifndef USER_STDIO_H
 #define USER_STDIO_H
 
-/* Chapter 132e: also expose the canonical glibc-style guard so
+/* Chapter 185: also expose the canonical glibc-style guard so
  * third-party headers that probe `#ifdef _STDIO_H` to test
  * "stdio.h was included" detect us correctly.  gmp.h's
  * `_GMP_H_HAVE_FILE` heuristic (gmp-h.in line ~252) only fires
@@ -458,7 +458,7 @@ static inline int fclose(FILE *f)
     return rc;
 }
 
-/* Chapter 131d — POSIX `freopen`.
+/* Chapter 178 — POSIX `freopen`.
  *
  * "Close `f`'s underlying fd, open `path` with `mode`, and
  * reuse the FILE* slot."  libiberty/fopen_unlocked.c calls it
@@ -519,7 +519,7 @@ static inline FILE *freopen(const char *path, const char *mode, FILE *f)
 
 /* --- tmpfile -------------------------------------------------------- */
 
-/* Chapter 131e — POSIX `FILE *tmpfile(void)`.  Opens a unique
+/* Chapter 179 — POSIX `FILE *tmpfile(void)`.  Opens a unique
  * file under /tmp in "w+b" mode.  libctf's CTF link path calls
  * this for intermediate spool files; in our linker flow it's
  * cold (never reached for normal C-program linking), but the
@@ -801,7 +801,7 @@ static inline int setvbuf(FILE *f, char *buf, int mode, size_t size)
     return 0;
 }
 
-/* setbuf — chapter 130a.  Convenience wrapper for setvbuf:
+/* setbuf — chapter 172.  Convenience wrapper for setvbuf:
  *   buf != NULL → setvbuf(f, buf, _IOFBF, BUFSIZ)
  *   buf == NULL → setvbuf(f, NULL, _IONBF, 0)
  * Doom calls setbuf(stdout, NULL) at startup to unbuffer its
@@ -812,7 +812,7 @@ static inline void setbuf(FILE *f, char *buf)
     else     (void)setvbuf(f, (char *)0, _IONBF, 0);
 }
 
-/* remove / rename — chapter 130a.  POSIX file-mutation
+/* remove / rename — chapter 172.  POSIX file-mutation
  * primitives Doom's savegame path (g_game.c:G_DoSaveGame)
  * uses to atomically replace doomsav?.dsg with a freshly-
  * written temp file.
@@ -836,7 +836,7 @@ static inline int rename(const char *oldp, const char *newp)
     return -1;
 }
 
-/* perror — chapter 130a.  POSIX: print `s: <strerror(errno)>\n`
+/* perror — chapter 172.  POSIX: print `s: <strerror(errno)>\n`
  * to stderr, where `s` may be NULL (in which case the leading
  * `s: ` is suppressed).  We don't have strerror yet, so we
  * format the raw errno number; that's the same output musl
@@ -921,7 +921,7 @@ static inline int _io_puts(const char *s)
 
 /* --- scanf / fscanf / vfscanf ---------------------------------------- */
 /*
- * Chapter 128f. Reuses scanf.h's `_scn_src` abstraction.  An
+ * Chapter 170. Reuses scanf.h's `_scn_src` abstraction.  An
  * inline source shim pulls characters through fgetc and pushes
  * one-char lookahead back through ungetc.  The FILE * carries
  * its own one-char ungot slot, so the source's pushback never

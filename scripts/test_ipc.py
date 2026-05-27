@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_ipc.py -- chapter 107 / M90a named-IPC smoke test.
+"""scripts/test_ipc.py -- chapter 112 named-IPC smoke test.
 
 Boots the kernel headless, drops to the shell prompt, and runs
 `srvtest`.  Asserts that the in-guest parent (binds
@@ -172,7 +172,7 @@ def main():
             return 1
         print("PASS: srvtest completed cleanly")
 
-        print("\nMILESTONE 90a (named-IPC): ALL TESTS PASSED")
+        print("\nnamed-IPC: ALL TESTS PASSED")
         return 0
     finally:
         try:

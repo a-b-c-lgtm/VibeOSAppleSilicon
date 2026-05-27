@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_gcc_probe2.py -- chapter 132f follow-up after the
+"""scripts/_dbg_gcc_probe2.py -- chapter 186 follow-up after the
 add_prefix NULL fix landed.  Avoid trailing ';' on argv (the guest
 shell does not split on it) and instead drive each xgcc invocation
 on its own line, reading exit code from a second command.

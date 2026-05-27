@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_cow.py \u2014 chapter 75 regression.
+"""scripts/test_cow.py \u2014 chapter 74 regression.
 
 Boots the kernel, drops to the shell, runs `cowtest`, expects
 `[cowtest] all checks passed`.  Four sub-checks exercise:

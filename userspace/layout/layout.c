@@ -1,5 +1,5 @@
 /*
- * userspace/layout/layout.c — milestone-62 layout driver.
+ * userspace/layout/layout.c — layout driver.
  *
  * Reads an HTML file (default /mnt/test_layout.html), runs:
  *
@@ -10,8 +10,8 @@
  *   layout.h paint command stream
  *
  * and prints one line per paint command in painting order, plus
- * a summary header.  This is the M62 contribution to the
- * eventual /bin/browser pipeline (M63 will replace stdout with
+ * a summary header.  This is the layout-engine contribution to the
+ * eventual /bin/browser pipeline (the browser binary will replace stdout with
  * gui_draw_text / gui_fill_rect calls).
  *
  * Output format (parsable by scripts/test_layout.py):

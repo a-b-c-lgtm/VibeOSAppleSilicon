@@ -2,7 +2,7 @@
  *
  * Validates the supported format specifiers, width and flag
  * handling, snprintf truncation behaviour, and the integration
- * between argv (milestone 18) and printf (milestone 19).
+ * between argv and printf.
  */
 
 #include "../libc/syscall.h"

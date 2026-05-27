@@ -1,6 +1,6 @@
 /* userspace/linker_user.ld — link script for user programs.
  *
- * As of milestone 15 every user process owns its own page tables.
+ * Every user process owns its own page tables.
  * The user VA range is L1 slot 64 (0x1000000000 - 0x1040000000),
  * placed well above any plausible DRAM so user VAs and pmem PAs
  * never conflict.  Binaries link at 0x1000100000 so each process
@@ -16,7 +16,7 @@ USER_LOAD_ADDR = 0x1000100000;
 
 PHDRS
 {
-    load PT_LOAD FLAGS(7);   /* PF_R | PF_W | PF_X — kept simple for milestone 7 */
+    load PT_LOAD FLAGS(7);   /* PF_R | PF_W | PF_X — kept simple */
     bss  PT_LOAD FLAGS(6);   /* PF_R | PF_W — NOBITS so .bss doesn't bloat the disk image */
 }
 
@@ -30,7 +30,7 @@ SECTIONS
         *(.rodata .rodata.*)
     } :load
 
-    /* chapter 120: C-style global constructors / destructors.
+    /* chapter 156: C-style global constructors / destructors.
      * Anything tagged __attribute__((constructor)) lands in
      * .init_array; crt0's `_user_start` walks the array
      * between argv setup and `bl main`.  __attribute__((destructor))
@@ -53,7 +53,7 @@ SECTIONS
         *(.data .data.*)
     } :load
 
-    /* chapter 120: the linker generates .got / .got.plt / .rela.got
+    /* chapter 156: the linker generates .got / .got.plt / .rela.got
      * internally when a weak undefined-or-defined symbol appears
      * via a CALL26 reloc (our __cxa_finalize default in crt0).
      * Place them inside the loadable image so --orphan-handling=error
@@ -73,7 +73,7 @@ SECTIONS
         *(COMMON)
     } :bss
 
-    /* The user stack used to live here.  Since milestone 15 it is
+    /* The user stack used to live here.  It is now
      * allocated and mapped by the kernel-side ELF loader at a fixed
      * VA (top of L1 slot 2 = 0xC0000000), so it does not bloat the
      * on-disk binary. */

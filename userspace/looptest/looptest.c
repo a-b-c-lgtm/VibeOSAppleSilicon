@@ -1,12 +1,12 @@
 /*
- * userspace/looptest/looptest.c -- chapter 106 / M95 demo program.
+ * userspace/looptest/looptest.c -- chapter 108 demo program.
  *
  * Exercises the TCP loopback path end to end without any host
  * involvement.  Forks once; the parent acts as a TCP echo server
  * on a fixed port, the child dials 127.0.0.1 on that port, sends
  * a known phrase, reads the echo, and prints "GOT: <phrase>".
  *
- * Without chapter 106's loopback short-circuit, the child's
+ * Without chapter 108's loopback short-circuit, the child's
  * connect() would build a SYN with dst=127.0.0.1, hand it to
  * virtio-net TX, and SLIRP would drop it (no rule matches the
  * 127/8 prefix from the guest).  With loopback in place the SYN
@@ -180,7 +180,7 @@ int main(int argc, char **argv)
         return 1;
     }
     if (pid == 0) {
-        /* Child: don't touch the parent's listen fd (chapter 104
+        /* Child: don't touch the parent's listen fd (chapter 106
          * arranged for fork() to skip FD_SOCKET_LISTEN inheritance
          * exactly so children can't accidentally accept on a
          * port the parent is serving).  Just dial and exit. */

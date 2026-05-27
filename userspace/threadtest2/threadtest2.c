@@ -1,4 +1,4 @@
-/* userspace/threadtest2/threadtest2.c — chapter 92 SMP smoke test.
+/* userspace/threadtest2/threadtest2.c — chapter 93 SMP smoke test.
  *
  * Spawns N_WORKERS clone'd threads sharing one address space and
  * pins them across both CPUs (half on CPU 0, half on CPU 1).
@@ -6,7 +6,7 @@
  * mutex.  The expected total is N_WORKERS * ITERS; we verify the
  * count exactly matches.
  *
- * What this proves over chapter 91's threadtest:
+ * What this proves over chapter 92's threadtest:
  *
  *   - Per-CPU timer PPI is wired up on CPU 1 (without it, a
  *     CPU-1 worker stuck in mutex_lock's spin section would

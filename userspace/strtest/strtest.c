@@ -1,4 +1,4 @@
-/* userspace/strtest/strtest.c — chapter 128c regression.
+/* userspace/strtest/strtest.c — chapter 167 regression.
  *
  * Exercises ctype.h and string.h end-to-end.  Each macro/function
  * gets at least one positive and one negative input; the test

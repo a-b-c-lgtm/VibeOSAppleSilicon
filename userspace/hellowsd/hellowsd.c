@@ -1,11 +1,11 @@
 /*
- * userspace/hellowsd/hellowsd.c — chapter 108d
+ * userspace/hellowsd/hellowsd.c — chapter 117
  * /srv/wm exhibit app.
  *
  * Why this exists
  * ---------------
  *
- * Chapter 108d built wsd's compositor step by step: window
+ * Chapter 117 built wsd's compositor step by step: window
  * table, per-window framebuffers, MOVE, and window-local
  * DAMAGE.  But up to here the only thing that had exercised
  * the wire protocol was `wmtest`, a one-shot CLI that
@@ -125,7 +125,7 @@ int main(int argc, char **argv)
     /* Damage a 4x1 strip at the window's top-left in
      * window-local coords; wsd translates to scanout
      * coords (200, 120 + title-bar-height) on a decorated
-     * window (chapter 108e onwards) -- the title bar is
+     * window (chapter 118 onwards) -- the title bar is
      * 24 px tall and is painted by wsd above the body, so
      * body row 0 lands at scanout y = 144.  Small rect
      * keeps the wsd compose loop fast and the synchronous

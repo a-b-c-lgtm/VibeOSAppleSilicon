@@ -41,7 +41,7 @@
  *
  * Why a separate cache instead of extending blk_cache?
  *
- *   blk_cache (chapter 23) is sector-granularity (512 B), read-only,
+ *   blk_cache (chapter 22) is sector-granularity (512 B), read-only,
  *   and hard-wired to virtio-blk device 0 (where OSFS-1 lives).
  *   Bolting write-back on it would compromise the OSFS-1 invariant
  *   that "what's on disk is the source of truth, the cache is just

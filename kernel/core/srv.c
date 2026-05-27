@@ -1,5 +1,5 @@
 /*
- * kernel/core/srv.c — chapter 107 named-IPC service bus.
+ * kernel/core/srv.c — chapter 112 named-IPC service bus.
  *
  * See srv.h for the public contract and design notes.
  *
@@ -374,7 +374,7 @@ long srv_read(struct srv_conn *c, int is_service_end, void *buf, size_t len)
                 return -EMSGSIZE;
             }
             (void)queue_pop(q);
-            /* Chapter 108d — copy through copy_to_user
+            /* Chapter 117 — copy through copy_to_user
              * so the destination's pages get pre-faulted (lazy
              * anon mmap) and COW-broken before the bytes land.
              * The previous byte-by-byte memcpy panicked at EL1

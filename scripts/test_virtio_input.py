@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-test_virtio_input.py — milestone-39 virtio-input device-bind smoke test.
+test_virtio_input.py — virtio-input device-bind smoke test.
 
 Boots the kernel and asserts:
   1. The virtio-input driver discovers the keyboard device and prints
@@ -8,14 +8,13 @@ Boots the kernel and asserts:
   2. The kernel reaches the `/bin/sh` prompt afterwards (so the
      driver bind didn't wedge anything later in init).
 
-History — why we don't drive `hello\\n` through the keyboard anymore:
+History — why we don't drive `hello\n` through the keyboard anymore:
 
-  The original M39 test (see /memories/repo/milestone-39-virtio-input.md)
-  typed "hello\\n" via QMP `input-send-event` and asserted that the
-  bytes echoed back through the cooked-mode line discipline of the
-  serial-attached `/bin/sh`.  That worked because back at M39 there
-  was no window manager and `console_in.c` simply forwarded virtio-
-  input bytes to the cooked TTY.
+  The original test typed "hello\n" via QMP `input-send-event` and
+  asserted that the bytes echoed back through the cooked-mode line
+  discipline of the serial-attached `/bin/sh`.  That worked because
+  back then there was no window manager and `console_in.c` simply
+  forwarded virtio-input bytes to the cooked TTY.
 
   After chapter-30 input multiplexing + chapter-46 boot-to-desktop,
   every boot brings up a desktop / launcher / taskbar.  The launcher

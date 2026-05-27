@@ -1,4 +1,4 @@
-/* userspace/ps/ps.c — chapter 99 process listing.
+/* userspace/ps/ps.c — chapter 101 process listing.
  *
  * Snapshots /proc by walking SYS_LISTDIR_AT on "/proc"; for each
  * numeric leaf, opens /proc/<pid>/status and parses the textual

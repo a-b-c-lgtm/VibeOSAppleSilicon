@@ -2,10 +2,10 @@
  * kernel/core/vfs.h — minimal virtual file system layer.
  *
  * The VFS is a thin indirection between syscalls and the
- * underlying file-system implementations.  In milestone 8 there
+ * underlying file-system implementations.  Initially there
  * is exactly one mounted FS — `ramfs` — which serves a fixed set
  * of files baked into the kernel image at build time.  The
- * indirection still earns its keep: when chapter 18 lands a
+ * indirection still earns its keep: when chapter 17 lands a
  * disk-backed FS it slots into the same `struct vfs_ops` table
  * without touching the syscall layer.
  *
@@ -40,20 +40,20 @@
 #define ENOSPC      28
 #define EROFS       30
 #define EIO          5
-/* Chapter 104: returned by SYS_SOCKET_LISTEN when another
+/* Chapter 106: returned by SYS_SOCKET_LISTEN when another
  * conn already owns the requested port.  Matches POSIX. */
 #define EADDRINUSE  98
-/* Chapter 113 — returned by the mount-table dispatcher when a
+/* Chapter 132 — returned by the mount-table dispatcher when a
  * caller writes to a MOUNT_RO mount.  Same numeric value as
  * the existing EROFS so userspace callers comparing against
  * either name keep working. */
 #define EROFS_VFS   30
-/* Chapter 113 — returned by the dispatcher when a driver does
+/* Chapter 132 — returned by the dispatcher when a driver does
  * not implement the requested op (e.g. mkdir on procfs).  Matches
  * POSIX ENOSYS. */
 #define ENOSYS_VFS  38
 
-/* Chapter 114 — additional errnos for userspace filesystem
+/* Chapter 140 — additional errnos for userspace filesystem
  * servers (`SYS_MOUNT` / `SYS_UMOUNT` and the userfs vtable).
  * Names + values mirror Linux's <errno.h> so userspace callers
  * comparing against either header keep working. */
@@ -70,7 +70,7 @@
 #define ETIMEDOUT_VFS 110 /* userfs request exceeded its deadline */
 #endif
 
-/* Chapter 116b — returned by vfs_lseek when the fd kind is not
+/* Chapter 150 — returned by vfs_lseek when the fd kind is not
  * seekable (pipes, sockets, ttys, the kernel console).  Matches
  * POSIX value 29 ("illegal seek"). */
 #ifndef ESPIPE
@@ -83,11 +83,11 @@ struct thread;
 /* Forward decl — defined in pipe.h. */
 struct pipe;
 
-/* Forward decls — defined in srv.h (chapter 107). */
+/* Forward decls — defined in srv.h (chapter 112). */
 struct srv_listen;
 struct srv_conn;
 
-/* Forward decl — defined in userfs.h (chapter 114). */
+/* Forward decl — defined in userfs.h (chapter 140). */
 struct userfs_channel;
 
 /* Forward decl — defined later in this file.  Filesystem drivers
@@ -96,7 +96,7 @@ struct userfs_channel;
 struct fd_entry;
 
 /* ------------------------------------------------------------------
- * Chapter 113 — mount table + struct fs_ops vtable.
+ * Chapter 132 — mount table + struct fs_ops vtable.
  *
  * Replaces the per-syscall prefix ladders that had grown across
  * vfs.c and syscall.c (one branch per filesystem in vfs_open /
@@ -221,18 +221,18 @@ enum fd_kind {
     FD_PIPE_W,
     FD_TMPFS_RW,    /* read+write tmpfs file; tmpfs index in ramfs_index */
     FD_SOCKET,      /* TCP socket; tcp_cid in `socket_cid` */
-    FD_SOCKET_LISTEN, /* chapter 104: TCP listening socket;
+    FD_SOCKET_LISTEN, /* chapter 106: TCP listening socket;
                        * tcp_cid in `socket_cid` (a TCP_LISTEN
                        * conn slot).  Read/write return -EINVAL;
                        * the only valid op besides close is
                        * SYS_SOCKET_ACCEPT. */
-    FD_PTY_MASTER,  /* gui_term side of a pty (chapter 79b) */
+    FD_PTY_MASTER,  /* gui_term side of a pty (chapter 79) */
     FD_PTY_SLAVE,   /* /bin/sh side of a pty; goes on fd 0/1/2 */
     FD_OSFS2_FILE,  /* writable OSFS-2 file at /data/...; ino in `osfs2_ino` */
-    FD_SRV_LISTEN,  /* chapter 107: named-IPC listener; srv_listen in `srv_l` */
-    FD_SRV_CONN,    /* chapter 107: named-IPC connected fd; srv_conn in `srv_c`,
+    FD_SRV_LISTEN,  /* chapter 112: named-IPC listener; srv_listen in `srv_l` */
+    FD_SRV_CONN,    /* chapter 112: named-IPC connected fd; srv_conn in `srv_c`,
                      * `srv_is_service` distinguishes the service vs client end */
-    FD_USERFS_FILE, /* chapter 114: file behind a userspace fs server;
+    FD_USERFS_FILE, /* chapter 140: file behind a userspace fs server;
                      * `userfs_ch` + `userfs_handle` carry the per-fd
                      * state.  Read/write dispatch through g_userfs_ops. */
 };
@@ -270,7 +270,7 @@ struct fd_entry {
      * never refers to a real file.  Reads and writes route
      * through osfs2_read / osfs2_write at offset `offset`. */
     uint32_t   osfs2_ino;
-    /* Chapter 107 — named-IPC service bus.  When kind is
+    /* Chapter 112 — named-IPC service bus.  When kind is
      * FD_SRV_LISTEN, `srv_l` points at the registered
      * listener and `srv_c` / `srv_is_service` are unused.
      * When kind is FD_SRV_CONN, `srv_c` points at the
@@ -282,7 +282,7 @@ struct fd_entry {
     struct srv_listen *srv_l;
     struct srv_conn   *srv_c;
     int                srv_is_service;
-    /* Chapter 114 — userspace filesystem server fd state.  Only
+    /* Chapter 140 — userspace filesystem server fd state.  Only
      * valid when kind == FD_USERFS_FILE.  The channel pointer
      * carries one open-fd refcount; vfs_close decrements
      * userfs_ch->open_fds via g_userfs_ops.close. */
@@ -290,9 +290,9 @@ struct fd_entry {
     uint32_t               userfs_handle;
 };
 
-/* Chapter 93 — refcounted fd table.
+/* Chapter 94 — refcounted fd table.
  *
- * Pre-chapter 93, every `struct thread` carried its own
+ * Pre-chapter 94, every `struct thread` carried its own
  * `struct fd_entry fds[FD_TABLE_SIZE]` directly inline.  This
  * forced one private fd table per thread, which is wrong for
  * "threads inside one process" (POSIX-style): a thread that
@@ -300,7 +300,7 @@ struct fd_entry {
  * write the same descriptor, and a thread that exits should
  * NOT close descriptors its siblings still hold.
  *
- * Chapter 93 lifts the table into a separately-allocated
+ * Chapter 94 lifts the table into a separately-allocated
  * `struct fd_table` owned by reference count.  The default
  * (used by spawn / fork / SYS_CLONE without CLONE_FILES) is
  * still "one fresh table per thread, refcount = 1".  When a
@@ -339,7 +339,7 @@ void fd_table_unref(struct fd_table *ft);
 /* Initialise the VFS.  Wires up ramfs.  Idempotent. */
 void vfs_init(void);
 
-/* Chapter 90 — expose a ramfs blob to in-kernel page-cache
+/* Chapter 91 — expose a ramfs blob to in-kernel page-cache
  * loaders.  Returns 0 and fills *out_data + *out_size on
  * success; -1 if `idx` is out of range.  The returned pointer
  * stays valid for the lifetime of the kernel image (ramfs blobs
@@ -372,7 +372,7 @@ void vfs_init_fdtable(struct thread *t);
 #define O_APPEND  02000     /* 1024 — write at EOF (parsed; tmpfs always appends) */
 
 /* Open `name` for reading.  Returns the new fd on success or a
- * negative errno.  `flags` is reserved for milestone-9 (writes). */
+ * negative errno.  `flags` is reserved for later write support. */
 int vfs_open(const char *name, int flags);
 
 /* Open `name` directly into thread `t`'s slot `fd`, overwriting
@@ -381,7 +381,7 @@ int vfs_open(const char *name, int flags);
  * a negative errno. */
 int vfs_open_into(struct thread *t, int fd, const char *name, int flags);
 
-/* Chapter 117 -- POSIX-shaped file metadata.  Returned by
+/* Chapter 153 -- POSIX-shaped file metadata.  Returned by
  * vfs_stat_path / vfs_fstat (kernel) and sys_stat / sys_fstat
  * (the user surface).  Kept deliberately small: GCC / TCC /
  * make only need mode + size today; mtime is wired through to
@@ -398,8 +398,8 @@ int vfs_open_into(struct thread *t, int fd, const char *name, int flags);
  *
  * Layout must match userspace/libc/sys/stat.h::struct stat
  * byte-for-byte.  Do not reorder.  The 4-byte _pad keeps `size`
- * 8-byte aligned.  Chapter 131d appended st_dev / st_ino;
- * chapter 131e renamed st_mtime_ms -> st_mtime (POSIX seconds;
+ * 8-byte aligned.  Chapter 178 appended st_dev / st_ino;
+ * chapter 179 renamed st_mtime_ms -> st_mtime (POSIX seconds;
  * still always 0) and appended st_uid / st_gid (always 0). */
 struct kstat {
     uint32_t st_mode;
@@ -440,21 +440,21 @@ long vfs_fstat(int fd, struct kstat *out);
  * on success, -EMFILE if the table is full. */
 int vfs_alloc_socket_fd(int cid);
 
-/* Chapter 104 -- allocate a fresh fd that wraps a TCP_LISTEN
+/* Chapter 106 -- allocate a fresh fd that wraps a TCP_LISTEN
  * cid.  Identical to vfs_alloc_socket_fd except for the kind
  * (FD_SOCKET_LISTEN), which the read/write paths reject and
  * which SYS_SOCKET_ACCEPT requires.  Returns the new fd >= 3,
  * or -EMFILE if the table is full. */
 int vfs_alloc_listen_fd(int cid);
 
-/* Chapter 107 — allocate a fresh fd in the current thread
+/* Chapter 112 — allocate a fresh fd in the current thread
  * pointing at a /srv/<name> listener object (returned by
  * srv_bind).  Read/write paths reject FD_SRV_LISTEN; only
  * SYS_SRV_ACCEPT and close are valid.  Returns the new fd
  * >= 3, or -EMFILE if the table is full. */
 int vfs_alloc_srv_listen_fd(struct srv_listen *ls);
 
-/* Chapter 107 — allocate a fresh fd in the current thread
+/* Chapter 112 — allocate a fresh fd in the current thread
  * pointing at a /srv connected conn.  `is_service_end` picks
  * which queue read/write touches: nonzero = accepted (service)
  * side; zero = connect (client) side.  Returns the new fd
@@ -475,7 +475,7 @@ long vfs_read(int fd, void *buf, size_t len);
  * is a no-op success (POSIX-style). */
 int vfs_close(int fd);
 
-/* Chapter 116b — POSIX lseek.  Re-position `fd`'s read/write
+/* Chapter 150 — POSIX lseek.  Re-position `fd`'s read/write
  * cursor.  `whence` is 0/1/2 for SEEK_SET/SEEK_CUR/SEEK_END.
  * Returns the new absolute offset on success, or a negative
  * errno (-EBADF, -ESPIPE on un-seekable kinds, -EINVAL for a
@@ -498,7 +498,7 @@ int vfs_lookup(const char *path, const uint8_t **data, size_t *size);
  *   /mnt/<name>  -> OSFS-1 disk mount
  *   /bin/<name>  -> OSFS-1 disk mount (after the /bin/ prefix is
  *                   stripped) — this is where user binaries live.
- *   /data/<name> -> OSFS-2 writable disk mount (chapter 81+)
+ *   /data/<name> -> OSFS-2 writable disk mount (chapter 82+)
  *   <other>      -> embedded ramfs
  * Used by sys_spawn and the boot-time init loader. */
 int vfs_load(const char *path, uint8_t **out_buf, size_t *out_size);

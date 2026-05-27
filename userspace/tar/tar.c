@@ -1,6 +1,6 @@
 /* userspace/tar/tar.c -- minimal ustar archive reader.
  *
- * Chapter 133a.  Supports two modes:
+ * Chapter 191.  Supports two modes:
  *
  *     tar tf <archive>            list contents
  *     tar xf <archive> [-C dir]   extract to dir (default cwd)

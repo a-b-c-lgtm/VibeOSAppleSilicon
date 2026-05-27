@@ -143,7 +143,7 @@ long tmpfs_write(int idx, uint32_t offset, const void *buf, size_t len)
      * bytes (POSIX semantics).  GNU as writes the ELF header,
      * seeks past it to write section data, then seeks back to
      * overwrite the header with its final form — that only works
-     * if tmpfs honors the fd offset.  Chapter 131f bug 4 fix. */
+     * if tmpfs honors the fd offset.  Chapter 180 bug 4 fix. */
     if (offset > f->size) {
         for (uint32_t i = f->size; i < offset; i++) f->data[i] = 0;
     }
@@ -195,7 +195,7 @@ uint32_t tmpfs_size_of(int idx)
 void tmpfs_seek_end(int idx)
 {
     /* No-op kept for ABI compatibility.  tmpfs_write is now
-     * positional (chapter 131f bug 4) and the fd offset is set
+     * positional (chapter 180 bug 4) and the fd offset is set
      * to f->size in tmpfs_op_open when O_APPEND is requested. */
     (void)idx;
 }
@@ -216,7 +216,7 @@ int tmpfs_unlink(const char *name)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 113 — struct fs_ops adapter.
+ * Chapter 132 — struct fs_ops adapter.
  *
  * tmpfs is the second port (after procfs).  The adapter is thin:
  * the existing helpers above already match the vtable shape one-
@@ -259,7 +259,7 @@ static long tmpfs_op_open(void *cookie, const char *rel, int flags,
     out->kind        = FD_TMPFS_RW;
     /* O_APPEND: start fd at EOF so shell `>>` redirection
      * (single-write-per-open) appends rather than overwriting.
-     * Chapter 131f bug 4 fix: tmpfs_write now honors the fd
+     * Chapter 180 bug 4 fix: tmpfs_write now honors the fd
      * offset so without this, an O_APPEND open would write at
      * offset 0 and overwrite the existing contents. */
     out->offset      = (flags & O_APPEND) ? (uint64_t)g_files[tidx].size : 0;
@@ -333,7 +333,7 @@ static int tmpfs_op_is_dir(void *cookie, const char *rel)
     return 0;                /* flat namespace: no subdirs */
 }
 
-/* chapter 119: support exec'ing a file written to /tmp.
+/* chapter 155: support exec'ing a file written to /tmp.
  * vfs_load() asks each mount's `load` op for a freshly
  * kmalloc'd copy of the file bytes; we just allocate and
  * pump it through tmpfs_read. */

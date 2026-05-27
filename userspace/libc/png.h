@@ -1,7 +1,7 @@
 /*
  * userspace/libc/png.h — header-only PNG decoder.
  *
- * Chapter 97 deliverable, extended in chapter 98 to cover the
+ * Chapter 98 deliverable, extended in chapter 99 to cover the
  * other common colour types real-world PNGs use:
  *
  *   - colour type 0 (grayscale)        at bit-depths 1, 2, 4, 8

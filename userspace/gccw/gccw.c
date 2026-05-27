@@ -1,5 +1,5 @@
 /*
- * userspace/gccw/gccw.c — chapter 132f /bin/gcc front-end shim.
+ * userspace/gccw/gccw.c — chapter 186 /bin/gcc front-end shim.
  *
  * Ships as /bin/gcc on the guest.  All it does is:
  *
@@ -14,15 +14,15 @@
  *   2.  Prepend `-isystem /bin` so cc1 finds the libc headers
  *       (stdio.h, string.h, etc.) shipped alongside the binaries
  *       on the OSFS image.  -B does NOT extend cpp's include
- *       search path -- chapter 132g's `-B` vs `-L` lesson, but
- *       for the preprocessor side.  Added in chapter 132i.
+ *       search path -- chapter 187's `-B` vs `-L` lesson, but
+ *       for the preprocessor side.  Added in chapter 189.
  *
  *   3.  execv("/bin/xgcc", new_argv).  The real driver does the
  *       rest -- argument parsing, spec processing, spawning
  *       cc1/as/ld.
  *
  * Why a separate binary and not a shell script:  the kernel
- * doesn't grok shebang lines (chapter 132f's "ship-to-guest
+ * doesn't grok shebang lines (chapter 186's "ship-to-guest
  * blockers" memo).  A 1 KiB C wrapper is the simplest way to
  * inject a fixed argv prefix without bloating xgcc itself.
  *

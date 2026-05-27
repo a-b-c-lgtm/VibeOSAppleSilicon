@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/test_cc_hello.py — chapter 121 smoke test.
+scripts/test_cc_hello.py — chapter 157 smoke test.
 
 End-to-end pipeline for /bin/cc:
 
@@ -129,7 +129,7 @@ def expect_pass(cond, msg):
 
 
 def main():
-    print("[chapter 121] /bin/cc smoke test")
+    print("[chapter 157] /bin/cc smoke test")
     reformat_data()
     q = boot()
     s = conn()

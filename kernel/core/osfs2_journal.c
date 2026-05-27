@@ -1,5 +1,5 @@
 /*
- * kernel/core/osfs2_journal.c — chapter 83 implementation.
+ * kernel/core/osfs2_journal.c — chapter 84 implementation.
  *
  * See osfs2_journal.h for the contract and design rationale.
  *

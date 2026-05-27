@@ -1,7 +1,7 @@
 /*
- * kernel/core/wm_font.h — chapter 108b WM-side font client.
+ * kernel/core/wm_font.h — chapter 115 WM-side font client.
  *
- * The kernel WM is now a client of /bin/fontd (chapter 108b
+ * The kernel WM is now a client of /bin/fontd (chapter 115
  * moved the TTF rasteriser into a userspace daemon).  This
  * module owns:
  *
@@ -9,7 +9,7 @@
  *     lazily on first use and reconnected on EPIPE.
  *   - A per-codepoint glyph cache holding metrics + alpha
  *     bitmaps fetched from fontd.  Same shape as the kernel-
- *     resident cache that ttf.c maintained in chapter 102,
+ *     resident cache that ttf.c maintained in chapter 104,
  *     just populated by IPC reply instead of by an in-process
  *     rasteriser.
  *

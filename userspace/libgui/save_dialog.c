@@ -60,7 +60,7 @@
  * know what notepad or paint or any future caller wants behind
  * us.
  *
- * Chapter 85 — directory navigation
+ * Chapter 86 — directory navigation
  * ---------------------------------
  *
  * The dialog now knows about subdirectories under /data/:
@@ -82,7 +82,7 @@
  *     the whole dialog).
  *
  * No '.' or '..' entries are stored in the on-disk OSFS-2
- * directory format (chapter 85 doc); the dialog synthesizes the
+ * directory format (chapter 86 doc); the dialog synthesizes the
  * ".." row purely as UI candy.
  */
 
@@ -108,7 +108,7 @@
 
 /* Hard caps that match the rest of the system.  NAME_FIELD_MAX
  * is 64 bytes — comfortably more than OSFS-2's 60-byte name
- * limit (chapter 81), with room for a trailing NUL.
+ * limit (chapter 82), with room for a trailing NUL.
  *
  * MAX_DIR is the longest current_dir we can hold; deep enough
  * for any reasonable hierarchy under /data/ and bounded so we
@@ -436,7 +436,7 @@ static void render(struct wm_window *win, int win_w, int win_h,
                 s_append(sz, " b", sizeof(sz));
                 suffix = sz;
             }
-            /* Right-align the suffix. Chapter 102 -- measure the
+            /* Right-align the suffix. Chapter 104 -- measure the
              * proportional rendered width instead of `chars * 8`. */
             int sz_x = list_x + list_w - 6 - draw_measure_text(suffix);
             draw_text(fb, sz_x, row_y,
@@ -445,7 +445,7 @@ static void render(struct wm_window *win, int win_w, int win_h,
     }
     y = list_y + list_h + 12;
 
-    /* 4. "Filename:" or "Folder:" label + field. Chapter 102 --
+    /* 4. "Filename:" or "Folder:" label + field. Chapter 104 --
      * measure the label so the field x-position is independent of
      * the kernel font's glyph pitch. */
     const char *label = (g_mode == MODE_NEW_FOLDER) ? "Folder:  " : "Filename:";
@@ -468,7 +468,7 @@ static void render(struct wm_window *win, int win_w, int win_h,
                    field_y, 1, DLG_FIELD_H, DLG_DIM);
     draw_text(fb, field_x + 4, field_y + 3,
               g_field, DLG_FG, fbg, 0);
-    /* Field cursor (block). Chapter 102 -- position via measured
+    /* Field cursor (block). Chapter 104 -- position via measured
      * width of the prefix up to the cursor. */
     int prefix_px = 0;
     if (g_field_cur > 0) {

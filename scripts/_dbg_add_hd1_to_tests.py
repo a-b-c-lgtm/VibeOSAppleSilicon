@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_add_hd1_to_tests.py — chapter 81 helper.
+"""scripts/_dbg_add_hd1_to_tests.py — chapter 82 helper.
 
 One-off mass edit that added the OSFS-2 disk (`build/data.img`) as
 the second virtio-blk device (hd1) to every test/snoop/dbg script

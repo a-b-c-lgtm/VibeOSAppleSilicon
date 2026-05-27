@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_mmap.py — chapter 90 smoke test.
+"""scripts/test_mmap.py — chapter 91 smoke test.
 
 Boots the kernel, drops to /bin/sh, runs `mmaptest`, and asserts
 that the chapter-90 marker `[mmap] OK` (preceded by both
@@ -8,7 +8,7 @@ that the chapter-90 marker `[mmap] OK` (preceded by both
 Failures dump the captured section so the user can see exactly
 which test step blew up.
 
-Modelled after scripts/test_printftest.py (M58)."""
+Modelled after scripts/test_printftest.py."""
 import os, select, socket, subprocess, sys, time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -97,7 +97,7 @@ def main():
             print("FAIL: file mmap test never reported OK"); return 1
         if b"[mmap] OK" not in log:
             print("FAIL: overall mmap marker missing"); return 1
-        print("PASS: chapter 90 mmap smoke test")
+        print("PASS: chapter 91 mmap smoke test")
         return 0
     finally:
         q.kill(); q.wait()

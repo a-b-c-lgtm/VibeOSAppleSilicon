@@ -1,5 +1,5 @@
 /*
- * userspace/paint/paint.c — milestone-41 mouse demo.
+ * userspace/paint/paint.c — mouse demo.
  *
  * Opens a 600x400 window with a white canvas.  Wherever the user
  * left-clicks (or drags with the left button held), a 12x12 colour
@@ -13,7 +13,7 @@
  *   GUI_EVENT_MOUSE_UP
  *   GUI_EVENT_CLOSE
  *
- * Chapter 108c: every brush stamp is now a direct write into
+ * Chapter 116: every brush stamp is now a direct write into
  * the window's mapped framebuffer.  The hot path during a drag
  * used to be one gui_fill_rect per stamp + one gui_flush per
  * pointer move — two syscalls per pixel of trail.  Now it's a
@@ -24,7 +24,7 @@
  * because we no longer give the compositor a chance to render
  * a partial trail (one damage per stamp = one composite).
  *
- * Chapter 108d: ported off the kernel-WM
+ * Chapter 117: ported off the kernel-WM
  * (gui_create_window / gui_window_fb / gui_window_dirty /
  * gui_poll_event / gui_destroy_window) onto the wsd-backed
  * wmclient.  The kernel WM no longer composes pixels; wsd
@@ -52,7 +52,7 @@ static const uint32_t PALETTE[] = {
 };
 #define PALETTE_LEN (sizeof(PALETTE) / sizeof(PALETTE[0]))
 
-/* Chapter 108c removed the canvas shadow buffer — the mapped
+/* Chapter 116 removed the canvas shadow buffer — the mapped
  * framebuffer IS the canvas, no copy needed.  clear_canvas
  * just memsets the mapped pages. */
 
@@ -149,7 +149,7 @@ int main(int argc, char **argv)
     int dragging = 0;
     int last_x = 0, last_y = 0;     /* most recent stamp during drag */
 
-    /* chapter 108e follow-up -- draw the initial colour swatch
+    /* chapter 118 follow-up -- draw the initial colour swatch
      * in the top-right corner so the user can see the current
      * brush colour from the moment the app opens.  Without
      * this, the swatch only appeared after the first right-

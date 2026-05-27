@@ -1,5 +1,5 @@
 /*
- * kernel/core/procfs.h — chapter 99 read-only /proc pseudo-FS.
+ * kernel/core/procfs.h — chapter 101 read-only /proc pseudo-FS.
  *
  * Three things make this fundamentally different from osfs /
  * osfs2 / tmpfs:
@@ -97,7 +97,7 @@ int procfs_listdir(const char *subdir, int idx,
  * before dispatching to procfs_listdir. */
 int procfs_is_dir(const char *path);
 
-/* Chapter 113 — vtable adapter for the mount table.  The fs_ops
+/* Chapter 132 — vtable adapter for the mount table.  The fs_ops
  * forwards every method to the chapter-99 functions above; it
  * exists so the dispatcher in vfs.c / syscall.c can route /proc
  * through `vfs_resolve` instead of a hand-rolled prefix branch.

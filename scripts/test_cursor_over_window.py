@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression: chapter 108e cursor save/restore correctness.
+"""Regression: chapter 118 cursor save/restore correctness.
 
 Boots the OS, waits for the launcher to appear, takes a baseline
 screendump with the cursor parked OFF the launcher, then drives

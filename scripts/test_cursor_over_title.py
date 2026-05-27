@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression: chapter 108e follow-up #5 -- title-bar damage repair.
+"""Regression: chapter 118 follow-up #5 -- title-bar damage repair.
 
 Boots the OS, waits for the launcher to appear, takes a baseline
 screendump with the cursor parked OFF the launcher, then drives

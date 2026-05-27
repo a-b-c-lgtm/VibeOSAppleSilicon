@@ -1,7 +1,7 @@
 /*
- * userspace/fontd/fontd.c — chapter 108b font server.
+ * userspace/fontd/fontd.c — chapter 115 font server.
  *
- * Binds /srv/font (chapter 107 named IPC) and answers
+ * Binds /srv/font (chapter 112 named IPC) and answers
  * FONT_OP_GLYPH / FONT_OP_METRICS requests using the TTF
  * rasteriser moved out of the kernel.  One process, one
  * embedded face (DejaVu Sans).
@@ -24,19 +24,19 @@
  * is warmed at startup so the first WM-side gui_draw_text
  * after boot doesn't pay a cold-cache penalty per glyph.
  *
- * If we die, init's supervisor (chapter 108) respawns us.
+ * If we die, init's supervisor (chapter 113) respawns us.
  * The cache is rebuilt from scratch on respawn.  Glyph
  * render is pure and idempotent, so cache-loss has no
  * user-visible effect.
  *
- * Concurrency (chapter 108c)
+ * Concurrency (chapter 116)
  * --------------------------
  *
- * Until chapter 108c the daemon served one client at a time:
+ * Until chapter 116 the daemon served one client at a time:
  * the accept loop blocked inside serve_conn() until the client
  * closed, so the next srv_accept didn't run until the current
  * client went away.  That was fine when the kernel WM was the
- * only client.  Chapter 108c gives every GUI app its own
+ * only client.  Chapter 116 gives every GUI app its own
  * persistent fontd connection (via libgui/draw.c), which means
  * one held-open client (kernel WM) would otherwise starve all
  * the apps waiting in srv_connect's pending queue.
@@ -60,7 +60,7 @@
 #include "ttf.h"
 
 /* Symbols emitted by Makefile's objcopy -I binary rule for
- * the DejaVu Sans blob now linked into fontd (chapter 108b
+ * the DejaVu Sans blob now linked into fontd (chapter 115
  * moved this out of the kernel image). */
 extern const uint8_t _binary_DejaVuSans_ttf_start[];
 extern const uint8_t _binary_DejaVuSans_ttf_end[];
@@ -92,7 +92,7 @@ static mutex_t g_face_lock = MUTEX_INIT;
  * cap at 8 KiB to keep the stack frame small.  If a future
  * chapter adds bigger sizes we'll need a malloc'd buffer per
  * worker; today the static cap is fine.
- * Chapter 108c removed the file-scope static buffer that
+ * Chapter 116 removed the file-scope static buffer that
  * predated multi-client service. */
 #define REPLY_BUF_BYTES  8192u
 /* Defensive cap on the bitmap payload: send_reply will refuse
@@ -223,7 +223,7 @@ static void handle_health(int cfd, uint8_t *scratch,
  * stream of junk — the client will reconnect on its next
  * glyph miss.
  *
- * Runs on a dedicated worker thread (chapter 108c) so other
+ * Runs on a dedicated worker thread (chapter 116) so other
  * clients aren't starved behind this conn.  `scratch` is the
  * per-worker reply buffer, stack-allocated by serve_thread. */
 static void serve_conn(int cfd, uint8_t *scratch)

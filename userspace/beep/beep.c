@@ -1,4 +1,4 @@
-/* userspace/beep/beep.c — chapter 96: synthesise a square wave.
+/* userspace/beep/beep.c — chapter 97: synthesise a square wave.
  *
  * Usage:
  *   beep                   # 800 Hz for 200 ms

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_passive_open.py -- chapter 103 / M92 passive-open test.
+"""scripts/test_passive_open.py -- chapter 105 passive-open test.
 
 Boots the kernel with SLIRP's hostfwd configured so that the
 host's TCP port 18088 is forwarded into the guest's TCP port 8088.
@@ -26,7 +26,7 @@ Why hostfwd: SLIRP user-mode networking is NAT-only by default
 (guest can dial out, host can't dial in).  Adding hostfwd=tcp::
 18088-:8088 punches a single mapping so the host can reach the
 guest's listener without us having to bring up tap networking
-on the host.  See chapter 103's prose for the SLIRP discussion.
+on the host.  See chapter 105's prose for the SLIRP discussion.
 """
 import os, select, socket, subprocess, sys, time
 
@@ -56,7 +56,7 @@ def boot():
         "-device", "virtio-blk-device,drive=hd0",
         "-drive",  f"if=none,file={ROOT}/build/data.img,format=raw,id=hd1",
         "-device", "virtio-blk-device,drive=hd1",
-        # Chapter 103: hostfwd punches host:18088 -> guest:8088
+        # Chapter 105: hostfwd punches host:18088 -> guest:8088
         # through SLIRP so our test script (running on the host)
         # can dial the kernel's listener.
         "-netdev", f"user,id=n0,hostfwd=tcp::{HOST_PORT}-:{GUEST_PORT}",

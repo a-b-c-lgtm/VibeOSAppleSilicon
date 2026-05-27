@@ -1,5 +1,5 @@
 /*
- * kernel/core/icmp.h \u2014 milestone-54 ICMPv4 (RFC 792).
+ * kernel/core/icmp.h \u2014 ICMPv4 (RFC 792).
  *
  * The kernel only consumes one ICMP message type for now: echo
  * request (type 8).  Inbound echo requests are answered

@@ -3,11 +3,11 @@
  * Thin wrapper that glues:
  *
  *   - osdev userspace TCP sockets (socket_connect / read / write
- *     / close from syscall.h, chapter 104)
+ *     / close from syscall.h, chapter 106)
  *   - BearSSL's client SSL engine (br_ssl_client_init_full,
- *     br_sslio_*, chapter 112a vendoring)
- *   - osdev's kernel CSPRNG (SYS_GETRANDOM, chapter 112)
- *   - osdev's wall-clock (SYS_GETTIMEOFDAY, chapter 95) for the
+ *     br_sslio_*, chapter 124 vendoring)
+ *   - osdev's kernel CSPRNG (SYS_GETRANDOM, chapter 123)
+ *   - osdev's wall-clock (SYS_GETTIMEOFDAY, chapter 96) for the
  *     X.509 minimal validator's notBefore/notAfter checks
  *
  * Three trust modes:
@@ -57,7 +57,7 @@
 extern "C" {
 #endif
 
-/* Chapter 112e/112f/112g compile-time limits.
+/* Chapter 128/112f/112g compile-time limits.
  *
  * TLS_MAX_ANCHORS = 256 covers a full Mozilla NSS root list
  * (~150 entries on current macOS / curl.se bundles) with

@@ -2,7 +2,7 @@
  * kernel/core/pty.h — minimal pseudo-terminal: two pipes plus a
  * foreground-pid field.
  *
- * Chapter 79b: gui_term spawns a real /bin/sh and routes
+ * Chapter 79: gui_term spawns a real /bin/sh and routes
  * keystrokes through a pty rather than synthesising "one
  * command per Enter" itself.  A pty here is the smallest thing
  * that earns the name:

@@ -76,7 +76,7 @@ void tmpfs_seek_end(int idx);
  * goes false. */
 int tmpfs_unlink(const char *name);
 
-/* Chapter 113 — vtable adapter for the mount table.  Forwards
+/* Chapter 132 — vtable adapter for the mount table.  Forwards
  * every fs_ops method to the tmpfs_* functions above so the
  * dispatcher in vfs.c / syscall.c can route /tmp through
  * `vfs_resolve`.  `cookie` is always NULL (tmpfs is a singleton). */

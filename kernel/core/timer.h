@@ -30,7 +30,7 @@
  * separately via gic_enable_irq(TIMER_CNTV_INTID). */
 void timer_init(uint32_t interval_ms);
 
-/* Chapter 89 — arm THIS CPU's CNTV down-counter using the
+/* Chapter 90 — arm THIS CPU's CNTV down-counter using the
  * interval previously set by timer_init.  Must be called once
  * per secondary CPU during bring-up; CNTV_TVAL_EL0 / CNTV_CTL_EL0
  * are per-CPU registers, so each CPU programs its own.  Safe to

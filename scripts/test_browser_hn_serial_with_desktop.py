@@ -146,7 +146,7 @@ def main():
         wait_for(ser, b"$ ", 2.0, transcript)
         print("PASS: httpd 8080 backgrounded")
 
-        # Chapter 106c: BR_DEFAULT_PROXY now points at the
+        # Chapter 111: BR_DEFAULT_PROXY now points at the
         # init-spawned port-80 httpd, which has no upstream.
         # Override to the port-8080 httpd we just backgrounded
         # so the browser routes through OUR forwarder.

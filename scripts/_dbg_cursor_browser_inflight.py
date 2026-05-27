@@ -4,7 +4,7 @@ across the .note div (the yellow box).  Take screenshots
 PERIODICALLY during the motion and save them so we can examine
 TRANSIENT distortion mid-motion.
 
-This is for diagnosing the chapter 108e "lines distorted as
+This is for diagnosing the chapter 118 "lines distorted as
 cursor moves over them" report.  The pixel-perfect regression
 test (test_cursor_over_browser.py) takes baseline + after,
 which only catches PERSISTENT distortion (state that survives

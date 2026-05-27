@@ -1,5 +1,5 @@
 /*
- * kernel/core/strace.h — chapter 100 per-thread syscall tracer.
+ * kernel/core/strace.h — chapter 102 per-thread syscall tracer.
  *
  * Design summary
  * --------------
@@ -17,12 +17,12 @@
  *
  * The ring is exposed read-only as `/proc/<pid>/trace`.  Each
  * open snapshots the current contents into a procfs buffer
- * (chapter 99's snapshot-at-open shape) AND drains them — the
+ * (chapter 101's snapshot-at-open shape) AND drains them — the
  * next open sees only entries added in between.  This makes
  * the natural `cat /proc/<pid>/trace` loop work as a poll.
  *
  * Why per-thread, not per-process: we don't have process groups,
- * and fork is rare relative to threads-via-clone (chapter 91).
+ * and fork is rare relative to threads-via-clone (chapter 92).
  * One ring per thread keeps the lock per-ring (cheap) and
  * matches POSIX strace's default "don't follow fork" behaviour.
  *

@@ -13,7 +13,7 @@
  * next free page in its first 8 bytes.  No bitmap, no allocator
  * metadata, no per-region accounting beyond a global counter.
  * Adding nicer bookkeeping (largest contiguous run, per-zone
- * tracking, etc.) is a milestone-6+ refinement.
+ * tracking, etc.) is a later refinement.
  */
 #ifndef PMEM_H
 #define PMEM_H

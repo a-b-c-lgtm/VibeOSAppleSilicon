@@ -3,7 +3,7 @@
  *
  * Brings up the shared distributor and per-CPU redistributors so
  * the kernel can take PPIs (the ARM generic timer at ID 27) and
- * SGIs (chapter 88's IPIs).
+ * SGIs (chapter 89's IPIs).
  *
  * The MMU is on by the time gic_init / gic_init_per_cpu run: the
  * [0, 1 GiB) region is mapped Device-nGnRnE in our identity-mapped

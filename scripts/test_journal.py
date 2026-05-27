@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_journal.py — chapter 83 crash-consistency tests.
+"""scripts/test_journal.py — chapter 84 crash-consistency tests.
 
 Three sub-tests, all use SIGKILL on the QEMU VM (no graceful flush
 chance) to model power loss.  Between each kill we boot the kernel
@@ -164,7 +164,7 @@ def cat(s, path):
 # ---------- Test A — clean-shutdown smoke ----------
 
 def test_A_clean_shutdown():
-    print("\n[chapter 83] Test A: clean boot performs no replay")
+    print("\n[chapter 84] Test A: clean boot performs no replay")
     reformat_data()
     q, s = boot_to_shell()
     log = q.boot_log
@@ -177,7 +177,7 @@ def test_A_clean_shutdown():
 # ---------- Test B — write + sync + crash + replay ----------
 
 def test_B_replay_after_crash():
-    print("\n[chapter 83] Test B: data sync'd before crash survives")
+    print("\n[chapter 84] Test B: data sync'd before crash survives")
     reformat_data()
     q, s = boot_to_shell()
     # Write three files and sync them all in one batch — that
@@ -207,7 +207,7 @@ def test_B_replay_after_crash():
 # ---------- Test C — random-time kills, FS stays consistent ----------
 
 def test_C_random_kills_consistent():
-    print("\n[chapter 83] Test C: random kills, mount remains consistent")
+    print("\n[chapter 84] Test C: random kills, mount remains consistent")
     reformat_data()
     survivors = []  # files we sync'd in a previous round
     rng = random.Random(0xC0FFEE)
@@ -267,18 +267,18 @@ def test_C_random_kills_consistent():
 # ---------- main ----------
 
 def main():
-    print("[chapter 83] reformatting build/data.img ...")
+    print("[chapter 84] reformatting build/data.img ...")
     reformat_data()
     test_A_clean_shutdown()
     test_B_replay_after_crash()
     test_C_random_kills_consistent()
     print()
     if FAILS:
-        print(f"CHAPTER 83: {len(FAILS)} FAIL(s) out of "
+        print(f"CHAPTER 84: {len(FAILS)} FAIL(s) out of "
               f"{len(PASSES) + len(FAILS)}")
         for f in FAILS: print(f"  FAIL: {f}")
         sys.exit(1)
-    print(f"CHAPTER 83: ALL TESTS PASSED ({len(PASSES)} checks)")
+    print(f"CHAPTER 84: ALL TESTS PASSED ({len(PASSES)} checks)")
 
 if __name__ == "__main__":
     main()

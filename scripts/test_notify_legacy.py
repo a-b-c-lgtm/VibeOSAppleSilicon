@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""scripts/test_notify_legacy.py — chapter 108c kernel-draw exhibit.
+"""scripts/test_notify_legacy.py — chapter 116 kernel-draw exhibit.
 
-The chapter 108c migration moved most apps off the legacy
+The chapter 116 migration moved most apps off the legacy
 gui_fill_rect / gui_draw_text / gui_present syscalls and onto a
 userspace mapping + libgui/draw.h.  Once the kernel started
 returning -EBUSY for any mapped window that also tried to use
@@ -9,7 +9,7 @@ the syscall path, it would have been easy to delete the syscall
 path entirely.  We deliberately did not: notify is still drawn
 via wm_fill_rect and wm_draw_text in kernel/core/wm.c.
 
-The reasoning, recorded in chapter 108c:
+The reasoning, recorded in chapter 116:
 
   - Notify is a one-shot rectangle with three colours and one
     line of text.  Mapping a pixel buffer just to paint 360x80
@@ -27,7 +27,7 @@ The reasoning, recorded in chapter 108c:
 This test boots, spawns /bin/notify, and asserts that the toast
 appears with the expected accent-bar and body-background pixels.
 It is intentionally a near-twin of scripts/test_notify.py: the
-purpose is to verify that the chapter 108c -EBUSY enforcement
+purpose is to verify that the chapter 116 -EBUSY enforcement
 did NOT regress the legacy path that notify still depends on.
 """
 import json, os, select, socket, subprocess, sys, time

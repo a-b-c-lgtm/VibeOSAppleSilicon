@@ -21,7 +21,7 @@ FB_W = 1280
 FB_H = 800
 
 # Launcher's "paint" button (index 1, see launcher.c geometry).
-# chapter 109e UX: launcher is a Start-menu panel, NODECORATION
+# chapter 55 UX: launcher is a Start-menu panel, NODECORATION
 # + ALWAYS_ON_TOP, anchored above the taskbar at (0, 540) and
 # hidden at boot (Start button toggles it).
 BAR_H      = 28

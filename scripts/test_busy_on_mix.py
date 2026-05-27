@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_busy_on_mix.py — chapter 108c mixed-paths assertion.
+"""scripts/test_busy_on_mix.py — chapter 116 mixed-paths assertion.
 
 Boots, runs /bin/mixtest from a shell, and asserts the
 "[mixtest] all checks passed" success line lands on the serial

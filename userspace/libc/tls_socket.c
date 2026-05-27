@@ -147,7 +147,7 @@ static int tls_pin_pubkey_from_cert(tls_socket_t *t,
 }
 
 /* --------------------------------------------------------------
- * Chain mode (chapter 112c + multi-anchor 112e): build trust
+ * Chain mode (chapter 126 + multi-anchor 112e): build trust
  * anchor(s) from DER CA cert(s).
  *
  * br_x509_decoder_init takes an `append_dn` callback that fires
@@ -163,7 +163,7 @@ static int tls_pin_pubkey_from_cert(tls_socket_t *t,
  * above -- BearSSL's decoder returns pointers into its OWN
  * scratch and gives no ownership.
  *
- * Chapter 112e adds ECDSA support: the decoder reports
+ * Chapter 128 adds ECDSA support: the decoder reports
  * BR_KEYTYPE_EC and exposes pk->key.ec.{curve, q, qlen}.  We
  * copy q into anchor_pk_q[idx] and stash curve in the trust
  * anchor's pkey.key.ec.
@@ -363,7 +363,7 @@ int tls_socket_init_chain_from_bundle(tls_socket_t *t,
  * (1970-01-01 00:00 UTC) sits at day 719528 in that calendar --
  * see vendor/bearssl/src/x509/x509_minimal.c line 1406 where the
  * engine adds exactly that constant when consuming a Unix time.
- * SYS_GETTIMEOFDAY (chapter 95) returns POSIX wall-clock seconds
+ * SYS_GETTIMEOFDAY (chapter 96) returns POSIX wall-clock seconds
  * sourced from the PL031 RTC at boot, so the conversion is
  * literally:
  *

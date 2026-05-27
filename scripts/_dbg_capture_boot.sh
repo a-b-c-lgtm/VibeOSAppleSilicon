@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/_dbg_capture_boot.sh — chapter 81 helper.
+# scripts/_dbg_capture_boot.sh — chapter 82 helper.
 # Boots the kernel headless with both disks attached, captures
 # serial output to /tmp/raw.log, kills QEMU after $1 seconds
 # (default 4), and prints a filtered grep of the relevant boot

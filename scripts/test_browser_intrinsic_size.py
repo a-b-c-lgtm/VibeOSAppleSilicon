@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_intrinsic_size.py — chapter 98b regression.
+"""scripts/test_browser_intrinsic_size.py — chapter 100 regression.
 
-Reproduction of the bug reported on the chapter 98 PNG arc:
+Reproduction of the bug reported on the chapter 99 PNG arc:
 real-world PNGs embedded with no width=""/height="" attributes
 rendered at the layout's 16x16 placeholder size, clipping every
 400x400 source image down to a tiny corner square.
 
-Chapter 98b added a `layout_set_img_size_lookup` hook in
+Chapter 100 added a `layout_set_img_size_lookup` hook in
 [userspace/libc/layout.h](userspace/libc/layout.h) and wired it
 from [userspace/browser/browser.c](userspace/browser/browser.c)
 to the per-page image cache.  load_page() now decodes images
@@ -214,7 +214,7 @@ def main():
 
         print(f"PASS: 64x64 intrinsic-size image fully rendered "
               f"(red={red} green={green} blue={blue})")
-        print("PASS: chapter 98b intrinsic-size hook smoke test")
+        print("PASS: chapter 100 intrinsic-size hook smoke test")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

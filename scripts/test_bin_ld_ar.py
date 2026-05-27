@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """scripts/test_bin_ld_ar.py -- /bin/ld + /bin/ar smoke.
 
-Chapter 119 originally shipped a toy hand-rolled linker that
+Chapter 155 originally shipped a toy hand-rolled linker that
 hard-coded the user load address (0x1000100000) and entry
-symbol.  Chapter 131f swapped /bin/ld for the real GNU
+symbol.  Chapter 180 swapped /bin/ld for the real GNU
 binutils `ld-new` cross-built for our aarch64-osdev target
 (see scripts/test_guest_ld.py + the Makefile BINUTILS_LD_NEW
 rules).  /bin/ar is still the toy chapter-119 implementation.
@@ -143,7 +143,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 131f] /bin/ld (GNU binutils) + /bin/ar smoke test")
+    print("[chapter 180] /bin/ld (GNU binutils) + /bin/ar smoke test")
     reformat_data()
     q = boot()
     s = conn()

@@ -1,4 +1,4 @@
-/* userspace/libc/env.h — POSIX environ + arena (chapter 116c).
+/* userspace/libc/env.h — POSIX environ + arena (chapter 151).
  *
  * Header-only, single-translation-unit pattern (same as printf.h
  * / malloc.h / stdio.h).  Include from the one `.c` of each
@@ -44,8 +44,9 @@
  * across the syscall boundary.  So we cache in userspace and
  * write through.
  *
- * Concurrency: not safe across threads.  The chapter 116 plan
- * defers thread-safe env to 116d (along with per-thread errno).
+ * Concurrency: not safe across threads.  Thread-safe env is
+ * deferred (along with per-thread errno) until userspace
+ * threading grows a real TLS layout.
  */
 #ifndef USER_ENV_H
 #define USER_ENV_H
@@ -157,7 +158,7 @@ static inline char *_env_arena_add_raw(const char *s)
  * the arena + envv.  Idempotent; cheap to call.
  *
  * Reads the kernel blob DIRECTLY into g_env_arena (no intermediate
- * stack buffer) — chapter 132f.  Earlier versions of this code
+ * stack buffer) — chapter 186.  Earlier versions of this code
  * declared `char tmp[ENV_ARENA_SIZE]` on the stack and copied
  * through it, which put a 16 KiB allocation on the user stack
  * (USER_STACK_PAGES is 16 → 64 KiB total).  For xgcc, whose first

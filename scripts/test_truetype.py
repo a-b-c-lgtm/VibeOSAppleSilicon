@@ -35,7 +35,7 @@ DUMP_PATH   = "/tmp/osdev-fb-ttf.ppm"
 FB_W = 1280
 FB_H = 800
 
-# Launcher window geometry.  chapter 109e UX: launcher is now
+# Launcher window geometry.  chapter 55 UX: launcher is now
 # a Start-menu-style panel — NODECORATION + ALWAYS_ON_TOP,
 # anchored above the taskbar at (0, FB_H - BAR_H - 232) =
 # (0, 540), hidden by default and summoned by the taskbar's
@@ -69,7 +69,7 @@ BTN0_Y1     = BTN0_Y0 + 36                     # 592
 # the bytes into a 32-bit BGRA word; the framebuffer hands QEMU
 # pixels as R, G, B in PPM output, which is what we compare here).
 #
-# Chapter 108c migration: the launcher's button fill now comes
+# Chapter 116 migration: the launcher's button fill now comes
 # from libgui's shared draw_button_chrome() -- a neutral
 # (236,236,236) light-gray that all chrome shares -- instead of
 # the launcher-specific blue (0xC0,0xD0,0xE8) it used to bake in.

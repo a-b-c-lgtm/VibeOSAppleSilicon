@@ -1,4 +1,4 @@
-/* page_tables.c — Static level-1 translation table for milestone-1 MMU.
+/* page_tables.c — Static level-1 translation table for early MMU bring-up.
  *
  * Layout (39-bit virtual address space, 4 KiB granule):
  *   L1[0]    covers VA [0, 1 GiB) — Device-nGnRnE block, identity
@@ -45,9 +45,9 @@
  *   bit      54  = UXN             (Unprivileged eXecute Never; 0 = OK)
  *
  * Why one big RWX block for kernel RAM?
- *   We will refine this in chapter 9 ("higher-half kernel and TTBR1")
+ *   We will refine this in chapter 8 ("higher-half kernel and TTBR1")
  *   when we split .text (RX), .rodata (RO), and .data/.bss (RW-XN)
- *   into proper L2 tables. For milestone 1 a single RWX block is
+ *   into proper L2 tables. For now a single RWX block is
  *   correct, simpler, and lets us focus on getting the MMU itself
  *   right. Real OSes do exactly this during early boot too. */
 
@@ -79,7 +79,7 @@
  * carves up for user-mode allocations).  AP=RW for both EL1 and
  * EL0 so we can synthesise EL0 access without per-process L2
  * tables yet.  This is permissive: any user process can read or
- * write any other process's memory.  Chapter 14 fixes that with
+ * write any other process's memory.  Chapter 13 fixes that with
  * per-process L1 tables that grant EL0 only on the specific 4 KiB
  * pages a process owns. */
 #define BLOCK_NORMAL_USER(addr) \
@@ -125,8 +125,8 @@ void pmap_install_ram_block_1gib(uint64_t pa)
      * the DTB reports without special-casing the kernel block. */
     if (idx <= 1)
         return;
-    /* As of milestone 16 these DRAM identity blocks are kernel-only
-     * (BLOCK_NORMAL, AP=00).  Before milestone 15, user binaries
+    /* These DRAM identity blocks are now kernel-only
+     * (BLOCK_NORMAL, AP=00).  Earlier in the book, user binaries
      * linked at a fixed VA inside one of these blocks and relied on
      * EL0-RW; with per-process address spaces (ch. 24) user pages
      * live in slot 64 with proper page-granularity AP, so the

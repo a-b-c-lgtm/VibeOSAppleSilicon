@@ -242,7 +242,7 @@ static inline int dom_node_n_attrs(const struct dom_node *n)
  * value if `name` is already present, else appends a new attr.
  * Strings are copied (malloc'd) -- caller retains ownership of
  * the input buffers.  Returns 0 on success, -1 on OOM or invalid
- * input.  Added in chapter 111 for the pocketjs DOM bridge.
+ * input.  Added in chapter 122 for the pocketjs DOM bridge.
  */
 static inline int dom_node_set_attr(struct dom_node *n,
                                     const char *name,

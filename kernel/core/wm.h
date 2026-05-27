@@ -1,5 +1,5 @@
 /*
- * kernel/core/wm.h — minimal in-kernel window manager (milestone 40).
+ * kernel/core/wm.h — minimal in-kernel window manager.
  *
  * The WM owns the framebuffer (via fb.h) once at least one window
  * exists.  Each window is a kernel-allocated BGRA pixel buffer
@@ -33,7 +33,7 @@
  *   GUI_EVENT_KEY       (arg0 = ASCII byte; or 0 for ANSI escape)
  *   GUI_EVENT_CLOSE     (currently unused; reserved for ALT+F4)
  *
- * Mouse events are reserved for milestone 41 (virtio-tablet).
+ * Mouse events are reserved for the virtio-tablet driver.
  */
 
 #ifndef KERNEL_CORE_WM_H
@@ -116,7 +116,7 @@
 #define GUI_KEY_PGUP           0x107u
 #define GUI_KEY_PGDN           0x108u
 
-/* Window flags (milestone 47).  Pass these to gui_create_window_ex.
+/* Window flags.  Pass these to gui_create_window_ex.
  *
  *   NO_DECORATION   — no title bar, no border, no close button.  The
  *                     window's content area starts at (w->x, w->y)
@@ -139,7 +139,7 @@
 #define GUI_WIN_FLAG_NO_DECORATION   0x1u
 #define GUI_WIN_FLAG_ALWAYS_ON_TOP   0x2u
 #define GUI_WIN_FLAG_PIN_TO_BOTTOM   0x4u
-/* Milestone 63: opt-in user-resizable window.  Decorated windows
+/* Opt-in user-resizable window.  Decorated windows
  * with this flag set get a small resize grip in their bottom-right
  * corner.  Dragging the grip reallocates the window's pixel buffer
  * to the new size, copies the existing content to the top-left of
@@ -149,7 +149,7 @@
  * (their owners drive their own size).  Apps that don't set this
  * flag remain at their create-time dimensions. */
 #define GUI_WIN_FLAG_RESIZABLE       0x10u
-/* Milestone 51 — reported by wm_list_windows when a window is
+/* Reported by wm_list_windows when a window is
  * currently hidden via SYS_GUI_SET_MINIMIZED.  This bit is
  * read-only on the gui_create_window_ex path (rejected) and
  * exists only as a status flag in gui_window_info.flags. */
@@ -176,7 +176,7 @@ struct gui_rect {
     uint32_t x, y, w, h;
 };
 
-/* Snapshot of one WM window (milestone 47).  Returned by
+/* Snapshot of one WM window.  Returned by
  * gui_list_windows.  Layout is shared with userspace/libc/syscall.h. */
 struct gui_window_info {
     int32_t  id;
@@ -239,7 +239,7 @@ void wm_pointer_button(uint32_t button, int down);
 /* Syscalls — all return 0 on success or negative errno. */
 long wm_create_window(uint64_t pid, uint32_t w, uint32_t h,
                       const char *title_user);
-/* Milestone 47: extended create.  flags is a bitmask of
+/* Extended create.  flags is a bitmask of
  * GUI_WIN_FLAG_*.  x,y == GUI_WIN_POS_AUTO means cascade. */
 long wm_create_window_ex(uint64_t pid, uint32_t w, uint32_t h,
                          const char *title_user,
@@ -258,7 +258,7 @@ long wm_draw_text(uint64_t pid, int32_t id,
                   uint32_t fg_bgra, uint32_t bg_bgra,
                   int transparent);
 
-/* Chapter 102 -- return the pixel width that wm_draw_text would
+/* Chapter 104 -- return the pixel width that wm_draw_text would
  * paint for `s_user` using the kernel's default font. Honours
  * per-glyph advance widths so callers can position carets and
  * centre labels accurately even with the proportional TTF font.
@@ -267,16 +267,16 @@ long wm_draw_text(uint64_t pid, int32_t id,
 long wm_measure_text(const char *s_user);
 long wm_flush(uint64_t pid, int32_t id);
 long wm_poll_event(uint64_t pid, struct gui_event *out_user);
-/* Milestone 47: enumerate windows.  Copies up to `max` snapshots
+/* Enumerate windows.  Copies up to `max` snapshots
  * to `out_user` and returns the number copied (>=0).  Caller-supplied
  * buffer must be at least max*sizeof(struct gui_window_info) bytes. */
 long wm_list_windows(uint64_t pid, struct gui_window_info *out_user,
                      int32_t max);
-/* Milestone 47: programmatically raise + focus a window by id.
+/* Programmatically raise + focus a window by id.
  * Used by the taskbar.  Returns 0 / -errno. */
 long wm_raise_window(uint64_t pid, int32_t id);
 
-/* Milestone 51: hide / show a window without destroying it.
+/* Hide / show a window without destroying it.
  *   on != 0 — mark window minimized: compositor skips it,
  *            hit-test ignores it, focus drops to topmost
  *            non-minimized window if needed.  No-op if already
@@ -290,7 +290,7 @@ long wm_set_minimized(uint64_t pid, int32_t id, int on);
  * process that crashes does not leak its windows. */
 void wm_destroy_owner(uint64_t pid);
 
-/* Chapter 108a \u2014 userspace access to window pixel buffers.
+/* Chapter 114 \u2014 userspace access to window pixel buffers.
  *
  * `wm_map_window` allocates one page-aligned 4 KiB frame per page
  * of the window's pixel storage, copies the current contents of
@@ -309,7 +309,7 @@ void wm_destroy_owner(uint64_t pid);
  *
  * Errors:
  *   -EPERM   not the window owner.
- *   -ENOTSUP window is RESIZABLE (chapter 108a defers resize
+ *   -ENOTSUP window is RESIZABLE (chapter 114 defers resize
  *            coherence; this lifts once 108b lands).
  *   -ENOMEM  pmem exhausted or AS layer refused.
  *   -EFAULT  one of the user output pointers is not writable. */
@@ -317,7 +317,7 @@ long wm_map_window(uint64_t pid, int32_t id,
                    uint64_t *va_out, uint32_t *stride_out,
                    uint32_t *w_out, uint32_t *h_out);
 
-/* Chapter 108a \u2014 inverse of wm_map_window.  Drops the user-AS
+/* Chapter 114 \u2014 inverse of wm_map_window.  Drops the user-AS
  * descriptors and frees the backing 4 KiB frames.  Idempotent on
  * an already-unmapped window (returns 0).  Implicit on
  * wm_destroy_window / wm_destroy_owner so callers needn't bother
@@ -325,7 +325,7 @@ long wm_map_window(uint64_t pid, int32_t id,
  * to release the bump-pointer VA range without exiting. */
 long wm_unmap_window(uint64_t pid, int32_t id);
 
-/* Chapter 108a \u2014 declare a sub-rectangle of a mapped window
+/* Chapter 114 \u2014 declare a sub-rectangle of a mapped window
  * dirty.  The WM copies that rect from the user-visible pages
  * into the compositor's authoritative `w->pixels` buffer and
  * triggers a recompose.  Rect coordinates are window-content
@@ -336,7 +336,7 @@ long wm_unmap_window(uint64_t pid, int32_t id);
 long wm_damage(uint64_t pid, int32_t id,
                uint32_t x, uint32_t y, uint32_t rw, uint32_t rh);
 
-/* chapter 108e -- expose the current pointer state to userspace.
+/* chapter 118 -- expose the current pointer state to userspace.
  * Used by wsd to paint the cursor sprite and run hit-tests for
  * title-bar drags / close-button clicks in userspace, X-server
  * style.  Writes scanout coords + the GUI_BTN_* bitmap into the
@@ -346,7 +346,7 @@ long wm_damage(uint64_t pid, int32_t id,
 long wm_pointer_state(int32_t *out_x_user, int32_t *out_y_user,
                       uint32_t *out_btn_user);
 
-/* chapter 108e -- relocate a window on the scanout without going
+/* chapter 118 -- relocate a window on the scanout without going
  * through the usual title-bar-drag path.  Any caller may move
  * any window (wsd is the only legitimate caller today, since it
  * owns decoration hit-testing; restricting to a "compositor"
@@ -356,7 +356,7 @@ long wm_pointer_state(int32_t *out_x_user, int32_t *out_y_user,
  * free.  Does not push events to the window's app. */
 long wm_move_window(int32_t id, int32_t x, int32_t y);
 
-/* chapter 108e -- inject a synthesised gui_event into the per-
+/* chapter 118 -- inject a synthesised gui_event into the per-
  * window event ring so the app's next wm_poll_event returns it.
  * Used by wsd to deliver GUI_EVENT_CLOSE (from close-button
  * clicks) and future synthesised pointer events.  The `ev.window_id`
@@ -367,7 +367,7 @@ long wm_move_window(int32_t id, int32_t x, int32_t y);
  * window's event ring is full (caller can retry). */
 long wm_deliver_event(int32_t id, const struct gui_event *ev_user);
 
-/* chapter 108e -- toggle "wsd-routed" mode on a kernel WM shadow.
+/* chapter 118 -- toggle "wsd-routed" mode on a kernel WM shadow.
  *
  * When on != 0, the kernel's pointer router skips this window
  * entirely (hit-test pretends it's not there; the focused-window

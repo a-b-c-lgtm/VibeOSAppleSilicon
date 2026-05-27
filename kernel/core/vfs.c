@@ -1,5 +1,5 @@
 /*
- * kernel/core/vfs.c — minimal ramfs-backed VFS for milestone 8.
+ * kernel/core/vfs.c — minimal ramfs-backed VFS.
  *
  * The ramfs is a static array of {name, data pointer, size}
  * triples.  The data lives in the kernel image (under
@@ -47,7 +47,7 @@ extern char _binary_motd_txt_end[];
 extern char _binary_README_txt_start[];
 extern char _binary_README_txt_end[];
 /* User binaries (init, sh, cat, hello) used to live here as
- * embedded blobs.  Since milestone 13 they are stored on the
+ * embedded blobs.  They are now stored on the
  * OSFS-1 disk under /mnt/bin/<name> and reached via the /bin/
  * dispatch in vfs_open / vfs_load.  Editing a user program no
  * longer relinks the kernel. */
@@ -96,7 +96,7 @@ static int ramfs_lookup(const char *name)
     return -1;
 }
 
-/* Chapter 90 — public ramfs blob accessor.  Used by the in-
+/* Chapter 91 — public ramfs blob accessor.  Used by the in-
  * kernel mmap path to feed the page cache from ramfs.  Returns
  * 0 on success, -1 on out-of-range index.  No bounds-check on
  * the returned span beyond ramfs_size; the caller is responsible
@@ -117,7 +117,7 @@ int vfs_ramfs_lookup(const char *name)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 113 — struct fs_ops adapter for the embedded ramfs.
+ * Chapter 132 — struct fs_ops adapter for the embedded ramfs.
  *
  * The ramfs is the catchall root mount.  Every path that doesn't
  * match a more-specific mount (/tmp, /proc, /data, /mnt, /bin,
@@ -255,11 +255,11 @@ void vfs_init(void)
         serial_puts(" bytes)\n");
     }
     tmpfs_init();
-    /* Chapter 113 — register mount-table entries for every
+    /* Chapter 132 — register mount-table entries for every
      * kernel filesystem that has been ported to the fs_ops
      * vtable.  Each step of the section-16 refactor adds one
      * registration here and deletes the matching prefix branch
-     * in vfs_open / syscall.c.  Chapter 114e dropped procfs
+     * in vfs_open / syscall.c.  Chapter 145 dropped procfs
      * from this list — /proc is now served by /bin/procd via
      * a userfs mount installed at boot by init's supervisor. */
     tmpfs_register_mount();
@@ -270,7 +270,7 @@ void vfs_init(void)
 
 void vfs_init_fdtable(struct thread *t)
 {
-    /* Chapter 93 — `t->fdt` is now a separately-allocated,
+    /* Chapter 94 — `t->fdt` is now a separately-allocated,
      * refcounted table.  This function is the "give the new
      * thread a private table" path; CLONE_FILES users instead
      * call fd_table_share on an existing table and bypass this
@@ -397,7 +397,7 @@ static int path_starts_with(const char *path, const char *prefix)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 113 — mount table + vfs_resolve.
+ * Chapter 132 — mount table + vfs_resolve.
  *
  * Step 1 of the section-16 refactor: introduce the types and the
  * resolver.  No callers yet — the prefix ladders below this point
@@ -510,7 +510,7 @@ int vfs_open(const char *name, int flags)
 {
     if (!name) return -EINVAL_VFS;
 
-    /* Chapter 113 — vtable dispatch.  Resolve `name` against the
+    /* Chapter 132 — vtable dispatch.  Resolve `name` against the
      * mount table; if a registered mount with an `open` method
      * covers it, hand the open off to the driver and the legacy
      * prefix ladder below is bypassed entirely.  Filesystems not
@@ -551,7 +551,7 @@ int vfs_open(const char *name, int flags)
      * osfs2_register_mount in vfs_init).  No legacy branch
      * remains here. */
 
-    /* /srv/<name> -> chapter 107 named-IPC connect.
+    /* /srv/<name> -> chapter 112 named-IPC connect.
      * open("/srv/foo", O_RDWR) becomes srv_connect("/srv/foo")
      * internally so apps that don't know about IPC can still
      * talk to services through read/write/close.  Returns the
@@ -621,7 +621,7 @@ int vfs_open_into(struct thread *t, int fd, const char *name, int flags)
         slot->srv_c = NULL;
     }
 
-    /* Chapter 113 \u2014 try the mount-table vtable first.  This
+    /* Chapter 132 \u2014 try the mount-table vtable first.  This
      * gives `vfs_open_into` the same dispatch as `vfs_open`, so
      * fork+exec-style redirections (sys_spawn_redir / dup2)
      * route through registered filesystems exactly as the public
@@ -663,7 +663,7 @@ long vfs_read(int fd, void *buf, size_t len)
     /* Pipe write end is not readable. */
     if (e->kind == FD_PIPE_W) return -EBADF;
 
-    /* Pty endpoints (chapter 79b).  Both ends are read+write,
+    /* Pty endpoints (chapter 79).  Both ends are read+write,
      * so they get their own dispatch in vfs_read / sys_write
      * rather than being limited to a single direction. */
     if (e->kind == FD_PTY_MASTER) return pty_master_read(e->pty, buf, len);
@@ -679,7 +679,7 @@ long vfs_read(int fd, void *buf, size_t len)
          * pump the NIC, so without this read would never see
          * inbound bytes.
          *
-         * Chapter 106b: we tried a 1024-iter spin between yields
+         * Chapter 110: we tried a 1024-iter spin between yields
          * here as an "optimisation" (avoid scheduler ping-pong)
          * but it actively hurt the chapter-106b splice: browser
          * read() and httpd read() / write() are on different
@@ -699,7 +699,7 @@ long vfs_read(int fd, void *buf, size_t len)
          *      returns NULL, tcp_recv returns -1, tcp_eof
          *      returns 1).  Without this ordering, a userspace
          *      reader that loops read() past the final byte sees
-         *      -EIO instead of 0; chapter 106 surfaced that
+         *      -EIO instead of 0; chapter 108 surfaced that
          *      because loopback often delivers the peer's FIN
          *      and our reap-pass in the SAME net_poll tick that
          *      hands the last bytes to the user.
@@ -715,13 +715,13 @@ long vfs_read(int fd, void *buf, size_t len)
         }
     }
 
-    /* Chapter 104: listening sockets are not readable.  The only
+    /* Chapter 106: listening sockets are not readable.  The only
      * way to extract anything from them is SYS_SOCKET_ACCEPT.
      * Without this guard, a stray read() would fall through to
      * the ramfs path and dereference ramfs_index = -1. */
     if (e->kind == FD_SOCKET_LISTEN) return -EINVAL_VFS;
 
-    /* Chapter 107 named-IPC.  Listen fds are read-only via
+    /* Chapter 112 named-IPC.  Listen fds are read-only via
      * SYS_SRV_ACCEPT; only FD_SRV_CONN supports read(). */
     if (e->kind == FD_SRV_LISTEN) return -EINVAL_VFS;
     if (e->kind == FD_SRV_CONN) {
@@ -729,7 +729,7 @@ long vfs_read(int fd, void *buf, size_t len)
         return srv_read(e->srv_c, e->srv_is_service, buf, len);
     }
 
-    /* Chapter 114 — userspace filesystem-backed file.  All
+    /* Chapter 140 — userspace filesystem-backed file.  All
      * read state (offset, daemon handle, channel) is on the
      * fd_entry; userfs_op_read marshals a P9_OP_READ across
      * the channel and returns the daemon's reply. */
@@ -831,7 +831,7 @@ long vfs_read(int fd, void *buf, size_t len)
 
     size_t remaining = f_size - (size_t)e->offset;
     size_t to_copy   = len < remaining ? len : remaining;
-    /* TODO(milestone 11): copy_to_user with bounds-check. */
+    /* TODO: copy_to_user with bounds-check. */
     uint8_t *dst = (uint8_t *)buf;
     const uint8_t *src = f->data + e->offset;
     for (size_t i = 0; i < to_copy; i++) dst[i] = src[i];
@@ -884,7 +884,7 @@ int vfs_close(int fd)
     return 0;
 }
 
-/* ── Chapter 116b — POSIX lseek ─────────────────────────────
+/* ── Chapter 150 — POSIX lseek ─────────────────────────────
  *
  * Re-position `fd`'s offset.  Most fs drivers keep state in
  * `fd_entry->offset` (which vfs_read advances after each chunk),
@@ -967,7 +967,7 @@ long vfs_lseek(int fd, int64_t off, int whence)
     return -EINVAL_VFS;
 }
 
-/* ── Chapter 117 — POSIX stat / fstat ───────────────────────
+/* ── Chapter 153 — POSIX stat / fstat ───────────────────────
  *
  * Two operations:
  *   - vfs_stat_path(path, out)  reads metadata by name.  Uses
@@ -1013,7 +1013,7 @@ static void fill_size_from_fd_entry(const struct fd_entry *e,
     }
 }
 
-/* Chapter 131d — populate POSIX `st_dev` / `st_ino`.
+/* Chapter 178 — populate POSIX `st_dev` / `st_ino`.
  *
  * libiberty (fdmatch.c, getpwd.c) compares two stats for "same
  * file?" via `a.st_dev == b.st_dev && a.st_ino == b.st_ino`.
@@ -1168,7 +1168,7 @@ long vfs_fstat(int fd, struct kstat *out)
 void vfs_close_all(struct thread *t)
 {
     if (!t) return;
-    /* Chapter 93 — drop our reference to the (possibly shared)
+    /* Chapter 94 — drop our reference to the (possibly shared)
      * fd_table.  fd_table_unref does the actual close work
      * only if we held the LAST reference; threads that share
      * the table via CLONE_FILES still need their fds open and
@@ -1204,7 +1204,7 @@ int vfs_alloc_socket_fd(int cid)
     return -EMFILE;
 }
 
-/* Chapter 104 -- allocate a fresh fd that wraps a TCP_LISTEN
+/* Chapter 106 -- allocate a fresh fd that wraps a TCP_LISTEN
  * conn slot.  Identical to vfs_alloc_socket_fd except for the
  * `kind`: the read/write paths reject FD_SOCKET_LISTEN with
  * -EINVAL, and SYS_SOCKET_ACCEPT requires this kind. */
@@ -1229,7 +1229,7 @@ int vfs_alloc_listen_fd(int cid)
     return -EMFILE;
 }
 
-/* Chapter 107 — allocate a fresh fd that wraps a /srv/<name>
+/* Chapter 112 — allocate a fresh fd that wraps a /srv/<name>
  * listener.  Read/write reject FD_SRV_LISTEN; only
  * SYS_SRV_ACCEPT and close are valid.  Returns the new fd,
  * or -EMFILE if the table is full. */
@@ -1259,7 +1259,7 @@ int vfs_alloc_srv_listen_fd(struct srv_listen *ls)
     return -EMFILE;
 }
 
-/* Chapter 107 — allocate a fresh fd that wraps a /srv
+/* Chapter 112 — allocate a fresh fd that wraps a /srv
  * connected conn.  `is_service_end` distinguishes the
  * accepted (service) side from the connect (client) side;
  * that bit picks which queue read/write touch.  Returns
@@ -1308,7 +1308,7 @@ int vfs_load(const char *path, uint8_t **out_buf, size_t *out_size)
     *out_buf  = NULL;
     *out_size = 0;
 
-    /* Chapter 113 — try the mount-table vtable first.  Any
+    /* Chapter 132 — try the mount-table vtable first.  Any
      * filesystem that has been ported to fs_ops and implements
      * `load` handles the whole-file read here.  Drivers without
      * a `load` op (e.g. /srv) fall through to the legacy ramfs

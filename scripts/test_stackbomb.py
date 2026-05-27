@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_stackbomb.py — chapter 101 guard-page regression.
+"""scripts/test_stackbomb.py — chapter 103 guard-page regression.
 
 Boots the kernel, runs `stackbomb`, and asserts that:
 
@@ -12,7 +12,7 @@ Boots the kernel, runs `stackbomb`, and asserts that:
   4. The kernel did NOT emit the older generic "non-SVC sync
      exception" dump that we used to get pre-chapter-101.
 
-Modelled after scripts/test_mmap.py (chapter 90) and the rest of
+Modelled after scripts/test_mmap.py (chapter 91) and the rest of
 the regression sweep.
 """
 import os, select, socket, subprocess, sys, time
@@ -137,7 +137,7 @@ def main():
             print("FAIL: shell prompt did not return after stack overflow")
             return 1
 
-        print("PASS: chapter 101 guard-page smoke test")
+        print("PASS: chapter 103 guard-page smoke test")
         return 0
     finally:
         q.kill(); q.wait()

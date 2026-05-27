@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_libc_stdlib.py — chapter 128e regression for
+"""scripts/test_libc_stdlib.py — chapter 169 regression for
 <stdlib.h>: qsort / bsearch / strtol family / atol / atoll / abs /
 div / getopt.
 

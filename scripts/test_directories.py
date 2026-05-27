@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_directories.py — chapter 85 subdirectory smoke test.
+"""scripts/test_directories.py — chapter 86 subdirectory smoke test.
 
 Exercises the new path-walking OSFS-2 syscalls and shell builtins:
 
@@ -128,7 +128,7 @@ def shutdown(q, s):
 # ---------- the test ----------
 
 def main():
-    print("[chapter 85] subdirectory smoke test")
+    print("[chapter 86] subdirectory smoke test")
     reformat_data()
 
     q, s = boot_to_shell()
@@ -173,7 +173,7 @@ def main():
         shutdown(q, s)
 
     # 8. reboot and verify persistence.
-    print("\n[chapter 85] verifying persistence across reboot")
+    print("\n[chapter 86] verifying persistence across reboot")
     q, s = boot_to_shell()
     try:
         out = send_cmd(s, "ls /data")

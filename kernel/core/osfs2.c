@@ -19,13 +19,13 @@
  *
  * I/O strategy: every block read is 8 sequential virtio_blk_dev_read
  * calls (one per 512-byte sector) into a 4 KiB scratch buffer.  No
- * caching in chapter 81 — chapter 82 will fold blk_cache in front
+ * caching in chapter 82 — chapter 83 will fold blk_cache in front
  * once we have unit tests that prove the bitmap/inode-table updates
  * make it to disk.  Ordering of writes is data-block first, then
- * inode, then bitmaps; see chapter 80 for the rationale.
+ * inode, then bitmaps; see chapter 81 for the rationale.
  *
  * No directory hierarchy yet: only the root.  Subdirectories are
- * a one-page extension to osfs2_create that chapter 83 ships.
+ * a one-page extension to osfs2_create that chapter 84 ships.
  */
 
 #include "osfs2.h"
@@ -78,7 +78,7 @@ static int read_block(uint32_t blk, void *buf)
 /* Write one 4 KiB block from `buf` to disk.
  *
  * The cache marks the block dirty but does NOT issue a virtio-blk
- * write here — chapter 82's whole point.  Durability is achieved
+ * write here — chapter 83's whole point.  Durability is achieved
  * via `osfs2_fsync()` (file granularity — actually flushes the
  * whole cache, see header) or the periodic background flusher
  * spawned in main.c.  Any caller that needs immediate durability
@@ -351,7 +351,7 @@ int osfs2_init(void)
         return -1;
     }
 
-    /* Chapter 83 — wire up the journal from the superblock and
+    /* Chapter 84 — wire up the journal from the superblock and
      * replay any committed-but-not-checkpointed transaction
      * BEFORE we read the bitmaps.  The bitmap and inode-table
      * blocks are themselves potential replay targets, so we have
@@ -383,7 +383,7 @@ int osfs2_init(void)
 
 int osfs2_present(void) { return g_present; }
 
-/* ---------- path walking (chapter 85) ----------
+/* ---------- path walking (chapter 86) ----------
  *
  * OSFS-2 is laid out as ino-1 = root directory, every other dirent
  * is either a file or another directory inode.  A path like
@@ -513,7 +513,7 @@ static int walk_parent(const char *path, uint32_t *parent_out,
  * full).  On failure leaves the FS as it was before the call,
  * modulo cleanup of any blocks we allocated and then had to
  * free \u2014 those are leaked from the bitmap's POV (this is OK
- * because the journal in chapter 83 either commits the whole
+ * because the journal in chapter 84 either commits the whole
  * transaction or none of it; mid-call ENOSPC is a user-visible
  * error, not a corruption). */
 static uint32_t dir_create_in(uint32_t parent_ino, const char *name,
@@ -898,7 +898,7 @@ int osfs2_listdir(uint32_t *idx, char *name_out, size_t cap,
     return (rc == 1) ? 1 : 0;
 }
 
-/* Chapter 82 — flush every dirty cache slot to disk.
+/* Chapter 83 — flush every dirty cache slot to disk.
  *
  * The current implementation is whole-cache (not per-inode).  See
  * the design note in the chapter for why: a per-inode flush would
@@ -921,7 +921,7 @@ int osfs2_fsync(uint32_t ino)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 113 — struct fs_ops adapter.
+ * Chapter 132 — struct fs_ops adapter.
  *
  * OSFS-2 is the writable on-disk filesystem, mounted at `/data`.
  * Unlike OSFS-1 / tmpfs it has subdirectories, so the adapter

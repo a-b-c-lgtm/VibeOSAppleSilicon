@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_input.c — milestone-39 virtio-input keyboard.
+ * kernel/device/virtio_input.c — virtio-input keyboard.
  *
  * Mirrors the structure of virtio_blk.c / virtio_gpu.c: probe, run
  * the modern handshake, set up one virtqueue, then service the used
@@ -468,7 +468,7 @@ int virtio_input_init(void)
      * call it the keyboard; in QEMU's standard graphical configs
      * with `-device virtio-keyboard-device` that's correct.
      *
-     * A future milestone can read the device-specific config space
+     * A future change can read the device-specific config space
      * (VIRTIO_INPUT_CFG_ID_NAME) to disambiguate devices. */
     for (uint32_t s = 0; s < VIRTIO_MMIO_SLOTS; s++) {
         uintptr_t base = VIRTIO_MMIO_BASE + (uintptr_t)s * VIRTIO_MMIO_STRIDE;
@@ -596,7 +596,7 @@ void virtio_input_poll(void)
     if (!g_in_mmio_base) return;
 
     struct vring_used *u = used_ring();
-    /* Chapter 106b fast path: every cooperative sys_yield calls
+    /* Chapter 110 fast path: every cooperative sys_yield calls
      * pump_input_into_wm() which lands here.  On a busy desktop
      * (browser fetching, gui_term/desktop/launcher idling) that's
      * tens of thousands of calls during a single page load.  The

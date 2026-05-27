@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_boot_log.py — chapter 82 ad-hoc boot log capture.
+"""scripts/_dbg_boot_log.py — chapter 83 ad-hoc boot log capture.
 
 Used during the chapter-82 reaper-deadlock debug session to grab
 the full serial output of a single boot.  When test_osfs2.py
@@ -10,7 +10,7 @@ before preemption_demo()'s thread_wait(NULL) reaper loop would
 block on the never-exiting flusher.
 
 Keep for reference (see /memories/kernel-thread-lifetime-reaper-trap.md
-and book chapter 82 "The reaper deadlock").
+and book chapter 83 "The reaper deadlock").
 """
 import socket, subprocess, time, os, signal, sys
 sock = '/tmp/osdev-diag.sock'

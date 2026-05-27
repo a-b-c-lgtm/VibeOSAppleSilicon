@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_signal_raise.py — chapter 128b regression for
+"""scripts/test_signal_raise.py — chapter 166 regression for
 raise() / abort() and the expanded SIG* table.
 
 Boots the kernel headless, runs two test binaries at the shell:

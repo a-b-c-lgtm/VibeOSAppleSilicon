@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_ping.py \u2014 milestone-54 ICMP echo smoke test.
+"""scripts/test_ping.py — ICMP echo smoke test.
 
 Boots the kernel against QEMU SLIRP user-mode networking and
 verifies the in-kernel ICMP path works in both directions:
@@ -102,7 +102,7 @@ def main():
             return 1
         print("PASS: shell prompt reached after ICMP self-test")
 
-        print("\nMILESTONE 54 (PING): ALL TESTS PASSED")
+        print("\nPING: ALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

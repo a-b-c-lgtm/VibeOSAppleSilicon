@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# scripts/test_xgcc_compile.py — chapter 132d host smoke test.
+# scripts/test_xgcc_compile.py — chapter 184 host smoke test.
 #
 # NOT added to scripts/sweep.sh because this exercises the host
 # cross compiler.  Run manually after `make gcc-osdev` (which now
@@ -12,7 +12,7 @@
 #         aarch64-osdev-gcc hello.c -o hello
 #      — NO -B, NO -isystem, NO -T, NO crt0.o on the command
 #      line.  Everything must come from the baked-in specs and
-#      the sysroot.  This is the contract chapter 132d adds:
+#      the sysroot.  This is the contract chapter 184 adds:
 #      the chapter-131b wrapper is no longer required.
 #   4. Verify the output is a static aarch64 little-endian ELF
 #      with entry point `_user_start` at 0x10001000xx (our

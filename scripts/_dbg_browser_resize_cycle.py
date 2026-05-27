@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_browser_resize_cycle.py — chapter 108e follow-up #3
+"""scripts/_dbg_browser_resize_cycle.py — chapter 118 follow-up #3
 repro for the user-reported "shrink-then-grow leaves gray" bug.
 
 The previous test (test_wsd_browser_resize.py) only checks the grow

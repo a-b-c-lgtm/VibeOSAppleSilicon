@@ -1,6 +1,6 @@
 /* userspace/libc/sys/stat.h -- POSIX stat() + struct stat.
  *
- * Chapter 117 of the book.  Wraps the raw `__sys_stat` /
+ * Chapter 153 of the book.  Wraps the raw `__sys_stat` /
  * `__sys_fstat` defined in `../syscall.h` so apps that include
  * `<sys/stat.h>` get the familiar POSIX shape:
  *
@@ -36,7 +36,7 @@
 #define S_IFCHR    0x2000u
 #define S_IFIFO    0x1000u
 #define S_IFSOCK   0xC000u
-/* Block-special bit, added chapter 132f for libcpp/system.h:341
+/* Block-special bit, added chapter 186 for libcpp/system.h:341
  * which references S_IFBLK via the libcpp fallback S_ISBLK
  * macro.  This OS has no block-special inodes (the only block
  * device is virtio-blk, mounted as a filesystem, never opened
@@ -68,7 +68,7 @@
  * (and the kernel's `struct kstat`) byte-for-byte; do not
  * reorder.
  *
- * Chapter 131d added `st_dev` / `st_ino` at the tail (POSIX
+ * Chapter 178 added `st_dev` / `st_ino` at the tail (POSIX
  * shape) so libiberty's "is this the same file?" comparisons
  * (fdmatch.c, getpwd.c) compile and produce sane results.
  * Today the kernel assigns one device number per FS kind
@@ -77,7 +77,7 @@
  * sector for OSFS-1, inode number for OSFS-2, table index
  * for tmpfs.  Stable for the lifetime of a boot.
  *
- * Chapter 131e renamed `st_mtime_ms` -> `st_mtime` (POSIX
+ * Chapter 179 renamed `st_mtime_ms` -> `st_mtime` (POSIX
  * seconds; we still write 0 — kernel doesn't track wall-clock
  * mtime yet — but bfd / ar etc. assign through it so the name
  * matters) and appended `st_uid` / `st_gid` (always 0, no user
@@ -85,14 +85,14 @@
 struct stat {
     uint32_t st_mode;
     uint32_t _pad;
-    /* chapter 132f — POSIX requires st_size to be off_t (signed
+    /* chapter 186 — POSIX requires st_size to be off_t (signed
      * 64-bit on this platform).  libcpp/files.cc passes &st_size
      * to a function expecting off_t* and the gcc++ rejects the
      * type mismatch.  We switched from uint64_t to int64_t; all
      * existing users cast through (size_t) or (unsigned), neither
      * of which cares about the change. */
     int64_t  st_size;
-    /* chapter 132f — st_mtime must be time_t (signed 64-bit) for
+    /* chapter 186 — st_mtime must be time_t (signed 64-bit) for
      * the same -fpermissive reason: libcpp/macro.cc:525 passes
      * &st->st_mtime to localtime(const time_t*). */
     int64_t  st_mtime;
@@ -146,7 +146,7 @@ static inline int access(const char *path, int mode)
     return 0;
 }
 
-/* Chapter 131e — POSIX umask / chmod.  We don't enforce file-
+/* Chapter 179 — POSIX umask / chmod.  We don't enforce file-
  * mode bits; both are no-ops.  bfd/opncls.c calls these after
  * writing output so the file ends up world-readable on real
  * systems; on us, every file is effectively 0666 anyway. */

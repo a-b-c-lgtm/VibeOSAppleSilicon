@@ -1,5 +1,5 @@
 /*
- * kernel/core/userfs.h — userspace filesystem servers (chapter 114).
+ * kernel/core/userfs.h — userspace filesystem servers (chapter 140).
  *
  * A userfs mount delegates every fs_ops method to a userspace
  * daemon over a pair of anonymous pipes carrying a simplified
@@ -13,7 +13,7 @@
  * Per-mount concurrency is serialised: each userfs_channel has
  * its own spinlock and at most one request is in flight at a
  * time.  This keeps the protocol stateless (no tag-keyed reply
- * demultiplexer in v1) at the cost of pipelining; chapter 114's
+ * demultiplexer in v1) at the cost of pipelining; chapter 140's
  * step-6 hardening pass can add a per-channel wait queue keyed
  * by tag once we have a workload that needs it.
  *

@@ -3,7 +3,7 @@
 sequence and verify the kernel doesn't panic.
 
 Reproduces the interactive sequence that crashed the user during
-M50 testing: boot, then click each launcher button to spawn
+desktop-shell testing: boot, then click each launcher button to spawn
 gui_term, paint, and notepad in turn.  Asserts no KERNEL PANIC
 appears in the serial log throughout.
 """
@@ -173,7 +173,7 @@ def main():
         if not assert_no_panic(log): return 1
 
         print("PASS: all 3 launcher children spawned without panic")
-        print("\nMILESTONE 50 STRESS: PASSED")
+        print("\nGUI STRESS: PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

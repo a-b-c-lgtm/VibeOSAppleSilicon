@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_userfs_echo.py -- chapter 114 user-space filesystem
+"""scripts/test_userfs_echo.py -- chapter 140 user-space filesystem
 smoke test, end-to-end.
 
 Boots the OS, spawns `/bin/echofs &`, then exercises the new
@@ -139,7 +139,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 114] userfs end-to-end (echofs)")
+    print("[chapter 140] userfs end-to-end (echofs)")
     reformat_data()
 
     q = boot()

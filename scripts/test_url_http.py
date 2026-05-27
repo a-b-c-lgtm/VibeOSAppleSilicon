@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_url_http.py — milestone-58 URL + HTTP-parser test.
+"""scripts/test_url_http.py — URL + HTTP-parser test.
 
 Validates the new URL form of httpget end-to-end:
 
@@ -22,7 +22,7 @@ Validates the new URL form of httpget end-to-end:
         - for the redirect case, "[httpget] following redirect"
           appears AND the final body marker eventually appears
 
-Why a separate port (8889) from the M56 test:  test_httpget.py
+Why a separate port (8889) from the httpget test:  test_httpget.py
 binds 8888 and the GitHub-Action style sequencing won't allow
 two suites to bind the same socket if they ever run in
 parallel.  Picking a different port avoids the rebind dance.
@@ -226,7 +226,7 @@ def main():
             print(log[-2000:].decode("ascii", "replace")); return 1
         print("PASS: 302 redirect followed and final body delivered")
 
-        print("\nMILESTONE 58 (URL parser + HTTP/1.1 response): ALL TESTS PASSED")
+        print("\nURL parser + HTTP/1.1 response: ALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

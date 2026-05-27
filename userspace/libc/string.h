@@ -1,4 +1,4 @@
-/* userspace/libc/string.h — chapter 128c.
+/* userspace/libc/string.h — chapter 167.
  *
  * Header-only str* family that real upstream code expects.  Most
  * are short loops; the longer ones (memmem, strdup) get one
@@ -24,7 +24,7 @@
 
 #include <stddef.h>
 
-/* Chapter 131e — POSIX places `char *strerror(int)` in <string.h>.
+/* Chapter 179 — POSIX places `char *strerror(int)` in <string.h>.
  * Pull our static-inline definition in by including errno.h here.
  * libsframe/sframe-error.c only includes <string.h> and expects
  * strerror's prototype to come along for the ride. */
@@ -45,7 +45,7 @@ int    memcmp (const void *a, const void *b, size_t n);
  * cstring.c.  Set OSDEV_STRLEN_PROVIDED so syscall.h's static
  * inline shim doesn't also try to define it in the same TU
  * (which would error out as "static declaration follows
- * non-static").  Chapter 130a hit this when DoomGeneric's
+ * non-static").  Chapter 172 hit this when DoomGeneric's
  * f_wipe.c pulled both string.h and (via z_zone.h → stdlib.h)
  * syscall.h. */
 #ifndef OSDEV_STRLEN_PROVIDED
@@ -234,7 +234,7 @@ static inline size_t strlcat(char *dst, const char *src, size_t size)
     return dlen + srclen;
 }
 
-/* strdup — malloc a copy of s.  Chapter 130a (Doom port):
+/* strdup — malloc a copy of s.  Chapter 172 (Doom port):
  * DoomGeneric uses strdup heavily for parsing -iwad / -file
  * paths and for assembling savegame filenames.  Returns NULL
  * on alloc failure.  Caller frees with free().
@@ -246,7 +246,7 @@ static inline size_t strlcat(char *dst, const char *src, size_t size)
 char *strdup(const char *s);
 
 /* strcasecmp / strncasecmp — POSIX byte-wise compare with
- * ASCII-only case folding.  Chapter 130a: Doom's WAD code
+ * ASCII-only case folding.  Chapter 172: Doom's WAD code
  * compares lump names case-insensitively (sometimes the
  * IWAD has FLOOR0_1, sometimes floor0_1). */
 static inline int strcasecmp(const char *a, const char *b)
@@ -279,7 +279,7 @@ static inline int strncasecmp(const char *a, const char *b, size_t n)
 }
 
 /* atoi — convert decimal ASCII to int.  Stops at the first
- * non-digit.  No error reporting (use strtol from chapter 128e
+ * non-digit.  No error reporting (use strtol from chapter 169
  * when you need it).  Tolerates leading whitespace and an
  * optional sign. */
 static inline int atoi(const char *s)
@@ -297,7 +297,7 @@ static inline int atoi(const char *s)
 }
 
 /* strtok — POSIX tokenizer.  Not thread-safe (uses an internal
- * static cursor); chapter 132f adds it for gcc's attribs.cc
+ * static cursor); chapter 186 adds it for gcc's attribs.cc
  * which uses it to split target-attribute strings.
  *
  * Mutates *s* by writing NUL over the first separator byte

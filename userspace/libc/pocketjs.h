@@ -1,5 +1,5 @@
 /*
- * userspace/libc/pocketjs.h -- chapter 111 pocket JavaScript.
+ * userspace/libc/pocketjs.h -- chapter 122 pocket JavaScript.
  *
  * A header-only expression evaluator for the JS subset needed
  * by HTML onclick="..." handlers.  Not a real JS engine.

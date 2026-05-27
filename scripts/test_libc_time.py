@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_libc_time.py — chapter 128d regression for
+"""scripts/test_libc_time.py — chapter 168 regression for
 POSIX <time.h>.
 
 Just one binary: timetest.  Expects marker "all checks passed"

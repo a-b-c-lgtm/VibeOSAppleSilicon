@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_cookies.py -- chapter 110 cookie round-trip.
+"""scripts/test_browser_cookies.py -- chapter 120 cookie round-trip.
 
 Drives the in-guest httpd's `/cookie/*` test endpoints with the
 in-guest `/bin/httpget` so the whole cookie path -- Set-Cookie
@@ -23,7 +23,7 @@ The eight asserts walk the cookie state machine:
 
 Same boot/serial harness as test_directories.py + a virtio-net
 device because httpget dials 127.0.0.1:80 (where init has
-already spawned /bin/httpd, see chapter 106c).
+already spawned /bin/httpd, see chapter 111).
 """
 
 import os, signal, socket, subprocess, sys, time, select

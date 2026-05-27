@@ -1,4 +1,4 @@
-/* userspace/httpsd/httpsd.c -- chapter 112b in-guest TLS test server.
+/* userspace/httpsd/httpsd.c -- chapter 125 in-guest TLS test server.
  *
  * Smallest-possible HTTPS server: listens on a port (default
  * 8443), accepts one TLS connection at a time, presents the
@@ -20,7 +20,7 @@
  *   - session resumption (every handshake is full)
  *   - chunked encoding (Content-Length up front)
  *
- * Compared to httpd (chapters 105 / 106a) this binary is ~150
+ * Compared to httpd (chapters 107 / 106a) this binary is ~150
  * lines of glue plus libbearssl.a and our tls_socket.c-style
  * server-half adapter.  The TLS handshake itself is BearSSL's;
  * we just have to feed it bytes via the four-buffer
@@ -30,7 +30,7 @@
  *   httpsd                -- listen on port 8443, present the
  *                            chapter-112b RSA-2048 sample chain
  *   httpsd <port>         -- same, on a specific port
- *   httpsd --ec <port>    -- chapter 112e: listen on <port> and
+ *   httpsd --ec <port>    -- chapter 128: listen on <port> and
  *                            present the EC / ECDSA sample chain
  *                            instead.  Used by the chapter-112e
  *                            multi-anchor test to prove the
@@ -121,7 +121,7 @@ static int srv_low_write(void *ctx, const unsigned char *data, size_t len)
 /* State for one connection.  Lives on the stack of handle_one;
  * sizeof(...) is ~36 KB (mostly the BearSSL bidi I/O buffer plus
  * the server context).  Userspace default stack is 64 KB so this
- * just fits; chapter 112d will move to heap when we add real
+ * just fits; chapter 127 will move to heap when we add real
  * concurrency. */
 typedef struct {
     int                     fd;
@@ -139,7 +139,7 @@ static int srv_inject_entropy(br_ssl_engine_context *eng)
     return 0;
 }
 
-/* Chapter 112e: which sample chain to present.  Set by main() from
+/* Chapter 128: which sample chain to present.  Set by main() from
  * the --ec CLI flag; defaulting to RSA preserves the chapter-112b
  * behaviour ("httpsd 8443" → RSA-2048, no flag required). */
 static int g_use_ec = 0;
@@ -252,7 +252,7 @@ int main(int argc, char **argv)
 {
     int port = HTTPSD_DEFAULT_PORT;
 
-    /* Chapter 112e: accept an optional "--ec" leading flag that
+    /* Chapter 128: accept an optional "--ec" leading flag that
      * flips the server onto the ECDSA / P-256 sample chain.  The
      * remaining positional arg, if any, is still the port number.
      * Keeping the parser this small (instead of pulling in a

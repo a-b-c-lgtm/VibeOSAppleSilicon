@@ -10,7 +10,7 @@
  *   kfree(ptr)            release a previously kmalloc'd block.
  *                         Idempotent on NULL.
  *
- * Plus two diagnostics that the milestone-3 demo uses to verify
+ * Plus two diagnostics that the heap demo uses to verify
  * coalescing actually works:
  *
  *   kheap_used()          sum of payload bytes currently allocated.

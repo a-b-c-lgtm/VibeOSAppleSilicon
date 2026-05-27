@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_gcc_libc_probe.py — chapter 132g probe.
+"""scripts/_dbg_gcc_libc_probe.py — chapter 187 probe.
 
 Step 8 of test_gcc_hello.py fails with
 

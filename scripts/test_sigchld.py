@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_sigchld.py — chapter 78 regression.
+"""scripts/test_sigchld.py — chapter 77 regression.
 
 Boots the kernel, drops to the shell, runs `chldtest`, expects
 `[chldtest] all checks passed`.  Five sub-checks exercise SIGCHLD

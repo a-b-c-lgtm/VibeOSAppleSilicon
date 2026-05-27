@@ -57,16 +57,16 @@ extern uint64_t l1_pgtable[512];
  * write fault, allocate a fresh page and copy."  The bit is
  * preserved verbatim by the MMU walk \u2014 only the OS reads it. */
 #define DESC_SW_COW     (1ULL << 55)
-/* Chapter 90 \u2014 also software-defined.  Bit 56 marks "this page
+/* Chapter 91 \u2014 also software-defined.  Bit 56 marks "this page
  * is owned by the page cache, not by this AS."  AS teardown
  * sees the bit and calls page_cache_release(pa) instead of
  * pmem_dec_and_free(pa), so the cache keeps the page until the
  * cache itself decides to evict it.  Fork (address_space_clone_cow)
  * also checks this bit and SKIPS page-cache mappings instead of
- * sharing them \u2014 chapter 90 floor: mmaps do not survive fork.
+ * sharing them \u2014 chapter 91 floor: mmaps do not survive fork.
  * The child can re-mmap if it wants the same content. */
 #define DESC_SW_PAGECACHE (1ULL << 56)
-/* Chapter 108a \u2014 bit 58 marks "this page is a WM window pixel
+/* Chapter 114 \u2014 bit 58 marks "this page is a WM window pixel
  * buffer mapped into userspace; the WM owns it, the AS does not."
  * Teardown SKIPS pmem-free entirely (the WM holds the pages until
  * the window is destroyed); fork SKIPS the mapping (a child
@@ -76,7 +76,7 @@ extern uint64_t l1_pgtable[512];
 #ifndef DESC_SW_WM_WINDOW
 #define DESC_SW_WM_WINDOW (1ULL << 58)
 #endif
-/* Chapter 101 — software-defined bit 57 marks "this is an
+/* Chapter 103 — software-defined bit 57 marks "this is an
  * intentional guard page (invalid, no backing)."  The MMU
  * ignores software bits when DESC_VALID is clear, so the entry
  * faults normally; the data-abort handler then reads the bit
@@ -116,15 +116,15 @@ struct address_space *address_space_create(void)
     as->user_pages_alloced = 0;
     /* Heap starts empty: brk == base means "no pages mapped yet". */
     as->heap_brk = USER_HEAP_BASE;
-    /* Chapter 90 — mmap region starts empty too. */
+    /* Chapter 91 — mmap region starts empty too. */
     as->vmas     = NULL;
     as->mmap_brk = USER_MMAP_BASE;
-    /* chapter 108e follow-up #4 — WM-window VA freelist starts
+    /* chapter 118 follow-up #4 — WM-window VA freelist starts
      * empty.  First install hits the bump-pointer path; only
      * after the first uninstall does the freelist get any
      * candidate ranges. */
     as->wm_freelist = NULL;
-    /* Chapter 91 — single owner at creation.  SYS_CLONE bumps
+    /* Chapter 92 — single owner at creation.  SYS_CLONE bumps
      * this when it spawns another thread into the same AS. */
     as->refcount = 1;
 
@@ -153,7 +153,7 @@ struct address_space *address_space_create(void)
  * destroyed.  L3 / L2 / L1 page-table pages are *never* shared
  * across address spaces, so they get pmem_free_page directly.
  *
- * Chapter 90 \u2014 page-cache-owned pages (DESC_SW_PAGECACHE) take
+ * Chapter 91 \u2014 page-cache-owned pages (DESC_SW_PAGECACHE) take
  * a different path: page_cache_release(pa) instead of
  * pmem_dec_and_free.  The cache keeps the page so the next
  * mmap of the same content is a hit; the cache itself decides
@@ -172,7 +172,7 @@ static void teardown_user_range(struct address_space *as)
             if ((l3_ent & DESC_VALID) == 0) continue;
             uint64_t pg_pa = l3_ent & ~0xFFFULL & ((1ULL << 48) - 1);
             if (l3_ent & DESC_SW_WM_WINDOW) {
-                /* Chapter 108a — the WM owns this page.  Drop the
+                /* Chapter 114 — the WM owns this page.  Drop the
                  * descriptor but do NOT pmem-free the backing
                  * frame; the window keeps it until destroy time
                  * (or sys_gui_unmap_window).  AS teardown is the
@@ -190,7 +190,7 @@ static void teardown_user_range(struct address_space *as)
     }
 }
 
-/* Chapter 90 — free the vma list. Page-table cleanup is handled
+/* Chapter 91 — free the vma list. Page-table cleanup is handled
  * separately by teardown_user_range; this just releases the
  * vma struct themselves. */
 static void teardown_vmas(struct address_space *as)
@@ -204,7 +204,7 @@ static void teardown_vmas(struct address_space *as)
     as->vmas = NULL;
 }
 
-/* chapter 108e follow-up #4 — free the WM-window VA freelist.
+/* chapter 118 follow-up #4 — free the WM-window VA freelist.
  * Page-table cleanup is already handled by teardown_user_range
  * (the freelist entries describe ranges that have NO L3 entries
  * — uninstall already zeroed them).  This just releases the
@@ -223,7 +223,7 @@ static void teardown_wm_freelist(struct address_space *as)
 void address_space_destroy(struct address_space *as)
 {
     if (!as) return;
-    /* Chapter 91 — refcount-aware teardown.  Drop OUR reference
+    /* Chapter 92 — refcount-aware teardown.  Drop OUR reference
      * first; if other threads (clone siblings) are still using
      * the AS, return without touching the page tables.  Only
      * the last reference does the actual teardown. */
@@ -236,7 +236,7 @@ void address_space_destroy(struct address_space *as)
     kfree(as);
 }
 
-/* Chapter 91 — bump the refcount so a new thread can share this
+/* Chapter 92 — bump the refcount so a new thread can share this
  * AS.  Caller must arrange exactly one matching
  * address_space_destroy() at the new thread's exit time. */
 void address_space_share(struct address_space *as)
@@ -295,7 +295,7 @@ int address_space_map(struct address_space *as,
     return 0;
 }
 
-/* Chapter 101 — install a one-page guard at `va`.
+/* Chapter 103 — install a one-page guard at `va`.
  *
  * The L3 entry is written *invalid* (DESC_VALID=0) but tagged
  * with DESC_SW_GUARD.  Any load/store to the page produces a
@@ -327,7 +327,7 @@ int address_space_install_guard(struct address_space *as, uint64_t va)
     return 0;
 }
 
-/* Chapter 101 — read the raw L3 descriptor that backs `va`, or
+/* Chapter 103 — read the raw L3 descriptor that backs `va`, or
  * 0 if no L2/L3 covers it.  Used by the fault handler to read
  * software bits (DESC_SW_GUARD) on entries that are invalid
  * from the MMU's perspective. */
@@ -415,7 +415,7 @@ int address_space_set_brk(struct address_space *as, uint64_t new_brk)
     return 0;
 }
 
-/* Eager full-copy clone for chapter 73 (fork).  Walk src's user
+/* Eager full-copy clone for chapter 72 (fork).  Walk src's user
  * range one L2 entry at a time; for each valid L3 entry, allocate
  * a fresh pmem page, memcpy 4 KiB of contents from the source PA
  * (identity-mapped via the boot L1) to the destination PA, then
@@ -450,7 +450,7 @@ struct address_space *address_space_clone(const struct address_space *src)
         for (int j = 0; j < PTES_PER_TABLE; j++) {
             uint64_t src_ent = src_l3[j];
             if ((src_ent & DESC_VALID) == 0) {
-                /* Chapter 101 — preserve guard pages.  These
+                /* Chapter 103 — preserve guard pages.  These
                  * carry DESC_SW_GUARD but no DESC_VALID; if we
                  * don't re-install them in the child, the
                  * child's stack overflow will fall through to
@@ -468,10 +468,10 @@ struct address_space *address_space_clone(const struct address_space *src)
                 continue;
             }
 
-            /* Chapter 90: skip page-cache pages (mmaps don't
+            /* Chapter 91: skip page-cache pages (mmaps don't
              * survive eager clone either). */
             if (src_ent & DESC_SW_PAGECACHE) continue;
-            /* Chapter 108a: WM window mappings are also skipped
+            /* Chapter 114: WM window mappings are also skipped
              * by eager clone, for the same reason
              * address_space_clone_cow skips them \u2014 the WM owns
              * the pages, the child should re-request its own
@@ -513,7 +513,7 @@ struct address_space *address_space_clone(const struct address_space *src)
     return dst;
 }
 
-/* Chapter 75 \u2014 copy-on-write clone.
+/* Chapter 74 \u2014 copy-on-write clone.
  *
  * Walks src exactly the same way as address_space_clone, but
  * instead of allocating + memcpying every page we just SHARE
@@ -554,7 +554,7 @@ struct address_space *address_space_clone_cow(struct address_space *src)
         for (int j = 0; j < PTES_PER_TABLE; j++) {
             uint64_t src_ent = src_l3[j];
             if ((src_ent & DESC_VALID) == 0) {
-                /* Chapter 101 — preserve guard pages across
+                /* Chapter 103 — preserve guard pages across
                  * COW fork too.  Same reasoning as
                  * address_space_clone: a forked child whose
                  * stack overflows should also get the friendly
@@ -579,15 +579,15 @@ struct address_space *address_space_clone_cow(struct address_space *src)
                 continue;
             }
 
-            /* Chapter 90 floor: mmaps do not survive fork.  Page-
+            /* Chapter 91 floor: mmaps do not survive fork.  Page-
              * cache-owned pages are skipped entirely \u2014 the child
              * will fault on these VAs and (since we're not
              * copying the parent's vma list either) get killed.
              * The parent's mapping is untouched.  Document this
-             * limit in chapter 90; future chapters will copy
+             * limit in chapter 91; future chapters will copy
              * vmas + bump page_cache refcounts. */
             if (src_ent & DESC_SW_PAGECACHE) continue;
-            /* Chapter 108a: WM window mappings are also skipped.
+            /* Chapter 114: WM window mappings are also skipped.
              * Same reasoning: they reference physical pages owned
              * by the kernel-side WM, not by this AS.  A child that
              * wanted its own window would gui_create_window +
@@ -800,7 +800,7 @@ int address_space_make_writable(struct address_space *as, uint64_t va)
 }
 
 /* ------------------------------------------------------------------
- * Chapter 90 \u2014 mmap support.
+ * Chapter 91 \u2014 mmap support.
  *
  * vmas is a singly-linked list sorted by va.  Tiny linear scan is
  * fine: the chapter-90 ceiling is "a handful of mmaps per
@@ -890,7 +890,7 @@ uint64_t address_space_mmap_ramfs(struct address_space *as,
     if (!as || !pages) return 0;
     if (file_offset & (PAGE_SIZE - 1)) return 0;
     /* PROT_WRITE on a file mapping would need COW on the cached
-     * page; chapter 90 punts that. */
+     * page; chapter 91 punts that. */
 
     /* Validate the ramfs index up front.  Cheaper here than at
      * fault time \u2014 caller learns about ENOENT before the
@@ -1047,7 +1047,7 @@ int address_space_handle_mmap_fault(struct address_space *as,
 }
 
 /* ------------------------------------------------------------------
- * Chapter 108a \u2014 WM-owned window mappings.
+ * Chapter 114 \u2014 WM-owned window mappings.
  *
  * The WM allocates one or more 4 KiB physical pages per window
  * and asks the AS layer to expose them at a fresh user VA range
@@ -1064,7 +1064,7 @@ int address_space_handle_mmap_fault(struct address_space *as,
  * by sys_mmap so the two never collide.  No support for a fixed
  * VA — caller takes whatever the bump pointer gives.
  *
- * chapter 108e follow-up #4 — uninstall now feeds the freed
+ * chapter 118 follow-up #4 — uninstall now feeds the freed
  * (va, n_pages) range into as->wm_freelist (sorted by va,
  * coalesced).  Install consults the freelist FIRST for a
  * best-fit candidate before falling back to mmap_brk_alloc.
@@ -1291,7 +1291,7 @@ int address_space_uninstall_wm_window(struct address_space *as,
         "isb             \n"
         ::: "memory");
 
-    /* Phase 4 (chapter 108e follow-up #4) — return the VA range to
+    /* Phase 4 (chapter 118 follow-up #4) — return the VA range to
      * the freelist so a future install can reuse it.  Without
      * this, the bump pointer just grows monotonically and a long
      * sequence of resize-uninstall/install cycles eventually

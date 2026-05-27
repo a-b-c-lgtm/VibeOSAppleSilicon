@@ -64,7 +64,7 @@ long pipe_read(struct pipe *p, void *buf, size_t len);
  * should loop. */
 long pipe_write(struct pipe *p, const void *buf, size_t len);
 
-/* Chapter 114f — deadline-aware variants used by the userfs
+/* Chapter 146 — deadline-aware variants used by the userfs
  * RPC path so a hung daemon can't park a kernel thread forever.
  * `deadline_ms` is an absolute monotonic timestamp (the value
  * returned by `timer_ticks() * TICK_INTERVAL_MS` plus the

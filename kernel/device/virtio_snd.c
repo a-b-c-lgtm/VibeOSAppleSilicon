@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_snd.c — chapter 96 virtio-sound driver.
+ * kernel/device/virtio_snd.c — chapter 97 virtio-sound driver.
  *
  * Spec reference: virtio v1.2 §5.14 (sound device).  See
  * virtio_snd.h for the design summary.
@@ -459,7 +459,7 @@ static int init_device(uintptr_t base)
     w32(VIRTIO_MMIO_STATUS, VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
 
     /* 2. Negotiate VERSION_1.  virtio-snd doesn't define any
-     *    other features we care about for chapter 96 floor. */
+     *    other features we care about for chapter 97 floor. */
     w32(VIRTIO_MMIO_DEVICE_FEAT_SEL, 1);
     uint32_t feat_hi = r32(VIRTIO_MMIO_DEVICE_FEATURES);
     if (!(feat_hi & 1u)) {

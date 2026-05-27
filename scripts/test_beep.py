@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_beep.py — chapter 96 smoke test.
+"""scripts/test_beep.py — chapter 97 smoke test.
 
 Boots the kernel with `-device virtio-sound-device,audiodev=none`
 attached, drops to /bin/sh, runs `/bin/beep`, and asserts:
@@ -12,7 +12,7 @@ attached, drops to /bin/sh, runs `/bin/beep`, and asserts:
      `probing virtio-mmio bus for a sound card ... ok` line —
      that fires before the serial client connects, and
      `unix:...,server,nowait` discards data emitted before the
-     listener is alive.  See chapter 95 for the trap.)
+     listener is alive.  See chapter 96 for the trap.)
 
   2. `beep 880 100` returns exit-status zero (no error message
      printed by /bin/beep, no `[svc] unknown syscall` from the
@@ -165,7 +165,7 @@ def main():
             return 1
         print("PASS: shell returned to prompt after beep")
 
-        print("PASS: chapter 96 virtio-snd smoke test")
+        print("PASS: chapter 97 virtio-snd smoke test")
         return 0
     finally:
         q.kill(); q.wait()

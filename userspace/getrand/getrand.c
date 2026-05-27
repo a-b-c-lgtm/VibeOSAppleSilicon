@@ -1,4 +1,4 @@
-/* userspace/getrand/getrand.c — chapter 112: print N random bytes
+/* userspace/getrand/getrand.c — chapter 123: print N random bytes
  * as hex, one line per request.  Usage:
  *
  *   getrand              # 16 bytes -> 32 hex chars
@@ -8,13 +8,13 @@
  * kernel/core/random.c (a ChaCha20 CSPRNG re-seeded from
  * virtio-rng).  Returns 0 on success, 1 on error.
  *
- * This is the test surface for chapter 112 — running it twice in
+ * This is the test surface for chapter 123 — running it twice in
  * a row MUST produce two different outputs (the assertion enforced
  * by scripts/test_getrand.py).  When the kernel boots without the
  * virtio-rng device the warning printed by random_init still
  * applies — the bytes will differ run-to-run (because CNTVCT_EL0
  * varies), but the sequence is NOT cryptographically random and
- * should not be fed into chapter 114's TLS handshake.
+ * should not be fed into chapter 140's TLS handshake.
  */
 
 #include "../libc/syscall.h"

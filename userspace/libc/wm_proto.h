@@ -1,5 +1,5 @@
 /*
- * userspace/libc/wm_proto.h — chapter 108d wire
+ * userspace/libc/wm_proto.h — chapter 117 wire
  * protocol for /srv/wm, the userspace window-server bus.
  *
  * Shared between three callers (eventual end state):
@@ -11,7 +11,7 @@
  *                                  GUI app once the kernel
  *                                  SYS_GUI_* path is gone
  *                                  (Phase F).
- *   - userspace/wmtest/wmtest.c — chapter 108d smoke client.
+ *   - userspace/wmtest/wmtest.c — chapter 117 smoke client.
  *
  * Wire shape: one chapter-107 IPC datagram = one request OR
  * one reply.  Fixed-size header per message; future variable-
@@ -22,12 +22,12 @@
  * The protocol is request/reply, ONE outstanding per conn.
  * Clients are expected to serialise their own use of a conn.
  * Multi-conn fan-out (each GUI app holds its own conn) is the
- * intended scaling path, mirroring fontd in chapter 108b.
+ * intended scaling path, mirroring fontd in chapter 115.
  *
- * Chapter 108d scope: only WM_HELLO and WM_LIST are
+ * Chapter 117 scope: only WM_HELLO and WM_LIST are
  * implemented in the first slice.  WM_LIST always returns zero windows because
  * the kernel WM still owns the window list; wsd is just
- * proving the bus end-to-end.  Subsequent chapter 108d slices add ops by
+ * proving the bus end-to-end.  Subsequent chapter 117 slices add ops by
  * picking the next stable wire number from the enum below —
  * never reusing an old one.
  */
@@ -51,9 +51,9 @@
 #define WM_PROTO_VERSION    3u
 
 /* Op codes.  Stable wire numbers — adding a new op gets a
- * new number, never reuses an old one.  Chapter 108d
+ * new number, never reuses an old one.  Chapter 117
  * implemented ops 1-13 and WM_WIN_CREATE_AT (14);
- * chapter 108e added WM_WIN_BIND_KERNEL (15) and
+ * chapter 118 added WM_WIN_BIND_KERNEL (15) and
  * WM_WIN_RESTORE / WM_WIN_MINIMIZE (16-17). */
 enum wm_op {
     WM_HELLO       = 1,  /* req: a=client_version; rep: a=session_id, b=wsd_version */
@@ -61,7 +61,7 @@ enum wm_op {
     WM_WIN_CREATE  = 3,  /* req: a=w, b=h, c=flags; rep: a=window_id, b=auto_x, c=auto_y */
     WM_WIN_DESTROY = 4,  /* req: a=window_id;       rep: -           */
     WM_WIN_MAP_FB  = 5,  /* req: a=window_id;       rep: a=fb_id, b=w, c=h, d=stride */
-    WM_WIN_DAMAGE  = 6,  /* req: a=window_id, b=src_x, c=src_y, d=(w<<16)|h; rep: status only.  Chapter 108d: src_x/src_y are WINDOW-LOCAL; wsd translates to scanout via the window's position. */
+    WM_WIN_DAMAGE  = 6,  /* req: a=window_id, b=src_x, c=src_y, d=(w<<16)|h; rep: status only.  Chapter 117: src_x/src_y are WINDOW-LOCAL; wsd translates to scanout via the window's position. */
     WM_WIN_MOVE    = 7,  /* req: a=window_id, b=x, c=y; rep: status only.  Reposition window on the scanout. */
 
     /* Reserved (not implemented yet; numbering locked in
@@ -73,7 +73,7 @@ enum wm_op {
     WM_WIN_TITLE   = 12, /* req: a=window_id, b=title_len; payload: title bytes (<=WM_TITLE_MAX) -- reserved, not impl yet */
     WM_EVENT_PULL  = 13,
 
-    /* Chapter 108d — explicit-position create.
+    /* Chapter 117 — explicit-position create.
      * Used by apps that own a specific scanout slot (desktop
      * wallpaper at 0,0; taskbar at 0,H-bar; etc) and don't
      * want to perturb the cascade for subsequent cascade-
@@ -83,7 +83,7 @@ enum wm_op {
      * binaries don't need to change. */
     WM_WIN_CREATE_AT = 14, /* req: a=w, b=h, c=flags, d=(x<<16)|y; rep: a=window_id, b=x, c=y */
 
-    /* chapter 108e -- userspace decorations.  Once a client has
+    /* chapter 118 -- userspace decorations.  Once a client has
      * opened a kernel-WM "input shadow" window for event
      * routing (the wmclient.c GUI_WIN_FLAG_NO_DECORATION shadow
      * pattern), it tells wsd the shadow's kernel id with
@@ -98,7 +98,7 @@ enum wm_op {
      * Binding is once per window; re-binding overwrites. */
     WM_WIN_BIND_KERNEL = 15, /* req: a=wsd_window_id, b=kernel_window_id; rep: status */
 
-    /* chapter 108e -- explicit visibility control.  The
+    /* chapter 118 -- explicit visibility control.  The
      * minimize button click path is internal to wsd (poller
      * sees the click, calls a static helper) so no protocol
      * op exists for "hide".  But "restore" needs an external
@@ -107,7 +107,7 @@ enum wm_op {
      * z-order, calls gui_set_minimized(kernel_id, 0), and
      * full-recomposes.  No-op if the window is already
      * visible.  Idempotent.  Used by taskbar's click-to-
-     * restore path (chapter 108e). */
+     * restore path (chapter 118). */
     WM_WIN_RESTORE     = 16, /* req: a=wsd_window_id; rep: status */
 
     /* Symmetric to WM_WIN_RESTORE: hide a window from
@@ -137,7 +137,7 @@ enum wm_op {
 #define WM_ERR_NOTOWNER    (-6)   /* op tried to touch a window owned by another conn */
 #define WM_ERR_FULL        (-7)   /* WM_WIN_CREATE: window table full */
 
-/* Window flags.  Bitmask.  Chapter 108d defines the slots;
+/* Window flags.  Bitmask.  Chapter 117 defines the slots;
  * actual semantics (decoration, always-on-top) are
  * meaningful when wsd starts composing.
  *
@@ -186,7 +186,7 @@ struct wm_msg {
 
 /* One entry in a WM_LIST reply's payload.  Fixed-size so
  * the client can demarshal in a loop without per-entry
- * length prefixes.  Chapter 108d: grew a 64-byte
+ * length prefixes.  Chapter 117: grew a 64-byte
  * NUL-terminated title field so the taskbar can render
  * labels without a separate per-window RPC.  Older clients
  * reading the descriptor as 28 bytes will simply miss the
@@ -199,9 +199,9 @@ struct wm_win_desc {
     uint32_t w;
     uint32_t h;
     uint32_t flags;
-    uint32_t x;          /* chapter 108d: scanout-relative origin x */
-    uint32_t y;          /* chapter 108d: scanout-relative origin y */
-    char     title[64];  /* chapter 108d: NUL-terminated window label */
+    uint32_t x;          /* chapter 117: scanout-relative origin x */
+    uint32_t y;          /* chapter 117: scanout-relative origin y */
+    char     title[64];  /* chapter 117: NUL-terminated window label */
 };
 
 /* Largest possible WM_LIST reply: header + WM_MAX_WINDOWS

@@ -1,4 +1,4 @@
-/* userspace/libc/assert.h — chapter 128c.
+/* userspace/libc/assert.h — chapter 167.
  *
  * C99 7.2 <assert.h>.  Two macros:
  *
@@ -15,7 +15,7 @@
  * built with the existing write() syscall and the tiny
  * decimal-int formatter from syscall.h.
  *
- * Real abort() lives in signal.h (chapter 128b).  We forward-
+ * Real abort() lives in signal.h (chapter 166).  We forward-
  * declare it as `extern` to avoid a circular include.
  */
 #ifndef USERSPACE_LIBC_ASSERT_H

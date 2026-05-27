@@ -6,7 +6,7 @@ Drive a graphical osdev boot end-to-end:
   2. Wait for the shell prompt over serial.
   3. Wait for the WM to log a window-creation line (the
      init-spawned /bin/launcher creates one automatically as part
-     of the M46 boot-to-desktop flow \u2014 no keystrokes needed).
+     of the boot-to-desktop flow — no keystrokes needed).
   4. Dump the GPU framebuffer with QMP `screendump`.
   5. Verify the framebuffer is painted (wallpaper + a window's
      worth of decoration colours present).
@@ -211,7 +211,7 @@ def main():
         # init logged its window creation (already asserted via
         # the [wm] window created needle above).  We can't sample
         # the launcher body in the framebuffer at boot anymore:
-        # chapter 109e UX made the launcher a Start-menu panel
+        # chapter 55 UX made the launcher a Start-menu panel
         # that is MINIMIZED on first render (the taskbar's Start
         # button toggles it), so the spot where it used to land
         # at (130, 130) is now wallpaper.  Sanity-check instead

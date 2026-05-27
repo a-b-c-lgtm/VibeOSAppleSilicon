@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_userfs_timeout.py -- chapter 114f deadline test.
+"""scripts/test_userfs_timeout.py -- chapter 146 deadline test.
 
 Boots the OS, spawns `/bin/hangfs &`, then opens a file under
 the deliberately-wedged mount and verifies that the call
@@ -142,7 +142,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 114f] userfs per-request deadline (hangfs)")
+    print("[chapter 146] userfs per-request deadline (hangfs)")
     reformat_data()
 
     q = boot()
@@ -166,7 +166,7 @@ def main():
         # Open a file under /hang.  The daemon will never reply,
         # so cat should sit for ~5 s then print
         #   "cat: cannot open /hang/anything: Connection timed out"
-        # (chapter 116d: cat uses strerror(errno)) and the shell
+        # (chapter 152: cat uses strerror(errno)) and the shell
         # prompt should follow.  We allow up to 15 s before
         # declaring a hang.
         t0 = time.time()

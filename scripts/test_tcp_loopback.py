@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_tcp_loopback.py -- chapter-106 / M95 smoke test.
+"""scripts/test_tcp_loopback.py -- chapter-106 TCP loopback smoke test.
 
 Boots the kernel headless with NO host hostfwd and NO local HTTP
 server, drops to the shell prompt, and runs `looptest 9999`.
@@ -8,17 +8,17 @@ client) successfully handshake, exchange a known phrase, and
 cleanly close -- all over 127.0.0.1 with traffic never leaving
 the guest kernel.
 
-Why this matters: before chapter 106, a guest process dialing
+Why this matters: before chapter 108, a guest process dialing
 127.0.0.1 would hand its SYN to virtio-net TX, SLIRP would
 silently drop the 127/8 frame, and the connect() would time out.
-Chapter 106 added a kernel loopback short-circuit (net.c's
+Chapter 108 added a kernel loopback short-circuit (net.c's
 `net_is_local_ip` + bounded loopback queue drained by net_poll)
 so loopback frames re-enter the RX path immediately, never
 touching the device.  This test is the user-visible proof.
 
 The test is fully hermetic: it does NOT require any
 hostfwd rule, host listener, or external connectivity.  That
-hermetic property is exactly what chapter 106 was meant to
+hermetic property is exactly what chapter 108 was meant to
 deliver.
 """
 import os
@@ -142,7 +142,7 @@ def main():
         log += wait_for(ser, b"[loopcli] connected", 20.0)
         if b"[loopcli] connected" not in log:
             print("FAIL: client never reached ESTABLISHED on 127.0.0.1")
-            print("       (chapter 106 short-circuit missing or broken?)")
+            print("       (chapter 108 short-circuit missing or broken?)")
             print(log[-2000:].decode("ascii", "replace"))
             return 1
         print("PASS: client connected to 127.0.0.1:9999")
@@ -172,7 +172,7 @@ def main():
             return 1
         print("PASS: looptest completed cleanly")
 
-        print("\nMILESTONE 95 (TCP loopback): ALL TESTS PASSED")
+        print("\nTCP loopback: ALL TESTS PASSED")
         return 0
     finally:
         try:

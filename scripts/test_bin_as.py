@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """scripts/test_bin_as.py -- /bin/as smoke test.
 
-Chapter 118 originally shipped a toy hand-rolled assembler with
-a hard-coded mnemonic table.  Chapter 131f swapped that out for
+Chapter 154 originally shipped a toy hand-rolled assembler with
+a hard-coded mnemonic table.  Chapter 180 swapped that out for
 the real GNU binutils `as-new` cross-built for our
 aarch64-osdev target (see scripts/test_guest_ld.py + the
 Makefile BINUTILS_AS_NEW rules).  The test still drives
@@ -132,7 +132,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 131f] /bin/as smoke test (GNU binutils gas)")
+    print("[chapter 180] /bin/as smoke test (GNU binutils gas)")
     reformat_data()
 
     q = boot()

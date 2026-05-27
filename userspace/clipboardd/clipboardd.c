@@ -1,5 +1,5 @@
 /*
- * userspace/clipboardd/clipboardd.c — chapter 114 port.
+ * userspace/clipboardd/clipboardd.c — chapter 140 port.
  *
  * The system clipboard, now a chapter-114 userfs daemon
  * instead of a chapter-107 IPC service.  Mounts /clipboard
@@ -145,7 +145,7 @@ int main(int argc, char **argv)
     h.on_is_dir  = on_is_dir;
     h.userdata   = (void *)0;
 
-    printf("[clipboardd] starting (chapter 114)\n");
+    printf("[clipboardd] starting (chapter 140)\n");
     int r = userfs_serve("/clipboard", &h);
     printf("[clipboardd] serve returned %d\n", r);
     return r < 0 ? 1 : 0;

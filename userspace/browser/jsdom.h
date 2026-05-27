@@ -1,5 +1,5 @@
 /*
- * userspace/browser/jsdom.h -- chapter 111 host bindings between
+ * userspace/browser/jsdom.h -- chapter 122 host bindings between
  * pocketjs (userspace/libc/pocketjs.h) and the browser's DOM /
  * layout / output.
  *

@@ -19,12 +19,12 @@
  *   offset 0x580  SError from lower EL using AArch64
  *   offset 0x600..0x780  Lower EL using AArch32 — we never use AArch32.
  *
- * For milestone 1, every slot routes to a single panic handler that
+ * Initially, every slot routes to a single panic handler that
  * prints the exception class, faulting address, exception link
- * register, and saved PSTATE, then halts. As subsequent milestones
- * land we will replace individual slots:
- *   - slot 0x280 (IRQ) → timer + GIC handler in milestone 2
- *   - slot 0x400 (Sync from lower EL) → SVC handler in milestone 4
+ * register, and saved PSTATE, then halts. As subsequent chapters
+ * land we replace individual slots:
+ *   - slot 0x280 (IRQ) → timer + GIC handler
+ *   - slot 0x400 (Sync from lower EL) → SVC handler
  */
 
 .section .text.vectors
@@ -136,7 +136,7 @@ vector_table:
     mov     x0, #4
     b       panic_entry
     .balign 0x80
-    b       irq_entry           /* slot 5: IRQ from EL1h — milestone 2 */
+    b       irq_entry           /* slot 5: IRQ from EL1h */
     .balign 0x80
     mov     x0, #6
     b       panic_entry
@@ -178,7 +178,7 @@ vector_table:
  *   x1 = pointer to saved frame on the stack */
 .balign 8
 panic_entry:
-    /* M58 DIAG: switch to a dedicated emergency stack before doing
+    /* Switch to a dedicated emergency stack before doing
      * anything else.  If the panic was caused by SP_EL1 being out
      * of mapped memory, save_context would itself fault and we'd
      * lose the original fault info.  Using a guaranteed-mapped
@@ -228,7 +228,7 @@ vectors_init:
     isb
     ret
 
-/* irq_entry — common IRQ landing pad for milestone 2.
+/* irq_entry — common IRQ landing pad.
  * Save the full register frame, dispatch to C, restore, eret.
  * Unlike panic_entry the IRQ path *must* return cleanly via eret
  * because the interrupted code is innocent. */
@@ -241,8 +241,8 @@ irq_entry:
     restore_context
     eret
 
-/* svc_entry — sync exception from a lower EL.  In milestone 7 this
- * is overwhelmingly the SVC instruction (system call), but the same
+/* svc_entry — sync exception from a lower EL.  This is
+ * overwhelmingly the SVC instruction (system call), but the same
  * slot also catches lower-EL data/instruction aborts.  We save the
  * full frame so the C dispatcher can read the syscall arguments
  * (x0..x5) and number (x8) directly from it, plus inspect ESR_EL1

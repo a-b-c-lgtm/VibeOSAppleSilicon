@@ -1,6 +1,6 @@
-/* psci.h — chapter 86 PSCI (Power State Coordination Interface).
+/* psci.h — chapter 87 PSCI (Power State Coordination Interface).
  *
- * The kernel's only client of PSCI for chapter 86 is CPU_ON,
+ * The kernel's only client of PSCI for chapter 87 is CPU_ON,
  * which wakes a parked secondary core and points it at the
  * supplied entry address.
  *

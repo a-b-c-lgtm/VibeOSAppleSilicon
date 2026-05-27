@@ -1,10 +1,10 @@
-/* userspace/as/as.c — minimal AArch64 assembler, chapter 118.
+/* userspace/as/as.c — minimal AArch64 assembler, chapter 154.
  *
  * Usage:  /bin/as [-o out.o] in.s
  *         (with no -o the default is `out.o` next to the input)
  *
  * Mnemonic coverage (the curated subset the rest of Part XVII
- * will produce from /bin/cc1 in chapter 122):
+ * will produce from /bin/cc1 in chapter 158):
  *
  *   mov  Rd, #imm        (MOVZ form, hw=0)
  *   movk Rd, #imm[, lsl #N]
@@ -46,7 +46,7 @@
  * order [NULL, .text, .data, .bss, .rodata, .symtab, .strtab,
  * .shstrtab, .rela.text].  Empty sections are still emitted as
  * SHT_PROGBITS/NOBITS with sh_size=0 so the section indices
- * are stable across inputs (chapter 119 relies on this).
+ * are stable across inputs (chapter 155 relies on this).
  *
  * This is a one-pass assembler with patch-list fixups for
  * forward references.  Two-pass would be cleaner but would

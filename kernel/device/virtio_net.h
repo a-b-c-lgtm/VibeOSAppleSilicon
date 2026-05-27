@@ -1,5 +1,5 @@
 /*
- * kernel/device/virtio_net.h — milestone-52 virtio-net driver.
+ * kernel/device/virtio_net.h — virtio-net driver.
  *
  * Modern (v2) virtio-mmio NIC driver.  QEMU's `virt` machine
  * with `-device virtio-net-device,netdev=net0` exposes one of

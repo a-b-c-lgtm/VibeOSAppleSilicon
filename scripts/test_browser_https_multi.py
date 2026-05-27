@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_https_multi.py -- chapter 112e multi-anchor trust store.
+"""scripts/test_browser_https_multi.py -- chapter 128 multi-anchor trust store.
 
 Boots the kernel, waits for the shell prompt, then runs
 
@@ -7,8 +7,8 @@ Boots the kernel, waits for the shell prompt, then runs
     browser https://localhost:8444/   # ECDSA P-256 cert chain
 
 against the two in-guest /bin/httpsd instances spawned by init
-(chapter 112e adds the --ec on :8444 alongside the original
-:8443 from chapter 112b).
+(chapter 128 adds the --ec on :8444 alongside the original
+:8443 from chapter 125).
 
 Asserts that:
 
@@ -25,7 +25,7 @@ Asserts that:
      ("ECDSA P-256" from httpsd's own startup line) for the
      8444 instance, proving the EC chain TU was linked in.
 
-If chapter 112d's single-anchor path regressed (i.e. the
+If chapter 127's single-anchor path regressed (i.e. the
 bundle is missing and the browser fell back to the in-binary
 anchor), we'd still pass against :8443 but would fail against
 :8444 because the in-binary anchor only signs the RSA leaf.
@@ -109,7 +109,7 @@ def read_until(ser, needles, timeout, prior=b""):
 
 
 # The body marker the in-guest httpsd serves regardless of port
-# (chapter 112b k_body).  The plain-text renderer collapses
+# (chapter 125 k_body).  The plain-text renderer collapses
 # whitespace so we look for individual tokens.
 BODY_TOKENS = (b"handshake", b"osdev-httpsd")
 PROMPT = b"$ "
@@ -219,7 +219,7 @@ def main():
         )
 
         print(
-            "PASS: chapter 112e multi-anchor trust store "
+            "PASS: chapter 128 multi-anchor trust store "
             "(RSA + ECDSA, bundle-sourced) end-to-end"
         )
         return 0

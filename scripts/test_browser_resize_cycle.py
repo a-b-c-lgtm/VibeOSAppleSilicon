@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_resize_cycle.py — chapter 108e follow-up #3.
+"""scripts/test_browser_resize_cycle.py — chapter 118 follow-up #3.
 
 Regression for the browser-crashes-mid-resize bug.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/_dbg_gcc_probe.py -- chapter 132f gcc abort triage.
+"""scripts/_dbg_gcc_probe.py -- chapter 186 gcc abort triage.
 
 After /bin/gcc --version returned exit 134 (SIGABRT-from-abort)
 with no output, this probe runs a battery of progressively-

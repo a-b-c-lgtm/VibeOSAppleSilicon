@@ -1,5 +1,5 @@
 /*
- * userspace/libc/origin.h -- chapter 110a same-origin policy helpers.
+ * userspace/libc/origin.h -- chapter 121 same-origin policy helpers.
  *
  * "Origin" is the trust boundary the SOP guards: a URL's
  * <scheme, host, port> triple.  Two URLs share an origin if and
@@ -7,7 +7,7 @@
  * case, port defaulted from scheme).  That's it.  No "registered
  * domain", no public-suffix list, no eTLD+1 -- those are tricks
  * real browsers use to cluster cookies across subdomains and we
- * deliberately don't have any of them (see chapter 110's note on
+ * deliberately don't have any of them (see chapter 120's note on
  * host-only cookies).
  *
  * This header is the second consumer of url.h (the first being

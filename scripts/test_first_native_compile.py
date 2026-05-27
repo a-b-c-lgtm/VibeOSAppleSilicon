@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/test_first_native_compile.py — chapter 124 smoke test.
+scripts/test_first_native_compile.py — chapter 160 smoke test.
 
 The first time the OS compiles a C source file *from disk*
 end-to-end:
@@ -11,7 +11,7 @@ end-to-end:
          /bin/cc /data/hello.c -o /tmp/hello
          /tmp/hello               (exit 123, prints marker)
 
-The C program exercises chapter 123's language additions:
+The C program exercises chapter 159's language additions:
 locals, default-zero-init, `+` arithmetic, an interleaved
 printf() that must not corrupt the stack frame.
 
@@ -29,7 +29,7 @@ from test_cc_hello import (  # type: ignore
 )
 
 # The exact source we want on /data/hello.c.  Marker is
-# unique to chapter 124 so a grep over the boot log can
+# unique to chapter 160 so a grep over the boot log can
 # attribute the success.
 HELLO_C = b"""int main(void) {
     int a = 100;
@@ -66,7 +66,7 @@ def seed_data_with_hello():
 
 
 def main():
-    print("[chapter 124] first native compile from /data/hello.c")
+    print("[chapter 160] first native compile from /data/hello.c")
     seed_data_with_hello()
     q = boot()
     s = conn()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_gcc_bf.py -- chapter 132h /bin/gcc builds bf.
+"""scripts/test_gcc_bf.py -- chapter 188 /bin/gcc builds bf.
 
 The chapter-132g milestone proved `/bin/gcc hello.c -o hello`
 links cleanly via default specs.  This chapter goes one step
@@ -21,7 +21,7 @@ handful of libosdevc.a symbols it needs (open/read/close/
 write/malloc/free/exit/memset/strlen) instead of #including
 libc headers.  This matches the in-guest GCC's reality --
 the /bin/gcc shim has no system include directory, only
-`-B/bin/` for library lookup (chapter 132g).
+`-B/bin/` for library lookup (chapter 187).
 """
 
 import os
@@ -144,7 +144,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 132h] /bin/gcc rebuilds bf from source")
+    print("[chapter 188] /bin/gcc rebuilds bf from source")
     reformat_data()
     q = boot()
     s = conn()

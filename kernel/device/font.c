@@ -1,9 +1,9 @@
 /*
- * Font registration -- Chapter 23 (bitmap) + Chapter 102 (TTF) +
- * Chapter 108b (TTF moved to userspace fontd).
+ * Font registration -- Chapter 22 (bitmap) + Chapter 104 (TTF) +
+ * Chapter 115 (TTF moved to userspace fontd).
  *
  * Pre-chapter-108b this file owned both a bitmap font and a TTF
- * font, dispatching font_get_glyph on font->kind.  Chapter 108b
+ * font, dispatching font_get_glyph on font->kind.  Chapter 115
  * moved the TTF rasteriser into /bin/fontd; the kernel-side TTF
  * code is gone.  This file is back to the chapter-23 shape:
  * one always-available bitmap font, exposed via font_get_bitmap()

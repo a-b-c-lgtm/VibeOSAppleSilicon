@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_doom.py — chapter 130a/130b Doom regression.
+"""scripts/test_doom.py — chapter 172/130b Doom regression.
 
 Boots the kernel, waits for the shell prompt, runs the `doom`
 binary, and verifies that DoomGeneric reaches D_IdentifyVersion.
@@ -25,7 +25,7 @@ Two acceptance modes depending on whether a WAD is staged:
         up to `D_IdentifyVersion`;
       - the `wm_create_window_input` call from `DG_Init`
         succeeded;
-      - the FP/SIMD-at-EL0 work from chapter 129 didn't
+      - the FP/SIMD-at-EL0 work from chapter 171 didn't
         regress;
       - the libc additions from this chapter resolve at link
         and don't trap at runtime.
@@ -132,7 +132,7 @@ def _dump(log):
 
 
 def main():
-    # Chapter 130b: if assets/wads/doom1.wad is present in the
+    # Chapter 173: if assets/wads/doom1.wad is present in the
     # source tree, the Makefile DATA_DISK rule will have seeded
     # it into the OSFS-2 image at /data/doom1.wad.  In that case
     # we expect doom to progress past the IWAD scan and reach

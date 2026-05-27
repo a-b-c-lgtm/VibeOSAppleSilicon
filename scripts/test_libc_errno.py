@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_libc_errno.py -- chapter 116a errno smoke test.
+"""scripts/test_libc_errno.py -- chapter 149 errno smoke test.
 
 Boots the OS and runs `/bin/errnotest`, then asserts that:
 
@@ -143,7 +143,7 @@ def parse(out):
 
 
 def main():
-    print("[chapter 116a] errno populated by syscall wrappers")
+    print("[chapter 149] errno populated by syscall wrappers")
     reformat_data()
 
     q = boot()
@@ -163,7 +163,7 @@ def main():
                f"errno after open(missing) is ENOENT=2 "
                f"(got errno={err_open})")
         expect(rc_open == -1 if rc_open is not None else False,
-               f"open() rc is -1 per POSIX convention (chapter 116d) "
+               f"open() rc is -1 per POSIX convention (chapter 152) "
                f"(got rc={rc_open})")
 
         # (2) close(-1).

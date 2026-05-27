@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_browser_hn_timings.py -- chapter 106b perf bug repro.
+"""scripts/test_browser_hn_timings.py -- chapter 110 perf bug repro.
 
 Boots the OS, starts the real scripts/https_proxy.py on the host
 (so the guest can actually reach HN through SLIRP NAT), spawns
@@ -18,7 +18,7 @@ Because the browser canonicalizes https:// through BR_DEFAULT_PROXY
 This is the exact pipeline that's been showing 36+ second fetches
 plus 8 MiB response amplification when driven by hand from
 gui_term.  Driving it over the serial port lets us see every
-[tcp], [httpd], [browser] diag line that chapter 106b added.
+[tcp], [httpd], [browser] diag line that chapter 110 added.
 
 The test PASSES if:
   1. The fetch completes within FETCH_TIMEOUT seconds (default 60).
@@ -180,7 +180,7 @@ def wait_for(s, needle, timeout, accum=None):
 
 # ----------------------------------------------------------------
 # Counters extracted from the kernel + userspace diag lines that
-# chapter 106b added.  We want to surface these in the test
+# chapter 110 added.  We want to surface these in the test
 # output even on PASS so a slow-but-correct run is recognisable.
 # ----------------------------------------------------------------
 

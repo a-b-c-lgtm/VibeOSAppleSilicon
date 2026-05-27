@@ -10,14 +10,14 @@
  *
  *   sector 1..16 directory: array of 32-byte entries, sixteen
  *             sectors gives room for OSFS_MAX_FILES (= 256)
- *             entries.  Was 2 sectors / 32 entries through M59;
- *             bumped to 4 / 64 in M60 when /bin/htmldom pushed
+ *             entries.  Was 2 sectors / 32 entries originally;
+ *             bumped to 4 / 64 when /bin/htmldom pushed
  *             us over the cap, again to 8 / 128 in chapter
  *             106b when /bin/proxytest did the same, and again
- *             to 16 / 256 in chapter 132i when the libc headers
+ *             to 16 / 256 in chapter 189 when the libc headers
  *             needed to ship on disk for in-guest `gcc hello.c`
  *             with `#include <stdio.h>`.  The OSFS-1 format
- *             will be retired wholesale in chapter 113-114's
+ *             will be retired wholesale in chapter 132-140's
  *             VFS refactor; until then we just keep doubling.
  *
  *       struct osfs_dirent {           // 32 bytes
@@ -32,14 +32,15 @@
  *   sectors N..   file data, sector-aligned, packed end-to-end.
  *
  *   (FIRST_DATA_SECTOR = 1 + DIR_SECTORS = 17 with chapter-132i's
- *   16-sector directory; was 9 from chapter 106b through 132h,
- *   5 from M60 through chapter 106a, 3 pre-M60.)
+ *   16-sector directory; was 9 from chapter 110 through 132h,
+ *   5 from the early networking chapters through chapter 109,
+ *   3 before that.)
  *
  * Why custom instead of FAT12?
  *   FAT12 has 12-bit packed entries spanning byte boundaries, three
  *   reserved/EOC value ranges, a quirky "first entry is FAT_ID" rule,
  *   short-name 8.3 padding and case bits, and historically variable
- *   cluster sizes.  None of that is the lesson of this milestone.
+ *   cluster sizes.  None of that is the lesson of this chapter.
  *   OSFS-1 lets us focus on the *layering* (block I/O -> on-disk
  *   parsing -> VFS mount -> syscall) and skip the legacy.  A real
  *   FAT12 / FAT32 reader will land in a later chapter once the rest
@@ -85,7 +86,7 @@ long osfs_read(uint32_t start_sector, uint32_t size_bytes,
 size_t osfs_file_count(void);
 const struct osfs_dirent *osfs_dirent_at(size_t i);
 
-/* Chapter 113 — vtable adapter for the mount table.  OSFS-1 is
+/* Chapter 132 — vtable adapter for the mount table.  OSFS-1 is
  * read-only and historically lives at both `/mnt` and `/bin`,
  * so `osfs1_register_mount()` registers the same fs_ops twice
  * with MOUNT_RO and a NULL cookie.  Callers must invoke

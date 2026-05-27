@@ -1,6 +1,6 @@
 /*
  * kernel/core/walltime.c — PL031 RTC driver + boot-snapshot
- * wall-clock for chapter 95.
+ * wall-clock for chapter 96.
  *
  * The PL031 is a deliberately tiny device — three relevant
  * registers, no setup needed because QEMU's `virt` machine

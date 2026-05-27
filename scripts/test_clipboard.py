@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""scripts/test_clipboard.py -- chapter 114 clipboard test.
+"""scripts/test_clipboard.py -- chapter 140 clipboard test.
 
 Boots the kernel headless, waits for the shell prompt, and
 drives the clipboard via plain file I/O on /clipboard/text.
-Since chapter 114, the clipboard daemon is a userfs mount
+Since chapter 140, the clipboard daemon is a userfs mount
 rather than an IPC service: write to a file to copy, read
 the same file to paste, truncate it to clear.  That means
 this test uses nothing but `echo`, `cat`, and shell
@@ -12,16 +12,16 @@ the very thing the userfs port was designed to unlock.
 
 What this exercises:
 
-  - chapter 114 kernel side: SYS_MOUNT installed clipboardd's
+  - chapter 140 kernel side: SYS_MOUNT installed clipboardd's
     userfs handle into the kernel namespace at /clipboard,
     so VFS lookups under /clipboard route to the daemon.
-  - chapter 114 client side: open / write / close on
+  - chapter 140 client side: open / write / close on
     /clipboard/text travels through the kernel userfs glue
     to clipboardd's on_open / on_write handlers.
-  - chapter 114 round-trip: cat /clipboard/text drains the
+  - chapter 140 round-trip: cat /clipboard/text drains the
     daemon's static g_data buffer back to stdout, verifying
     on_read returns the just-written bytes.
-  - chapter 114 init wiring: init still supervises
+  - chapter 140 init wiring: init still supervises
     /bin/clipboardd; the very fact that the file exists at
     the prompt proves the userfs_serve() call succeeded
     ahead of the shell.
@@ -138,7 +138,7 @@ def main():
         #    to clipboardd's on_open + on_write.  Plain `echo`
         #    appends a trailing newline; we'll account for it
         #    in step 4.
-        ser.sendall(b"echo Hello chapter 114 > /clipboard/text\n")
+        ser.sendall(b"echo Hello chapter 140 > /clipboard/text\n")
         log = wait_for(ser, b"$ ", 5.0)
         print("PASS: shell write to /clipboard/text returned")
 
@@ -146,8 +146,8 @@ def main():
         #    exact line we just wrote, framed by the next
         #    prompt.
         ser.sendall(b"cat /clipboard/text\n")
-        log = wait_for(ser, b"Hello chapter 114", 5.0)
-        if b"Hello chapter 114" not in log:
+        log = wait_for(ser, b"Hello chapter 140", 5.0)
+        if b"Hello chapter 140" not in log:
             print("FAIL: cat /clipboard/text did not echo back")
             print(log[-2000:].decode("ascii", "replace"))
             return 1
@@ -168,7 +168,7 @@ def main():
         # in the cat output that follows the second write.
         # Slice from the last 'cat' invocation forward.
         tail = log.split(b"cat /clipboard/text")[-1]
-        if b"Hello chapter 114" in tail:
+        if b"Hello chapter 140" in tail:
             print("FAIL: stale bytes from the first write leaked through")
             print(tail[:500].decode("ascii", "replace"))
             return 1
@@ -188,7 +188,7 @@ def main():
             print("FAIL: clear left the 'world' payload in /clipboard/text:")
             print(tail[:400].decode("ascii", "replace"))
             return 1
-        if b"Hello chapter 114" in tail:
+        if b"Hello chapter 140" in tail:
             print("FAIL: clear resurrected the 'Hello' payload:")
             print(tail[:400].decode("ascii", "replace"))
             return 1

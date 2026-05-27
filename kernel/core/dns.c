@@ -1,5 +1,5 @@
 /*
- * kernel/core/dns.c — milestone-57 DNS resolver (RFC 1035, A records).
+ * kernel/core/dns.c — DNS resolver (RFC 1035, A records).
  *
  * Wire format (queries and replies share the same 12-byte header):
  *

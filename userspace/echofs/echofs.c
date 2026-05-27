@@ -1,5 +1,5 @@
 /*
- * userspace/echofs/echofs.c — chapter 114 demo daemon.
+ * userspace/echofs/echofs.c — chapter 140 demo daemon.
  *
  * The smallest interesting user-space filesystem.  Mounts
  * `/echo/` via SYS_MOUNT, then serves three children:
@@ -17,7 +17,7 @@
  *
  * The daemon is intentionally minimal — it exists to prove the
  * libfs serve loop works.  Real production users (clipboardd,
- * procd) will follow in chapters 114c/114d.
+ * procd) will follow in chapters 143/114d.
  */
 
 #include "../libfs/userfs.h"

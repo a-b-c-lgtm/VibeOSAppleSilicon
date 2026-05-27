@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """scripts/test_minimize.py — wsd minimize/restore regression
-test, originally chapter 108e.
+test, originally chapter 118.
 
 Exercises the userspace (wsd-side) minimize / restore plumbing:
 

@@ -1,4 +1,4 @@
-/* userspace/stdiotest/stdiotest.c — chapter 116b smoke test.
+/* userspace/stdiotest/stdiotest.c — chapter 150 smoke test.
  *
  * Drives the new FILE * layer end-to-end:
  *

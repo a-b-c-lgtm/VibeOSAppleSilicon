@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""_dbg_hn_resources.py -- manual probe (chapter 112h follow-up).
+"""_dbg_hn_resources.py -- manual probe (chapter 131 follow-up).
 
 Goal: verify the resolve_url "base has no path" fix.  Before
 the fix, fetching https://news.ycombinator.com/ (or any
@@ -34,7 +34,7 @@ should never appear regardless of the URL after the colon).
 
 Per debug-scripts-policy.md this lives in scripts/ as a
 manual probe (not part of the regression sweep).  It is
-the canonical reference for verifying chapter 112h's
+the canonical reference for verifying chapter 131's
 resolve_url fix on a live public site.
 """
 

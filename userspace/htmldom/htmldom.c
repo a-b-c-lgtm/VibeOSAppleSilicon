@@ -1,5 +1,5 @@
 /*
- * userspace/htmldom/htmldom.c — milestone-60 DOM-builder driver.
+ * userspace/htmldom/htmldom.c — DOM-builder driver.
  *
  * Reads a file path from argv[1] (or "/mnt/test.html" if missing),
  * slurps it whole into a heap buffer, runs `html.h`'s tokenizer +
@@ -14,7 +14,7 @@
  *       [ELEM] "head"
  *         [ELEM] "meta" charset="utf-8"
  *         [ELEM] "title"
- *           [TEXT] "M59 tokenizer fixture"
+ *           [TEXT] "tokenizer fixture"
  *         [ELEM] "style"
  *           [TEXT] "\n  body { color: red; }\n"
  *       [COMMENT] " a comment in the middle "

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_doom_plays.py — chapter 130c "Doom plays" smoke test.
+"""scripts/test_doom_plays.py — chapter 174 "Doom plays" smoke test.
 
 Closes Phase 1 of Part XVIII (real GCC and real software) at the
 render-pipeline level: boot the OS, launch /bin/doom from /bin/sh,
@@ -7,17 +7,17 @@ wait for V_Init: on serial, then screendump the framebuffer and
 assert the doom window is actually drawing pixels (not the
 underlying cyan wallpaper).
 
-This is intentionally smaller than what chapter 130c's prose
+This is intentionally smaller than what chapter 174's prose
 sketches.  A first cut of this script drove DOOM all the way
 through the menus and into E1M1 motion via QMP keyboard events;
 manual play with the same QEMU command works perfectly, but the
 QMP-injected key path doesn't route through wsd's click-to-focus
 model the same way a real keypress does, so the automated input
 half is deferred to a follow-up GUI-input harness (planned for
-Part XIX).  Manual play is the acceptance gate for chapter 130b's
-input shim (and, after chapter 133g, the real `GUI_EVENT_KEY_UP`
+Part XIX).  Manual play is the acceptance gate for chapter 173's
+input shim (and, after chapter 197, the real `GUI_EVENT_KEY_UP`
 plumbing that replaced its timed-release timer); this script is
-the regression guard for chapter 130a/b's render and WAD-load
+the regression guard for chapter 172/b's render and WAD-load
 paths.
 
 What this script does

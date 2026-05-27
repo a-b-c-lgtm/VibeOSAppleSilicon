@@ -1,5 +1,5 @@
 /*
- * userspace/srvtest/srvtest.c — chapter 107 / M90a demo program.
+ * userspace/srvtest/srvtest.c — chapter 112 demo program.
  *
  * Exercises the named-IPC service bus end-to-end without any
  * cooperating second binary.  Forks once; the parent acts as
@@ -118,7 +118,7 @@ int main(int argc, char **argv)
         return 1;
     }
     if (pid == 0) {
-        /* Child: chapter 107 arranges for fork() to skip
+        /* Child: chapter 112 arranges for fork() to skip
          * FD_SRV_LISTEN inheritance for the same reason
          * FD_SOCKET_LISTEN is skipped — the kernel registry
          * is single-owner.  The child just dials. */

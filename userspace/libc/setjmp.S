@@ -1,4 +1,4 @@
-/* userspace/libc/setjmp.S — AArch64 setjmp/longjmp, chapter 128a.
+/* userspace/libc/setjmp.S — AArch64 setjmp/longjmp, chapter 165.
  *
  * Implements the two-function contract documented in setjmp.h.
  * AAPCS64 (Procedure Call Standard for the Arm 64-bit
@@ -21,7 +21,7 @@
  *     x0+ 64  x27/x28
  *     x0+ 80  x29/x30
  *     x0+ 96  sp
- *     x0+104  d8/d9     ── chapter 129: FP/SIMD callee-saved set
+ *     x0+104  d8/d9     ── chapter 171: FP/SIMD callee-saved set
  *     x0+120  d10/d11
  *     x0+136  d12/d13
  *     x0+152  d14/d15

@@ -1,5 +1,5 @@
 /*
- * userspace/libgui/draw.h — chapter 108c software rasteriser.
+ * userspace/libgui/draw.h — chapter 116 software rasteriser.
  *
  * What this file is
  * -----------------
@@ -9,8 +9,8 @@
  * this colour", "draw this string at this pixel") into byte
  * writes against a back-buffer the kernel handed the process.
  * Compositing was the kernel's job; rasterisation was the
- * app's.  We had everything but that split — chapter 108a gave
- * apps a `gui_window_fb` pointer, chapter 108b moved fonts to
+ * app's.  We had everything but that split — chapter 114 gave
+ * apps a `gui_window_fb` pointer, chapter 115 moved fonts to
  * /srv/font, but every GUI app was still calling
  * `gui_fill_rect` and `gui_draw_text` syscalls.  This chapter
  * finishes the move.
@@ -20,7 +20,7 @@
  *
  *   1. `gui_create_window(w, h, title)` as before.
  *   2. `gui_window_fb(id, &fb)` once at startup.  `fb` now
- *      carries the window id (chapter 108c extension to the
+ *      carries the window id (chapter 116 extension to the
  *      struct) so every subsequent draw_* call can take just
  *      the fb pointer and still issue damage.
  *   3. `draw_fill_rect`, `draw_text`, `draw_blit_bgra` etc.
@@ -85,7 +85,7 @@ static inline int gui_window_dirty(struct gui_fb *fb,
  * negative or oversize rects without bothering to clip up
  * front — matches the kernel's wm_fill_rect ergonomics).
  *
- * BGRA byte order matches the framebuffer (chapter 26): the
+ * BGRA byte order matches the framebuffer (chapter 25): the
  * uint32_t is laid out as B in bits 0..7, G in 8..15, R in
  * 16..23, A in 24..31. */
 static inline void draw_fill_rect(struct gui_fb *fb,

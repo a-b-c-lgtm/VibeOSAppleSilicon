@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_httpd_forward.py -- chapter 106a / M96 forwarding-proxy test.
+"""scripts/test_httpd_forward.py -- chapter 109 forwarding-proxy test.
 
 End-to-end exercise of httpd's chapter-106a "be a dumb pipe"
 forwarding mode.  Boots the kernel with TWO network paths in
@@ -29,7 +29,7 @@ The asserted behaviour:
      returns the canned body the Python server produced for
      that path.  Proves:
         - the upstream socket_connect() succeeded from inside an
-          inbound handler (chapter 106 loopback prerequisite),
+          inbound handler (chapter 108 loopback prerequisite),
         - the client's request bytes were replayed verbatim
           (the Python server logs the path it received and we
           confirm it matches the path we asked for),

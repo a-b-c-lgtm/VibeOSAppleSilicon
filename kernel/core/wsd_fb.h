@@ -1,5 +1,5 @@
 /*
- * kernel/core/wsd_fb.h — chapter 108d.
+ * kernel/core/wsd_fb.h — chapter 117.
  *
  * Window-Server Daemon framebuffer-mapping interface.  See
  * wsd_fb.c for the full design rationale.  Two entry points:
@@ -22,7 +22,7 @@
 long sys_fb_map_scanout(long args_uptr);
 void wsd_fb_release_owner(uint64_t pid);
 
-/* Chapter 108d \u2014 userspace-driven GPU flush.
+/* Chapter 117 \u2014 userspace-driven GPU flush.
  * fb_present(x, y, w, h) wrapper.  See SYS_FB_PRESENT in
  * kernel/core/syscall.h for the contract. */
 long sys_fb_present(long x_arg, long y_arg,

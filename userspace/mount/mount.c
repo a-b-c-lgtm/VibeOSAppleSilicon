@@ -1,4 +1,4 @@
-/* userspace/mount/mount.c — chapter 113: print the kernel's
+/* userspace/mount/mount.c — chapter 132: print the kernel's
  * mount table.
  *
  * Usage:
@@ -12,7 +12,7 @@
  *
  * Exits 0 on success, 1 on any kernel error.
  *
- * This is the user-visible payoff for chapter 113's mount-table
+ * This is the user-visible payoff for chapter 132's mount-table
  * + fs_ops refactor: before the refactor, the only way to know
  * which filesystems existed was to read the kernel source.
  */

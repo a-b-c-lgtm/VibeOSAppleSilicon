@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_getrand.py — chapter 112 entropy stack smoke test.
+"""scripts/test_getrand.py — chapter 123 entropy stack smoke test.
 
 Boots the kernel with `-device virtio-rng-device,rng=rng0` attached,
 drops to /bin/sh, runs `/bin/getrand 16` twice, and asserts:
@@ -169,7 +169,7 @@ def main():
             return 1
         print("PASS: outputs differ (CSPRNG advancing)")
 
-        print("PASS: chapter 112 entropy smoke test")
+        print("PASS: chapter 123 entropy smoke test")
         return 0
     finally:
         q.kill(); q.wait()

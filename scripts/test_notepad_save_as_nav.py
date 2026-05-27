@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_notepad_save_as_nav.py — chapter 85 save-dialog
+"""scripts/test_notepad_save_as_nav.py — chapter 86 save-dialog
 directory navigation test.
 
 Builds on test_notepad_save_as.py.  Adds the new behaviours:

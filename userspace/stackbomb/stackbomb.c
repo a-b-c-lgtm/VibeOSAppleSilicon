@@ -1,4 +1,4 @@
-/* userspace/stackbomb/stackbomb.c — chapter 101 guard-page test.
+/* userspace/stackbomb/stackbomb.c — chapter 103 guard-page test.
  *
  * Deliberately recurses with a fat local until the user stack
  * runs out.  Used by scripts/test_stackbomb.py to confirm the

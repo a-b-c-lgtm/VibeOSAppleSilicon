@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_gcc_hello.py -- chapter 132f /bin/gcc smoke.
+"""scripts/test_gcc_hello.py -- chapter 186 /bin/gcc smoke.
 
 End-to-end: boot the OS, ask `/bin/gcc` to compile a trivial
 hello-world C program, run the resulting binary, assert the
@@ -13,7 +13,7 @@ inside our OS for the first time.
 The shim at `/bin/gcc` is `userspace/gccw/gccw.c` -- it
 prepends `-B/bin/` to argv and execs `/bin/xgcc`.  xgcc then
 spawns cc1 / as / ld as needed, all of which live at `/bin/`
-on the OSFS-1 image after chapter 132f.
+on the OSFS-1 image after chapter 186.
 
 Test ladder (so failures pinpoint where the pipeline breaks):
 
@@ -27,7 +27,7 @@ Test ladder (so failures pinpoint where the pipeline breaks):
 Step 5 uses `-nostdlib -nostdinc -e _start` so we don't depend
 on default specs picking up crt0 / libc / libgcc -- those are
 shipped on OSFS-1 but the wrapper paths will need follow-up
-work (chapter 132g) before the bare `gcc hello.c` invocation
+work (chapter 187) before the bare `gcc hello.c` invocation
 in the user memory ("`gcc hello.c` working in the guest")
 matches a hosted-style command line.
 """
@@ -163,7 +163,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 132f] /bin/gcc end-to-end smoke test")
+    print("[chapter 186] /bin/gcc end-to-end smoke test")
     reformat_data()
     q = boot()
     s = conn()
@@ -264,7 +264,7 @@ def main():
                or b"0x000000000000002a" in out,
                "step 7: /tmp/hello returned 42")
 
-        # --- step 8 (chapter 132g): default-specs hello ----
+        # --- step 8 (chapter 187): default-specs hello ----
         # The real prize: `gcc hello.c -o hello` with NO
         # `-nostdlib -nostdinc -e _start` escape hatch.  The
         # specs in aarch64-osdev.h already wire crt0%O%s,

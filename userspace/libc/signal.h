@@ -1,4 +1,4 @@
-/* userspace/libc/signal.h — Catchable signals (chapter 77).
+/* userspace/libc/signal.h — Catchable signals (chapter 76).
  *
  * Header-only wrapper around SYS_SIGACTION / SYS_SIGRETURN.
  * The kernel-side delivery contract is documented in
@@ -97,7 +97,7 @@ struct sigframe {
     uint64_t pad2;     /* round to 288 — must match kernel sigframe_k */
 };
 
-/* ── Chapter 128b — raise() / abort() ────────────────────────
+/* ── Chapter 166 — raise() / abort() ────────────────────────
  *
  * Two small C99 conveniences built on top of the existing
  * kill() + getpid() syscalls.  Real upstream code (Doom's

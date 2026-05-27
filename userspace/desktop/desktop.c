@@ -1,6 +1,6 @@
 /*
- * userspace/desktop/desktop.c — milestone-50 desktop environment,
- * ported to /srv/wm in chapter 108d.
+ * userspace/desktop/desktop.c — desktop environment,
+ * ported to /srv/wm in chapter 117.
  *
  * Owns the wallpaper.  This program is the userspace authority
  * on what the bottom layer of the desktop looks like; the
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
      * background.  Without it, a click on a wallpaper pixel
      * not occluded by a foreground window would z_raise the
      * wallpaper to the top and lock the user out of every
-     * other app (chapter 108e follow-up fix). */
+     * other app (chapter 118 follow-up fix). */
     struct wm_window win;
     if (wm_create_window_at(screen_w, screen_h,
                             GUI_WIN_FLAG_NO_DECORATION

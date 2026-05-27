@@ -1,6 +1,6 @@
 /* userspace/libc/fcntl.h -- POSIX open flags + (stub) fcntl().
  *
- * Chapter 117 of the book.  Consolidates the O_* flag bits that
+ * Chapter 153 of the book.  Consolidates the O_* flag bits that
  * were scattered across the code base into one POSIX-shaped
  * header, and provides a stub `fcntl()` for the bits of the
  * surface GCC / TCC / configure scripts insist on having.
@@ -59,7 +59,7 @@ static inline int creat(const char *path, int mode)
  * wrapper).  dup() picks an unused fd by probing upward. */
 static inline int dup(int oldfd)
 {
-    /* Chapter 117's kernel does not expose an "is fd in use"
+    /* Chapter 153's kernel does not expose an "is fd in use"
      * probe, so we walk indices and call dup2 with each.  dup2
      * happily replaces the slot if it WAS in use -- so to keep
      * dup() faithful we'd need that probe.  In practice every

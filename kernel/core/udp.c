@@ -1,5 +1,5 @@
 /*
- * kernel/core/udp.c \u2014 milestone-54 UDP/IPv4.
+ * kernel/core/udp.c \u2014 UDP/IPv4.
  *
  * Tiny, stateless, polling-driven.  See udp.h for the design
  * notes.  The interesting part is the checksum, which is

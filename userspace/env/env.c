@@ -1,7 +1,7 @@
 /* userspace/env/env.c — print the environment, one var per line.
  *
  * Same idea as POSIX `env(1)` with no arguments.  Walks the
- * environ[] array (chapter 116c) and prints each entry on its
+ * environ[] array (chapter 151) and prints each entry on its
  * own line.
  */
 

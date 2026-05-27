@@ -1,4 +1,4 @@
-/* cpu.h — chapter 86 per-CPU registry and accessors.
+/* cpu.h — chapter 87 per-CPU registry and accessors.
  *
  * One `struct cpu` per logical CPU, reachable via TPIDR_EL1
  * (after secondary_start sets it up) or via the flat g_cpus[]
@@ -27,7 +27,7 @@
 #define CPU_FLAG_BOOTED   (1u << 1)   /* PSCI CPU_ON returned success    */
 #define CPU_FLAG_READY    (1u << 2)   /* secondary_main reached WFI loop */
 
-/* Forward decl — chapter 89 added per-CPU `current` and `idle`
+/* Forward decl — chapter 90 added per-CPU `current` and `idle`
  * pointers without dragging the full thread.h include in here. */
 struct thread;
 
@@ -48,7 +48,7 @@ struct cpu {
     uint64_t mpidr;
 
     /* ----------------------------------------------------------------
-     * Chapter 89 — per-CPU scheduler state.
+     * Chapter 90 — per-CPU scheduler state.
      *
      * Every CPU has its OWN runqueue, current-thread pointer, and
      * idle thread.  Threads do NOT migrate between CPUs (chapter
@@ -57,7 +57,7 @@ struct cpu {
      * shootdown problem (no need to broadcast `tlbi vmalle1is`
      * when an address space is destroyed) and lets each CPU's
      * scheduler be the same uniprocessor scheduler we already had
-     * up to chapter 87, just operating on per-CPU state.
+     * up to chapter 88, just operating on per-CPU state.
      *
      * `current` is the thread actively running (or about to run on
      *          first cswitch into it).  Set by yield()/schedule().
@@ -148,7 +148,7 @@ void smp_init(void);
  * stub for an eventual ACPI / hardcoded-table boot path. */
 void smp_init_with_dtb(const void *dtb);
 
-/* Chapter 89 — register the boot CPU's `struct cpu` slot and
+/* Chapter 90 — register the boot CPU's `struct cpu` slot and
  * write TPIDR_EL1 BEFORE thread_init runs.  Without this,
  * thread_init can't set `cpu_current()->current = boot_thread`
  * because TPIDR_EL1 is still zero and cpu_current() would
@@ -159,7 +159,7 @@ void smp_init_with_dtb(const void *dtb);
  * the secondaries).  Idempotent on the boot CPU. */
 void cpu_register_boot(void);
 
-/* Chapter 89 — entry function for the per-CPU idle thread.
+/* Chapter 90 — entry function for the per-CPU idle thread.
  * Sleeps in WFI; wakes on any IRQ (timer or IPI_RESCHED) and
  * yields to give a real thread a chance.  Falls back to WFI
  * if the runqueue is still empty (yield will pick idle again).

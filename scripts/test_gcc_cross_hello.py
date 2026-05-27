@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""scripts/test_gcc_cross_hello.py — chapter 122 smoke test.
+"""scripts/test_gcc_cross_hello.py — chapter 158 smoke test.
 
 Validates that the host-resident aarch64-elf-gcc cross-toolchain,
-configured exactly the way chapter 122 specifies (USER_CFLAGS +
+configured exactly the way chapter 158 specifies (USER_CFLAGS +
 USER_LDFLAGS + crt0.o + linker_user.ld), produces an ELF that
 runs unmodified inside the OS.
 
 We use the host toolchain that ships with the book today
-(`aarch64-elf-gcc`).  Chapter 122 documents how a target-renamed
+(`aarch64-elf-gcc`).  Chapter 158 documents how a target-renamed
 `aarch64-none-osdev-gcc` would slot in at the same invariants.
 
 Test approach:
@@ -31,7 +31,7 @@ from test_bin_ld_ar import reformat_data, boot, conn, wait_for, send_cmd, hard_k
 PROMPT = b"/$ "
 
 HELLO_C = r"""
-/* chapter 122 smoke source */
+/* chapter 158 smoke source */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -78,7 +78,7 @@ def expect(cond, msg):
     return 1 if cond else 0
 
 def main():
-    print("[chapter 122] host cross-toolchain end-to-end smoke")
+    print("[chapter 158] host cross-toolchain end-to-end smoke")
 
     # 1. Cross-compile on the host using the SAME invariants as
     #    every other userspace binary in the book.

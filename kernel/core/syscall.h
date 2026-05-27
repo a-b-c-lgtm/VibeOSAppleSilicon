@@ -56,7 +56,7 @@ enum {
     SYS_KILL     = 27,    /* (int pid, int sig) -> int (0 ok, -errno fail)    */
     SYS_SET_FG_PID = 28,  /* (int pid) -> int (previous fg pid)               */
 
-    /* Milestone 65 — fork + exec.  Together these supplant the
+    /* fork + exec.  Together these supplant the
      * old SYS_SPAWN family for callers that want POSIX semantics
      * (fork to set up redirections / inherit fds / ..., then exec).
      * SYS_SPAWN is preserved as a fast-path "fork-then-immediate-
@@ -65,7 +65,7 @@ enum {
     SYS_EXEC     = 30,    /* (const char *path, char *const argv[]) -> -errno
                            *   on failure; never returns on success.          */
 
-    /* Chapter 77 — Catchable signals (sigaction + sigreturn).
+    /* Chapter 76 — Catchable signals (sigaction + sigreturn).
      *   sys_sigaction(sig, handler, restorer) -> uint64_t old_handler
      *     handler == 0 ⇒ SIG_DFL (terminate with 128+sig).
      *     handler == 1 ⇒ SIG_IGN (drop silently).
@@ -89,7 +89,7 @@ enum {
     SYS_SIGACTION = 31,
     SYS_SIGRETURN = 32,
 
-    /* Chapter 78 — SIGCHLD + waitpid.  Generalises SYS_WAIT:
+    /* Chapter 77 — SIGCHLD + waitpid.  Generalises SYS_WAIT:
      *   pid > 0 → wait for that specific child only.
      *   pid <= 0 → wait for any child (legacy SYS_WAIT).
      *   options & WNOHANG (1) → do not block; return 0 if a
@@ -99,7 +99,7 @@ enum {
      * or -1 if no child matches the filter at all. */
     SYS_WAITPID = 33,
 
-    /* Chapter 79b — pseudo-terminal allocation.
+    /* Chapter 79 — pseudo-terminal allocation.
      *   sys_openpty(int *master_out, int *slave_out) -> 0 or -errno
      * Allocates a pty (two pipes + a foreground-pid field) and
      * installs two new fds in the calling thread:
@@ -118,7 +118,7 @@ enum {
      * -ENOMEM (pty/pipe alloc). */
     SYS_OPENPTY = 34,
 
-    /* Chapter 82 — durability for OSFS-2.
+    /* Chapter 83 — durability for OSFS-2.
      *   sys_fsync(int fd) -> 0 or -errno
      * For an OSFS-2 file fd, flushes every dirty block in the
      * write-back cache to disk synchronously and returns 0 only
@@ -130,7 +130,7 @@ enum {
      * cache slot is left dirty so a retry can succeed). */
     SYS_FSYNC = 35,
 
-    /* Chapter 85 \u2014 directory namespace.
+    /* Chapter 86 \u2014 directory namespace.
      *   sys_mkdir(const char *path) -> 0 or -errno
      * Creates a directory at `path` (must start with /data/ \u2014
      * the only writable mount with subdirectory support).  All
@@ -147,7 +147,7 @@ enum {
      * `type_out` receives 1 (file) or 2 (dir) so callers can\n     * tag entries without a follow-up stat. */
     SYS_LISTDIR_AT = 37,
 
-    /* Milestone 40 — minimal in-kernel window manager. */
+    /* Minimal in-kernel window manager. */
     SYS_GUI_CREATE_WINDOW  = 40,  /* (uint32_t w, uint32_t h, const char *t) -> id */
     SYS_GUI_DESTROY_WINDOW = 41,  /* (int id) -> 0/-errno                          */
     SYS_GUI_PRESENT        = 42,  /* (struct gui_present_args *)   -> 0/-errno     */
@@ -156,18 +156,18 @@ enum {
     SYS_GUI_FLUSH          = 45,  /* (int id) -> 0/-errno                          */
     SYS_GUI_POLL_EVENT     = 46,  /* (struct gui_event *out) -> 1 if ev, 0 if none */
 
-    /* Milestone 47 — taskbar / always-on-top windows + window list. */
+    /* Taskbar / always-on-top windows + window list. */
     SYS_GUI_CREATE_WINDOW_EX = 47, /* (struct gui_create_window_ex_args *) -> id   */
     SYS_GUI_LIST_WINDOWS   = 48,  /* (struct gui_window_info *out, int max) -> n  */
     SYS_GUI_RAISE_WINDOW   = 49,  /* (int id) -> 0/-errno                         */
 
-    /* Milestone 50 — userspace desktop environment. */
+    /* Userspace desktop environment. */
     SYS_GUI_GET_SCREEN_SIZE = 50, /* (uint32_t *w, uint32_t *h) -> 0/-errno       */
 
-    /* Milestone 51 — minimize / restore windows. */
+    /* Minimize / restore windows. */
     SYS_GUI_SET_MINIMIZED   = 51, /* (int id, int on) -> 0/-errno                 */
 
-    /* Chapter 102 -- measure a string's rendered width in pixels
+    /* Chapter 104 -- measure a string's rendered width in pixels
      * using the kernel's default font. Lets userspace centre
      * labels, position carets, and truncate-to-fit without
      * assuming a fixed glyph pitch (which no longer holds with
@@ -175,7 +175,7 @@ enum {
      * -EFAULT if the string pointer isn't readable. */
     SYS_GUI_MEASURE_TEXT    = 52, /* (const char *s) -> uint32_t px width        */
 
-    /* Chapter 108a -- userspace access to window pixel buffers.
+    /* Chapter 114 -- userspace access to window pixel buffers.
      * The WM-owned pixel buffer for a window is exposed at a
      * fresh user VA range (RW, EL0, page-aligned, tagged with
      * DESC_SW_WM_WINDOW so AS teardown skips it and fork()
@@ -217,15 +217,15 @@ enum {
     SYS_GUI_UNMAP_WINDOW    = 54, /* (int id)                       -> 0/-errno */
     SYS_GUI_DAMAGE          = 55, /* (struct gui_damage_args *)     -> 0/-errno */
 
-    /* Milestone 56 — sockets (active-open client side). */
+    /* Sockets (active-open client side). */
     SYS_SOCKET_CONNECT  = 60, /* (uint32_t ip4_be, uint16_t port) -> fd / -errno */
     SYS_SOCKET_STATE    = 61, /* (int fd) -> int state (enum tcp_state)          */
     SYS_SOCKET_SHUTDOWN = 62, /* (int fd) -> 0 / -errno; FIN, fd still readable  */
 
-    /* Milestone 57 — DNS resolver. */
+    /* DNS resolver. */
     SYS_RESOLVE         = 63, /* (const char *name, uint32_t *out_ip4_be) -> 0/-errno */
 
-    /* Chapter 104 / M93 — sockets (passive-open server side).
+    /* Chapter 106 — sockets (passive-open server side).
      *
      * SYS_SOCKET_LISTEN(port, backlog) -> fd / -errno
      *   Create a TCP_LISTEN slot bound to `port` and return a
@@ -247,7 +247,7 @@ enum {
     SYS_SOCKET_ACCEPT   = 65, /* (int listen_fd, uint32_t *peer_ip_out,
                                   uint16_t *peer_port_out) -> fd / -errno        */
 
-    /* Chapter 107 — named-IPC service bus.
+    /* Chapter 112 — named-IPC service bus.
      *
      * SYS_SRV_BIND(const char *path) -> fd / -errno
      *   Register the calling thread as the listener for
@@ -280,7 +280,7 @@ enum {
     SYS_SRV_ACCEPT      = 82, /* (int listen_fd) -> fd / -errno     */
     SYS_SRV_CONNECT     = 83, /* (const char *path) -> fd / -errno  */
 
-    /* Chapter 108d — userspace window server foundation.
+    /* Chapter 117 — userspace window server foundation.
      *
      * SYS_FB_MAP_SCANOUT(struct fb_map_args *out) -> 0 / -errno
      *   Maps the active virtio-gpu scanout buffer's physical
@@ -290,7 +290,7 @@ enum {
      *   *out with the user VA, dimensions, and byte stride.
      *
      *   The mapping uses the same page-install primitive that
-     *   chapter 108a's gui_window_fb uses — the framebuffer's
+     *   chapter 114's gui_window_fb uses — the framebuffer's
      *   physical pages are contiguous (allocated via
      *   pmem_alloc_contig at fb_init), so we synthesise a
      *   trivial PA-array and reuse address_space_install_wm_window.
@@ -306,7 +306,7 @@ enum {
      *   the cached descriptors. */
     SYS_FB_MAP_SCANOUT  = 84, /* (struct fb_map_args *out) -> 0 / -errno */
 
-    /* Chapter 108d — server-allocated, client-mappable
+    /* Chapter 117 — server-allocated, client-mappable
      * per-window framebuffer.  See kernel/core/win_fb.h for the
      * full design.  Three syscalls all take a user struct pointer
      * (or a small int for FREE) and return 0/-errno:
@@ -321,7 +321,7 @@ enum {
      *     passes a known id; kernel maps the same physical
      *     pages into caller's AS at a fresh user VA and fills
      *     in {va, w, h, stride, size}.  Idempotent per AS.
-     *     Chapter 108d is permissive (anyone who knows the id
+     *     Chapter 117 is permissive (anyone who knows the id
      *     may map); the chapter-107 IPC channel between wsd
      *     and the client is the de-facto ACL until a future
      *     capability layer tightens it.
@@ -333,7 +333,7 @@ enum {
     SYS_WIN_FB_ALLOC    = 85, /* (struct win_fb_alloc_args *) -> 0 / -errno */
     SYS_WIN_FB_MAP      = 86, /* (struct win_fb_map_args   *) -> 0 / -errno */
     SYS_WIN_FB_FREE     = 87, /* (uint32_t id)               -> 0 / -errno */
-    /* chapter 108e — resize an existing win_fb in place.
+    /* chapter 118 — resize an existing win_fb in place.
      *   SYS_WIN_FB_RESIZE(uint32_t id,
      *                     uint32_t new_w, uint32_t new_h)
      *     -> 0 / -errno
@@ -351,7 +351,7 @@ enum {
      * old VA returns translation-fault. */
     SYS_WIN_FB_RESIZE   = 93, /* (uint32_t id, uint32_t w, uint32_t h) -> 0/-errno */
 
-    /* Chapter 112 — entropy source.  Backed by the virtio-rng
+    /* Chapter 123 — entropy source.  Backed by the virtio-rng
      * device (driver in kernel/device/virtio_rng.c) and stretched
      * by the ChaCha20 CSPRNG in kernel/core/random.c.
      *
@@ -371,7 +371,7 @@ enum {
      * in `buf`; on failure nothing was copied. */
     SYS_GETRANDOM       = 94,
 
-    /* Chapter 113 — mount-table introspection.
+    /* Chapter 132 — mount-table introspection.
      *
      *   sys_mounts(struct mount_info *out, int max)
      *       -> count_written  on success (0..max, never > MOUNT_MAX)
@@ -395,7 +395,7 @@ enum {
      * pagination or cursor needed. */
     SYS_MOUNTS          = 95,
 
-    /* Chapter 114 — userspace filesystem servers.
+    /* Chapter 140 — userspace filesystem servers.
      *
      *   sys_mount(const char *prefix, int fds_out[2])
      *       -> mount_id (>= 0) on success
@@ -430,10 +430,10 @@ enum {
     SYS_MOUNT           = 96,
     SYS_UMOUNT          = 97,
 
-    /* Chapter 114e — kernel state snapshots for /bin/procd.
+    /* Chapter 145 — kernel state snapshots for /bin/procd.
      *
      * procd is the userspace daemon that serves /proc.  It used
-     * to live in kernel/core/procfs.c; chapter 114e replaces
+     * to live in kernel/core/procfs.c; chapter 145 replaces
      * that file with a userfs daemon and these three syscalls
      * are the kernel's way of exposing the bits of state procd
      * needs to render each /proc file.
@@ -467,7 +467,7 @@ enum {
     SYS_THREAD_SNAPSHOT = 99,
     SYS_STRACE_RENDER   = 100,
 
-    /* Chapter 116b — POSIX-shaped lseek for the new stdio FILE *
+    /* Chapter 150 — POSIX-shaped lseek for the new stdio FILE *
      * layer.  Lets fseek / ftell / rewind sit on top of the
      * existing fd_entry->offset that vfs_read already maintains.
      *
@@ -479,11 +479,11 @@ enum {
      *      offset.
      *     -ENOSYS for SEEK_END on filesystems that can't report
      *      file size (today: tmpfs and osfs2 — they'll grow size
-     *      reporting in chapter 117 when stat lands).
+     *      reporting in chapter 153 when stat lands).
      */
     SYS_LSEEK           = 101,
 
-    /* Chapter 117 — POSIX-shaped stat / fstat.  Returns a
+    /* Chapter 153 — POSIX-shaped stat / fstat.  Returns a
      * `struct kstat` (defined in vfs.h) by path or fd.  The
      * underlying mode bits use S_IFREG_K / S_IFDIR_K / S_IFCHR_K
      * / S_IFIFO_K / S_IFSOCK_K (vfs.h); the userspace surface
@@ -499,13 +499,13 @@ enum {
     SYS_STAT            = 102,
     SYS_FSTAT           = 103,
 
-    /* Chapter 108d — userspace-driven GPU flush.  Wsd
+    /* Chapter 117 — userspace-driven GPU flush.  Wsd
      * holds a writable mapping of the scanout (via
      * SYS_FB_MAP_SCANOUT) and now also owns composition end to
      * end, so it needs to drive virtio-gpu's flush itself
      * rather than relying on the kernel WM's `compose_all` to
      * stamp TRANSFER_TO_HOST_2D + RESOURCE_FLUSH on every event.
-     * After chapter 108d the kernel WM never paints, so without
+     * After chapter 117 the kernel WM never paints, so without
      * this syscall wsd's pixel stores would sit in scanout RAM
      * forever and never reach the GPU surface.
      *
@@ -524,7 +524,7 @@ enum {
      */
     SYS_FB_PRESENT      = 88, /* (x, y, w, h)                -> 0 / -errno */
 
-    /* chapter 108e -- userspace decorations + cursor.  wsd uses
+    /* chapter 118 -- userspace decorations + cursor.  wsd uses
      * these three syscalls to:
      *   - SYS_POINTER_STATE: snapshot the cursor (x, y, btn
      *     bitmap) so it can paint the cursor sprite and hit-
@@ -546,14 +546,14 @@ enum {
     SYS_GUI_MOVE_WINDOW   = 90, /* (int id, int32_t x, int32_t y) -> 0/-errno */
     SYS_GUI_DELIVER_EVENT = 91, /* (int id, const gui_event*)      -> 0/-errno */
 
-    /* chapter 108e -- toggle wsd-routed pointer-passthrough on
+    /* chapter 118 -- toggle wsd-routed pointer-passthrough on
      * a kernel WM shadow.  When on, kernel hit-test pretends the
      * window isn't there; wsd becomes the sole authority on
      * input routing for that window's pixels.  See struct
      * wm_window.input_passthrough in kernel/core/wm.c. */
     SYS_GUI_SET_INPUT_PASSTHROUGH = 92, /* (int id, int on) -> 0/-errno */
 
-    /* Chapter 90 — mmap + unified page cache.
+    /* Chapter 91 — mmap + unified page cache.
      *   sys_mmap(addr, len, prot, flags, fd, offset) -> VA / -errno
      *     Supports MAP_PRIVATE | MAP_ANONYMOUS (anonymous, lazy
      *     zero-fill) and MAP_PRIVATE on a ramfs file fd at
@@ -570,7 +570,7 @@ enum {
     SYS_MMAP    = 70,
     SYS_MUNMAP  = 71,
 
-    /* Chapter 91 — userspace threads (clone-shaped) + futex.
+    /* Chapter 92 — userspace threads (clone-shaped) + futex.
      *
      *   sys_clone(entry, arg, stack_top, tls) -> tid / -errno
      *     Spawns a new thread that shares the calling thread's
@@ -583,7 +583,7 @@ enum {
      *     the parent on success, or -EINVAL/-ENOMEM on failure.
      *     File descriptors are NOT shared — each thread gets a
      *     fresh empty fd table.  Pre-chapter-91 fork copied the
-     *     parent's fds; chapter 91 deliberately doesn't because
+     *     parent's fds; chapter 92 deliberately doesn't because
      *     the floor target (a thread doing CPU work under a
      *     mutex) doesn't need shared fds and per-thread tables
      *     are simpler than refcounted ones.
@@ -592,7 +592,7 @@ enum {
      *     If *uaddr == expected, block on a wait queue keyed by
      *     `uaddr` (per-AS — the same VA in different processes
      *     would alias today, but cross-process futex isn't a
-     *     thing in chapter 91 because we have no shared memory).
+     *     thing in chapter 92 because we have no shared memory).
      *     If *uaddr != expected, return -EAGAIN immediately.
      *     Spurious wakeups are allowed; callers must re-check
      *     the predicate after waking.
@@ -606,7 +606,7 @@ enum {
     SYS_CLONE       = 72,
     SYS_FUTEX_WAIT  = 73,
     SYS_FUTEX_WAKE  = 74,
-    /* Chapter 92 — clone with explicit CPU placement.  Same
+    /* Chapter 93 — clone with explicit CPU placement.  Same
      * contract as SYS_CLONE plus a 5th `cpu_id` argument:
      *
      *   sys_clone2(entry, arg, stack_top, tls, cpu_id) -> tid
@@ -617,14 +617,14 @@ enum {
      *                    cpu_id (must be < SMP_MAX_CPUS).
      *
      * The new thread inherits its home_cpu from cpu_id and stays
-     * there for life — chapter 92 doesn't migrate.  Misplacing a
+     * there for life — chapter 93 doesn't migrate.  Misplacing a
      * thread on a CPU that doesn't have user-thread support
      * (today: any cpu_id >= 2 in the default 2-CPU build) is
      * caught by the SMP_MAX_CPUS bound; cpu_id of an unbooted
      * but in-range CPU returns -EINVAL via the secondary-CPU
      * boot status. */
     SYS_CLONE2      = 75,
-    /* Chapter 92 — return the CPU the calling thread is currently
+    /* Chapter 93 — return the CPU the calling thread is currently
      * running on.  Used by tests to verify pinning works.  The
      * value is a snapshot — if the caller is preempted between
      * the syscall and using the result, it might end up on a
@@ -632,7 +632,7 @@ enum {
      * 92 user threads) don't migrate, so for them the snapshot
      * is stable. */
     SYS_GETCPU      = 76,
-    /* Chapter 93 — clone with extended argument struct (POSIX
+    /* Chapter 94 — clone with extended argument struct (POSIX
      * pthread_create-style interface, in spirit) and per-clone
      * "what to share" flags.  Argument is a pointer to a
      * `struct clone_args` in user memory; kernel copies it into
@@ -653,7 +653,7 @@ enum {
      * accidentally relying on undefined-bit behaviour. */
     SYS_CLONE3      = 77,
 
-    /* Chapter 95 — wall-clock time.  Pairs with the PL031 RTC
+    /* Chapter 96 — wall-clock time.  Pairs with the PL031 RTC
      * boot snapshot in kernel/core/walltime.c.
      *
      *   sys_gettimeofday(struct timeval *out) -> 0 / -EFAULT
@@ -673,7 +673,7 @@ enum {
      * page is missing or read-only. */
     SYS_GETTIMEOFDAY = 78,
 
-    /* Chapter 96 — synthesise a square wave through the
+    /* Chapter 97 — synthesise a square wave through the
      * virtio-snd PCM stream.
      *
      *   sys_beep(uint32_t freq_hz, uint32_t duration_ms)
@@ -694,7 +694,7 @@ enum {
      * cleanly. */
     SYS_BEEP        = 79,
 
-    /* Chapter 100 — per-thread syscall tracer.
+    /* Chapter 102 — per-thread syscall tracer.
      *
      *   sys_trace_me(void) -> 0 / -ENOMEM
      *
@@ -715,7 +715,7 @@ enum {
     SYS_TRACE_ME    = 80,
 };
 
-/* Chapter 95 — POSIX-shaped wall-clock value.  Layout is part
+/* Chapter 96 — POSIX-shaped wall-clock value.  Layout is part
  * of the userspace ABI (mirrored byte-for-byte in
  * userspace/libc/syscall.h).  The 4-byte _pad keeps the total
  * struct size a multiple of 8 so further fields could be
@@ -726,7 +726,7 @@ struct timeval {
     uint32_t _pad;
 };
 
-/* Chapter 93 — clone3 argument struct.  Layout is part of the
+/* Chapter 94 — clone3 argument struct.  Layout is part of the
  * userspace ABI; do not reorder.  The 4-byte _pad keeps the
  * struct's total size a multiple of 8 so further additions can
  * append fields without changing alignment of existing ones. */
@@ -740,7 +740,7 @@ struct clone_args {
     uint32_t _pad;
 };
 
-/* Chapter 93 — clone3 flag bits.  Only bit 0 (CLONE_FILES) is
+/* Chapter 94 — clone3 flag bits.  Only bit 0 (CLONE_FILES) is
  * defined today; sys_clone3 rejects unknown bits with -EINVAL. */
 #define CLONE_FILES  0x01ULL
 

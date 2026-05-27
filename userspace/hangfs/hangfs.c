@@ -1,5 +1,5 @@
 /*
- * userspace/hangfs/hangfs.c — chapter 114f deadline-test daemon.
+ * userspace/hangfs/hangfs.c — chapter 146 deadline-test daemon.
  *
  * The smallest possible "broken" userfs daemon: it mounts
  * `/hang/` and then never services its request pipe.  Any

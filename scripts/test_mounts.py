@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_mounts.py — chapter 113 mount-table syscall smoke test.
+"""scripts/test_mounts.py — chapter 132 mount-table syscall smoke test.
 
 Boots the OS, runs `/bin/mount`, and verifies the output lists all
 six kernel mounts with the expected MOUNT_RO flags:
@@ -118,7 +118,7 @@ def expect(cond, msg):
         FAILS.append(msg)
 
 def main():
-    print("[chapter 113] SYS_MOUNTS smoke test")
+    print("[chapter 132] SYS_MOUNTS smoke test")
     reformat_data()
 
     q = boot()
@@ -147,7 +147,7 @@ def main():
 
         # Sanity: at least six entries reported (could be more if a
         # future chapter mounts something else during boot, that's
-        # fine — we only assert the six we shipped in chapter 113).
+        # fine — we only assert the six we shipped in chapter 132).
         expect(len(lines) >= 6,
                f"at least 6 mount entries reported (got {len(lines)})")
     finally:

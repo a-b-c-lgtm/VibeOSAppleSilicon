@@ -1,5 +1,5 @@
 /*
- * userspace/pixapp/pixapp.c — chapter 108d port.
+ * userspace/pixapp/pixapp.c — chapter 117 port.
  *
  * Opens a 300x200 window via the wmclient (/srv/wm) path and
  * paints a horizontal red→blue gradient by writing the BGRA
@@ -8,9 +8,9 @@
  * touched, not with primitive count.
  *
  * This is the chapter-108d descendant of the chapter-108a demo.  In
- * chapter 108a pixapp called `gui_create_window` +
+ * chapter 114 pixapp called `gui_create_window` +
  * `gui_window_fb` + `gui_window_damage`; the kernel WM
- * composed.  After chapter 108d the kernel WM no longer
+ * composed.  After chapter 117 the kernel WM no longer
  * composes (wsd does), so pixapp's three syscalls become
  * `wm_create_window` + (implicit FB mapping) +
  * `wm_window_dirty`.  The paint loop is identical -- the
@@ -33,7 +33,7 @@
 
 /* Print a NUL-terminated string to fd 1 without depending on
  * printf — keeps the binary small and dodges the printf-vs-
- * memset trap that bit milestone 19. */
+ * memset trap from the early printf chapter. */
 static void puts1(const char *s)
 {
     size_t n = 0;

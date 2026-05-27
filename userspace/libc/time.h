@@ -1,9 +1,9 @@
 /*
- * userspace/libc/time.h — chapter 128d (POSIX shape).
+ * userspace/libc/time.h — chapter 168 (POSIX shape).
  *
- * Header-only.  Started life in chapter 95 with a non-POSIX
+ * Header-only.  Started life in chapter 96 with a non-POSIX
  * `struct civil_time` + `gmtime_r(time_t, struct civil_time *)`
- * shape; chapter 128d swaps in the C99 / POSIX shape so real
+ * shape; chapter 168 swaps in the C99 / POSIX shape so real
  * upstream code (Doom, GCC, BearSSL) can include this header
  * unmodified.
  *
@@ -69,7 +69,7 @@ struct tm {
     int tm_isdst;   /* always 0 -- we don't model DST        */
 };
 
-/* ── small helpers (kept from chapter 95) ────────────────────── */
+/* ── small helpers (kept from chapter 96) ────────────────────── */
 
 /* Return 1 if `y` is a Gregorian leap year, 0 otherwise. */
 static inline int __osdev_is_leap(int y)
@@ -90,7 +90,7 @@ static inline int __osdev_days_in_month(int y, int m)
  * have FP at EL0; callers that actually consume the result will
  * fail to compile then.  Doom calls difftime exactly once and
  * the value is fed straight back into time arithmetic, so we
- * can re-target it to `long` in chapter 130a if needed. */
+ * can re-target it to `long` in chapter 172 if needed. */
 static inline double difftime(time_t end, time_t start)
 {
     return (double)(end - start);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_wsd_hello.py — chapter 108d smoke test.
+"""scripts/test_wsd_hello.py — chapter 117 smoke test.
 
 Boots the OS, waits for the shell prompt (which guarantees
 init's supervisor table has already launched wsd), then
@@ -8,7 +8,7 @@ twice from the serial-attached shell.
 
 Phase B contracts still asserted (carry-over):
   - init logs '[init] launching /bin/wsd'
-    - wsd's start banner appears (chapter 108d string)
+    - wsd's start banner appears (chapter 117 string)
   - wsd's '[wsd] mapped FB' banner appears
   - wsd's '[wsd] ready on /srv/wm' banner appears
   - Shell prompt reached
@@ -79,7 +79,7 @@ kernel WM's next compose_all pass overwrites them.  The
 verification is wsd's synchronous-readback log line, which
 runs before any reschedule and therefore can't race the
 kernel compositor.  Surviving on-screen requires the
-kernel compositor retirement in chapter 108d after the
+kernel compositor retirement in chapter 117 after the
 libgui swap.
 """
 import os
@@ -187,13 +187,13 @@ def main():
         #    wsd got baked into the OSFS by mistake, we'd
         #    see the wrong banner string here and the test
         #    fails.
-        log = wait_for(ser, b"[wsd] starting (chapter 108d)",
+        log = wait_for(ser, b"[wsd] starting (chapter 117)",
                        15.0, baseline=log)
-        if b"[wsd] starting (chapter 108d)" not in log:
-            print("FAIL: wsd never printed the chapter 108d starting banner")
+        if b"[wsd] starting (chapter 117)" not in log:
+            print("FAIL: wsd never printed the chapter 117 starting banner")
             print(log[-2000:].decode("ascii", "replace"))
             return rc
-        print("PASS: wsd printed the chapter 108d starting banner")
+        print("PASS: wsd printed the chapter 117 starting banner")
 
         # 3. Phase A FB-map carry-over (still must work).
         log = wait_for(ser, b"[wsd] mapped FB", 15.0, baseline=log)
@@ -238,7 +238,7 @@ def main():
         print(f"PASS: wmtest -> {text}")
 
         # 7. The first WM_HELLO since the wsd bind must have
-        #    yielded session=N for some small N.  Chapter 108d:
+        #    yielded session=N for some small N.  Chapter 117:
         #    boot auto-launches desktop+taskbar+launcher
         #    over wsd, each opening its own session, so wmtest's
         #    session counter is >= 4 rather than 1 by the time
@@ -315,7 +315,7 @@ def main():
         #     to-scanout translation + blit + readback all
         #     at once.
         #
-        #     Chapter 108d: boot daemons consume the
+        #     Chapter 117: boot daemons consume the
         #     low win=1..3 ids, so wmtest's first window is at
         #     win=4 (or whatever's next).  Don't pin the id;
         #     pin the dst+px which is what proves the slice.
@@ -375,7 +375,7 @@ def main():
                 gc_line = line
                 break
         gc_text = gc_line.decode("ascii", "replace").strip()
-        # Chapter 108d: boot daemons keep N=initial open
+        # Chapter 117: boot daemons keep N=initial open
         # in wsd long after the first wmtest run.  The slice we're
         # proving here is "the wmtest run's deliberately-leaked id2
         # got reaped on conn close" -- captured by `reaped 1

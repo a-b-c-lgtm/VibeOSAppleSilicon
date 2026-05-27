@@ -1,4 +1,4 @@
-/* userspace/libc/stdlib.h — chapter 128e.
+/* userspace/libc/stdlib.h — chapter 169.
  *
  * The numeric / generic-algorithm slice of <stdlib.h> that real
  * upstream code expects.  We deliberately keep this header
@@ -24,7 +24,7 @@
  *
  * strtod / strtof / strtold are intentionally NOT defined here.
  * They return double / float / long double, which requires FP at
- * EL0 (chapter 129).  When chapter 129 ships we'll re-include
+ * EL0 (chapter 171).  When chapter 171 ships we'll re-include
  * them in this header.  Doom uses none of the float strtoX
  * variants; binutils and GCC do, but only after we've turned FP
  * on anyway.
@@ -324,7 +324,7 @@ static inline long strtol(const char *nptr, char **endptr, int base)
 static inline long      atol(const char *s)  { return strtol(s, (char **)0, 10); }
 static inline long long atoll(const char *s) { return strtoll(s, (char **)0, 10); }
 
-/* atof — chapter 130a.
+/* atof — chapter 172.
  *
  * Minimal decimal-floating-point parser: optional sign, digits,
  * optional '.' fractional part, optional 'e[+-]?digits' exponent.
@@ -339,7 +339,7 @@ static inline long long atoll(const char *s) { return strtoll(s, (char **)0, 10)
  * Returns 0.0 on a string with no leading digits, matching the
  * POSIX shape "value (zero if conversion is not possible)".
  *
- * Requires EL0 FP (chapter 129).  If a TU that builds with
+ * Requires EL0 FP (chapter 171).  If a TU that builds with
  * -mgeneral-regs-only includes this header and calls atof,
  * GCC will refuse the FP arithmetic — that's a build-time
  * signal, not a runtime issue. */
@@ -381,9 +381,9 @@ static inline double atof(const char *s)
     return sign < 0 ? -v : v;
 }
 
-/* system — chapter 130a.  POSIX: pass the command string to a
+/* system — chapter 172.  POSIX: pass the command string to a
  * shell.  We don't have a /bin/sh equivalent the kernel can
- * exec yet (chapter 79b's gui-term spawns sh.elf but that's
+ * exec yet (chapter 79's gui-term spawns sh.elf but that's
  * not reachable from a non-GUI process), so this stub always
  * reports failure.
  *
@@ -523,7 +523,7 @@ static inline void *bsearch(const void *key,
  *   leading ":" - silence missing-arg diagnostics; return ':'
  *                 instead of '?' for that case
  *
- * Chapter 131e: a single vendor TU (libiberty/getopt.c) defines
+ * Chapter 179: a single vendor TU (libiberty/getopt.c) defines
  * extern optarg / optind / optopt and provides _getopt_internal
  * for libiberty/getopt1.c (getopt_long).  Our static-storage
  * definitions would clash with its extern declarations at
@@ -613,7 +613,7 @@ static inline int getopt(int argc, char *const argv[], const char *opts)
 }
 #endif /* OSDEV_LIBC_NO_GETOPT */
 
-/* Chapter 131d — `mktemp(char *template)`.
+/* Chapter 178 — `mktemp(char *template)`.
  *
  * POSIX (deprecated, still ubiquitous): replace the trailing
  * "XXXXXX" of `template` with a string that makes the path

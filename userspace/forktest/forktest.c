@@ -1,4 +1,4 @@
-/* userspace/forktest/forktest.c — milestone 65 fork+exec smoke test.
+/* userspace/forktest/forktest.c — fork+exec smoke test.
  *
  * Three checks, in order:
  *

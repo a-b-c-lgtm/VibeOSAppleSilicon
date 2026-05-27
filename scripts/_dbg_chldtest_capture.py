@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """scripts/_dbg_chldtest_capture.py — diagnostic capture of full
 chldtest output without stopping on PANIC.  Used during the
-chapter 75 (COW) bring-up to see the kernel panic that the
+chapter 74 (COW) bring-up to see the kernel panic that the
 regular test_sigchld.py harness was clipping off too early.
 
 Per the user's debug-script policy, kept around for future reference.

@@ -4,10 +4,10 @@
  * exception registers (ESR_EL1, FAR_EL1) and the saved frame, prints
  * a structured crash dump over the UART, and halts the CPU.
  *
- * This is a deliberately verbose dump because milestone 1 is the
+ * This is a deliberately verbose dump because this is the
  * first time the kernel can produce one — before vectors were
  * installed, every fault either hard-locked the CPU or asserted
- * inside HVF. Future milestones will refine the synchronous handler
+ * inside HVF. Future chapters will refine the synchronous handler
  * to forward page faults to the VM layer, IRQs to the GIC dispatch,
  * and SVCs to the syscall trampoline; the panic path will only fire
  * for genuinely unrecoverable cases. */
@@ -40,7 +40,7 @@ static const char *const k_vector_names[16] = {
 
 /* Decode the EC (Exception Class) field of ESR_EL1. Lifted from
  * ARM ARM D17.2.37; covers the values we are likely to see during
- * the early milestones. Anything not listed prints as "unknown EC". */
+ * early boot. Anything not listed prints as "unknown EC". */
 static const char *esr_ec_name(uint32_t ec)
 {
     switch (ec) {

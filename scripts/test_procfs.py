@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_procfs.py — chapter 99 smoke test.
+"""scripts/test_procfs.py — chapter 101 smoke test.
 
 Boots the kernel, drops into /bin/sh on the kernel console, and
 exercises the read-only /proc pseudo-FS.

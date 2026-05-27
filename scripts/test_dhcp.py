@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_dhcp.py \u2014 milestone-54 DHCP client smoke test.
+"""scripts/test_dhcp.py — DHCP client smoke test.
 
 Boots the kernel against QEMU SLIRP user-mode networking (which
 ships with a built-in DHCP server bound to 10.0.2.2:67).  Verifies
@@ -123,7 +123,7 @@ def main():
             return 1
         print("PASS: shell prompt reached after DHCP")
 
-        print("\nMILESTONE 54 (DHCP): ALL TESTS PASSED")
+        print("\nDHCP: ALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

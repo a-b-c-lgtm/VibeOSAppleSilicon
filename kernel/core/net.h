@@ -1,11 +1,11 @@
 /*
- * kernel/core/net.h — milestone-53 in-kernel network stack
+ * kernel/core/net.h — in-kernel network stack
  * (Ethernet + ARP + IPv4).
  *
- * Sits directly on top of `virtio_net` (chapter 60).  Owns:
+ * Sits directly on top of `virtio_net` (chapter 59).  Owns:
  *
  *   - the local IPv4 / netmask / gateway configuration (static
- *     for milestone 53; DHCP comes in milestone 54),
+ *     initially; DHCP follows),
  *   - a small ARP cache (8 entries, LRU on insert),
  *   - the RX dispatcher that classifies an inbound Ethernet
  *     frame by its EtherType and routes it to the ARP or IPv4
@@ -15,8 +15,8 @@
  *
  * What this layer does NOT include:
  *
- *   - ICMP, UDP, DHCP   — milestone 54
- *   - TCP + sockets     — milestone 55
+ *   - ICMP, UDP, DHCP   — separate modules
+ *   - TCP + sockets     — separate modules
  *
  * Buffer ownership: the RX path is callback-driven from inside
  * `virtio_net_drain_rx()`.  The frame pointer handed to a
@@ -125,14 +125,14 @@ int net_init(const uint8_t local_ip[NET_IPV4_LEN],
              const uint8_t netmask[NET_IPV4_LEN]);
 
 /* Read back our MAC / IPv4 config (e.g. for a `ifconfig`-style
- * command in userspace, milestone 56).  Pointers may be NULL to
+ * command in userspace).  Pointers may be NULL to
  * skip individual fields. */
 void net_get_config(uint8_t out_mac[NET_MAC_LEN],
                     uint8_t out_ip[NET_IPV4_LEN],
                     uint8_t out_gw[NET_IPV4_LEN],
                     uint8_t out_mask[NET_IPV4_LEN]);
 
-/* Milestone 57 — DNS server address (typically learned from
+/* DNS server address (typically learned from
  * DHCP option 6).  `net_set_dns` accepts 0.0.0.0 to mean "none";
  * `net_get_dns` returns 1 if a server has been set, 0 otherwise
  * (and zeros `out_ip` in that case). */
@@ -145,7 +145,7 @@ int  net_get_dns(uint8_t out_ip[NET_IPV4_LEN]);
 int  net_poll(void);
 
 /* ----------------------------------------------------------------
- * Loopback (chapter 106)
+ * Loopback (chapter 108)
  * ----------------------------------------------------------------
  *
  * "Local" addresses are addresses that we should deliver to

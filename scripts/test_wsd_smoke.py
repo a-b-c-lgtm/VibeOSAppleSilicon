@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""scripts/test_wsd_smoke.py — chapter 108d Phase A smoke test.
+"""scripts/test_wsd_smoke.py — chapter 117 Phase A smoke test.
 
 Boots the OS headless and confirms that the new userspace
-window-server daemon (/bin/wsd, introduced in chapter 108d
+window-server daemon (/bin/wsd, introduced in chapter 117
 Phase A) successfully:
 
   1. Is launched by init (supervisor entry added in

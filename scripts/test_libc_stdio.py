@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_libc_stdio.py -- chapter 116b stdio smoke test.
+"""scripts/test_libc_stdio.py -- chapter 150 stdio smoke test.
 
 Boots the OS and runs `/bin/stdiotest`, then asserts the FILE *
 layer's end-to-end behaviour:
@@ -136,7 +136,7 @@ FAIL_RE = re.compile(rb"\[stdiotest\]\s+(T\d)\s+FAIL")
 
 
 def main():
-    print("[chapter 116b] FILE * layer (fopen/fread/fwrite/fseek/...)")
+    print("[chapter 150] FILE * layer (fopen/fread/fwrite/fseek/...)")
     reformat_data()
 
     q = boot()

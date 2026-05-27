@@ -1,9 +1,9 @@
 /*
- * userspace/make/make.c — chapter 133b /bin/make.
+ * userspace/make/make.c — chapter 192 /bin/make.
  *
  * A small GNU-make-shaped build driver, intentionally NOT a
- * conformance implementation.  Chapter 126 shipped the original
- * "rules + recipes only" version (351 LoC); chapter 133b adds
+ * conformance implementation.  Chapter 162 shipped the original
+ * "rules + recipes only" version (351 LoC); chapter 192 adds
  * the features needed to drive a real multi-file C build like
  * Doom:
  *
@@ -26,7 +26,7 @@
  *   - mtime-based out-of-date checking; we still rebuild
  *     every requested target unconditionally
  *
- * Build algorithm is unchanged from chapter 126: recursive
+ * Build algorithm is unchanged from chapter 162: recursive
  * depth-first with `in_progress` flag for cycle detection.
  *
  * Capacity (compile-time, sized for an in-guest Doom rebuild):
@@ -58,7 +58,7 @@
 #define MK_MAX_NAME        96
 #define MK_MAX_SRC      (96 * 1024)
 #define MK_MAX_VARS        64
-#define MK_MAX_VAL       4096    /* chapter 133d: Doom's OBJS list
+#define MK_MAX_VAL       4096    /* chapter 194: Doom's OBJS list
                                     after continuation-join is
                                     ~1500 chars (78 file paths).
                                     4 KiB gives headroom for full
@@ -335,7 +335,7 @@ static void mk_apply_continuations(void)
 static int mk_is_var_assign(const char *line, int len, int *eq_at)
 {
     /* Recognise NAME = value where NAME is [A-Za-z_][A-Za-z0-9_]*.
-     * We deliberately do NOT recognise := += ?= -- chapter 133b
+     * We deliberately do NOT recognise := += ?= -- chapter 192
      * defers those. */
     int i = 0;
     if (i >= len) return 0;
@@ -355,7 +355,7 @@ static int mk_is_var_assign(const char *line, int len, int *eq_at)
     while (j < len && (line[j] == ' ' || line[j] == '\t')) j++;
     if (j >= len) return 0;
     if (line[j] == '=') {
-        /* Reject := += ?=  -- chapter 133b doesn't implement those. */
+        /* Reject := += ?=  -- chapter 192 doesn't implement those. */
         if (j > 0 &&
             (line[j - 1] == ':' || line[j - 1] == '+' ||
              line[j - 1] == '?')) return 0;
@@ -446,7 +446,7 @@ static int mk_parse(void)
         /* Variable assignment?  Note `tmp[]` is sized to
          * MK_MAX_VAL (4 KiB), not MK_MAX_LINE -- the value of
          * a variable like OBJS can be much longer than a recipe
-         * line after continuation-joining (chapter 133d). */
+         * line after continuation-joining (chapter 194). */
         int eq_at;
         {
             int linelen = end - p;
@@ -494,7 +494,7 @@ static int mk_parse(void)
          *
          * header[] sized for `all: $(OBJS)` where $(OBJS)
          * expands to ~1.5 KiB (Doom 78-file build).  16 KiB
-         * gives 10x headroom (chapter 133d). */
+         * gives 10x headroom (chapter 194). */
         static char header[16 * 1024];
         {
             char raw[MK_MAX_VAL];

@@ -1,7 +1,7 @@
 /* userspace/libc/dirent.h -- POSIX opendir / readdir / closedir.
  *
- * Chapter 117 of the book.  Thin wrapper over the existing
- * SYS_LISTDIR_AT primitive (chapter 85): each `DIR *` carries
+ * Chapter 153 of the book.  Thin wrapper over the existing
+ * SYS_LISTDIR_AT primitive (chapter 86): each `DIR *` carries
  * the directory path plus an `int idx` cursor; `readdir` calls
  * `listdir_at(dirpath, idx, ...)` and bumps idx by one each
  * call, returning NULL when the kernel reports past-end.
@@ -31,11 +31,11 @@
 #include "syscall.h"
 #include "errno.h"
 
-/* Chapter 132f — gcc-tree code (libcpp/system.h) poisons the
+/* Chapter 186 — gcc-tree code (libcpp/system.h) poisons the
  * unprefixed `malloc` / `free` identifiers, so the static-inline
  * opendir/closedir below can't call them directly even from a
  * TU that never executes the inlines.  Use the cstring.c extern
- * wrappers (chapter 131e) whose C-level identifiers carry the
+ * wrappers (chapter 179) whose C-level identifiers carry the
  * `__cstring_` prefix; their __asm__-rename redirects the
  * emitted symbol back to the real malloc/free at link time. */
 extern void *__cstring_malloc(size_t) __asm__("malloc");

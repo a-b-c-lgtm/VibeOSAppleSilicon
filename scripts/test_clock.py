@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_clock.py — milestone-48 smoke test.
+"""scripts/test_clock.py — clock smoke test.
 
 Boots fully headless with NO input.  Verifies the taskbar shows a
 clock in the right corner that updates every second.
@@ -200,7 +200,7 @@ def main():
         print(f"PASS: clock ticked between snapshots "
               f"({diff} bytes differ in the digit strip)")
 
-        print("\nMILESTONE 48: ALL TESTS PASSED")
+        print("\nALL TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

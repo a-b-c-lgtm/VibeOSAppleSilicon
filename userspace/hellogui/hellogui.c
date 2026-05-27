@@ -1,6 +1,6 @@
 /*
- * userspace/hellogui/hellogui.c — milestone-40 GUI smoke test,
- * rewritten in chapter 108c to draw directly into the window's
+ * userspace/hellogui/hellogui.c — GUI smoke test,
+ * rewritten in chapter 116 to draw directly into the window's
  * mapped framebuffer instead of going through gui_present /
  * gui_fill_rect / gui_draw_text syscalls.
  *
@@ -64,7 +64,7 @@ int main(int argc, char **argv)
     /* Greeting text in white over a transparent background so the
      * gradient shows through. */
     draw_text(&fb, 16, 24,
-              "Hello from the milestone-40 window manager!",
+              "Hello from the window manager!",
               GUI_BGRA(0xFF, 0xFF, 0xFF), 0, 1);
     draw_text(&fb, 16, 56,
               "Running on aarch64 under HVF.",

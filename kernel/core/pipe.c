@@ -80,7 +80,7 @@ long pipe_read_until(struct pipe *p, void *buf, size_t len,
          * with -EINTR despite the daemon's reply having
          * already landed in the pipe. */
         if (p->count > 0) continue;
-        /* Chapter 79b — thread_signal_pid wakes blocked threads.
+        /* Chapter 79 — thread_signal_pid wakes blocked threads.
          * If we got woken by a signal (rather than by a writer),
          * bail out with -EINTR so the dispatcher's pre-eret
          * sig_pending check fires.  This is what lets gui_term's

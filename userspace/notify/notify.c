@@ -1,6 +1,6 @@
 /*
- * userspace/notify/notify.c — milestone-49 toast notification,
- * ported to /srv/wm in chapter 108d.
+ * userspace/notify/notify.c — toast notification,
+ * ported to /srv/wm in chapter 117.
  *
  * Spawned as `/bin/notify "<message>"` (or with multiple words —
  * we join argv with single spaces).  Pops up an undecorated,
@@ -20,7 +20,7 @@
  *     position because the only existing call site is notepad's
  *     "saved." which never fires twice in quick succession.
  *
- * Chapter 108d port notes:
+ * Chapter 117 port notes:
  *   - All drawing now happens in-process via libgui/draw.h
  *     primitives against the wsd-mapped FB; one WM_WIN_DAMAGE
  *     per finished paint instead of one syscall per primitive.
@@ -94,7 +94,7 @@ static void draw_toast(struct wm_window *win, const char *msg)
     /* Title row. */
     draw_text(&win->fb, 16, 12, "Notice", TITLE_BGRA, BG_BGRA, 0);
 
-    /* Body row. Chapter 102 -- truncate by measured pixel width
+    /* Body row. Chapter 104 -- truncate by measured pixel width
      * with the proportional kernel font, not by character count. */
     int avail_w = WIN_W - 32;
     char trunc[MAX_MSG_LEN + 1];

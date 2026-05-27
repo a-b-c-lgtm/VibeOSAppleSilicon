@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_dns.py — milestone-57 DNS-resolver smoke test.
+"""scripts/test_dns.py — DNS-resolver smoke test.
 
 What this proves
 ----------------
@@ -161,7 +161,7 @@ def main():
             print(f"FAIL: all-zero address {octs}"); return 1
         print(f"PASS: example.com resolved to {'.'.join(str(o) for o in octs)}")
 
-        print("\nMILESTONE 57 (DNS resolver): KERNEL-SIDE TESTS PASSED")
+        print("\nDNS resolver: KERNEL-SIDE TESTS PASSED")
         return 0
     finally:
         try: q.terminate(); q.wait(timeout=3)

@@ -1,4 +1,4 @@
-/* userspace/libc/sys/types.h — chapter 130a.
+/* userspace/libc/sys/types.h — chapter 172.
  *
  * POSIX `<sys/types.h>`: typedefs for ssize_t, off_t, pid_t,
  * mode_t, uid_t, gid_t, etc.  This OS's other headers
@@ -49,7 +49,7 @@ typedef int64_t time_t;     /* match syscall.h */
 typedef long clock_t;
 #endif
 
-/* chapter 132f — libcpp/include/cpplib.h:807,813 references
+/* chapter 186 — libcpp/include/cpplib.h:807,813 references
  * ino_t / dev_t to declare struct cpp_dir's stat-cache slots.
  * Match POSIX: ino_t is unsigned long, dev_t is unsigned long
  * long (Linux convention; opaque to libcpp which only compares

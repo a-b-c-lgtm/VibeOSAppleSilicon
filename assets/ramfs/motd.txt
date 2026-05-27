@@ -3,7 +3,7 @@ Welcome to the hobby OS.
 This file lives in the kernel-embedded ramfs. It was placed at
 /motd by the Makefile via objcopy -I binary -O elf64-littleaarch64,
 linked into the kernel image's .rodata.embedded_user section, and
-served by the milestone-8 VFS.
+served by the VFS.
 
 If you can read this, the chain works:
   user 'cat' -> SYS_OPEN("/motd") -> vfs_open -> ramfs lookup

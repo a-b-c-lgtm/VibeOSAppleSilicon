@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/test_tls_chain.py -- chapter 112c X.509 chain validation.
+"""scripts/test_tls_chain.py -- chapter 126 X.509 chain validation.
 
 Boots the kernel, drops to /bin/sh, runs
 
@@ -7,7 +7,7 @@ Boots the kernel, drops to /bin/sh, runs
 
 against the in-guest httpsd, and asserts that the BearSSL
 "minimal" X.509 validator -- NOT the knownkey shortcut from
-chapter 112b -- accepts the sample chain against a trust anchor
+chapter 125 -- accepts the sample chain against a trust anchor
 built at runtime from the intermediate CA cert.
 
 The chain in vendor/bearssl/samples/chain-rsa.h is:
@@ -19,7 +19,7 @@ server presents [CERT0, CERT1]; the validator walks back from
 CERT0, verifies CERT0 was signed by CERT1's key, then matches
 CERT1's subject DN against our anchor -- and accepts.  It also
 checks notBefore/notAfter against the wall-clock the kernel got
-from the PL031 RTC at boot (chapter 95); the sample cert is
+from the PL031 RTC at boot (chapter 96); the sample cert is
 valid 2010-01-01..2037-12-31, so this passes today.
 
 Failure modes:
@@ -90,7 +90,7 @@ def read_until(ser, needles, timeout, prior=b""):
     return bytes(buf)
 
 
-PASS_LINE     = b"tls handshake: PASS chapter 112c"
+PASS_LINE     = b"tls handshake: PASS chapter 126"
 FAIL_LINE     = b"tlstest: FAIL"
 ANCHOR_LINE   = b"built trust anchor from CA cert"
 WALLCLOCK     = b"wallclock tv_sec="
@@ -164,7 +164,7 @@ def main():
             print("FAIL: tlstest never emitted PASS summary for 112c")
             print(tail[-2000:].decode("ascii", "replace"))
             return 1
-        print("PASS: chapter 112c X.509 chain validation end-to-end")
+        print("PASS: chapter 126 X.509 chain validation end-to-end")
         return 0
     finally:
         q.kill(); q.wait()

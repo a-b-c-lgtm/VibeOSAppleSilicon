@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# scripts/fetch_public_roots.sh -- Chapter 112g.
+# scripts/fetch_public_roots.sh -- Chapter 130.
 #
 # Copy the host system's public CA root list to OUTPUT so that
 # scripts/mkcabundle.py can fold it into /mnt/ca.bundle.  This is
 # what lets the in-guest browser talk to https://news.ycombinator.com,
 # https://example.com etc. without going through the host-side
-# TLS-stripping proxy (chapter 106a) -- the in-guest validator now
+# TLS-stripping proxy (chapter 109) -- the in-guest validator now
 # trusts the same roots your host browser does.
 #
 # We deliberately do NOT commit the resulting PEM:

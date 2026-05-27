@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scripts/test_atexit.py — chapter 120 smoke test.
+scripts/test_atexit.py — chapter 156 smoke test.
 
 Boots the OS, runs /bin/atexittest, and asserts the
 expected output ordering:
@@ -116,7 +116,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 120] /bin/atexittest smoke test")
+    print("[chapter 156] /bin/atexittest smoke test")
     reformat_data()
     q = boot()
     s = conn()

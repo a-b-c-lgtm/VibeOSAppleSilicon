@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""scripts/test_gcc_stdio.py -- chapter 132i in-guest #include <stdio.h>.
+"""scripts/test_gcc_stdio.py -- chapter 189 in-guest #include <stdio.h>.
 
-Chapter 132h compiled a freestanding C program with extern decls
+Chapter 188 compiled a freestanding C program with extern decls
 for every libosdevc.a symbol it used (no #include).  That worked
 but is not how anybody actually writes C.
 
-Chapter 132i ships the 24 user-facing libc headers onto /bin and
+Chapter 189 ships the 24 user-facing libc headers onto /bin and
 adds `-isystem /bin` to the /bin/gcc shim so the in-guest gcc
 can resolve `#include <stdio.h>` and friends.
 
@@ -161,7 +161,7 @@ def expect(cond, msg):
 
 
 def main():
-    print("[chapter 132i] in-guest #include <stdio.h>")
+    print("[chapter 189] in-guest #include <stdio.h>")
     reformat_data()
     q = boot()
     s = conn()

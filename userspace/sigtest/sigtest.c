@@ -1,4 +1,4 @@
-/* userspace/sigtest/sigtest.c — chapter 77 catchable-signal test.
+/* userspace/sigtest/sigtest.c — chapter 76 catchable-signal test.
  *
  * Three checks:
  *

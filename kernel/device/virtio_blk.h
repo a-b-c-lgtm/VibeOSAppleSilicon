@@ -3,11 +3,11 @@
  *
  * Each driver instance maintains one virtqueue (queue 0) of fixed
  * depth 8 and exposes synchronous, polled, single-sector
- * read/write primitives.  Suitable for milestone-11 bring-up; a
+ * read/write primitives.  Suitable for early bring-up; a
  * real driver would batch requests, use IRQ completions, and
  * support multiple queues.
  *
- * Multi-device support (chapter 81): the driver probes the
+ * Multi-device support (chapter 82): the driver probes the
  * virtio-mmio bus for ALL block devices (up to VIRTIO_BLK_MAX_DEVS)
  * and gives each one a stable index 0..N-1 in probe order.  The
  * single-arg API (`virtio_blk_read(sector, buf)`) is a backward-

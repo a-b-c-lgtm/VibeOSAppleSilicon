@@ -1,5 +1,5 @@
 /*
- * userspace/cssparse/cssparse.c — milestone-61 CSS-parser driver.
+ * userspace/cssparse/cssparse.c — CSS-parser driver.
  *
  * Reads a CSS file path from argv[1] (or "/mnt/test.css" if missing),
  * slurps it into a heap buffer, runs `css.h`'s parser over it, and

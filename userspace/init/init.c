@@ -1,11 +1,11 @@
-/* userspace/init/init.c — milestone-9 PID 1.
+/* userspace/init/init.c — PID 1.
  *
  * The first user program the kernel launches.  Spawns each
  * built-in user binary in turn via SYS_SPAWN and waits for it to
  * exit via SYS_WAIT.  This is intentionally a spawn+wait model
- * rather than fork+exec — see book chapter 17 for why.
+ * rather than fork+exec — see book chapter 16 for why.
  *
- * Chapter 108 added a tiny per-pid supervisor: a handful of
+ * Chapter 113 added a tiny per-pid supervisor: a handful of
  * "this binary must always be running" entries are tracked in
  * g_supervised[].  When the main reap loop reaps a tid that
  * matches a supervised entry, the entry is respawned and the
@@ -30,18 +30,18 @@
 #include "../libc/malloc.h"
 #include "../libc/env.h"
 
-/* ---------------- chapter 108 supervisor ----------------
+/* ---------------- chapter 113 supervisor ----------------
  *
  * Fixed-size table of "keep this alive" entries.  Each entry is
  * a path + the tid of the most recently spawned instance.  When
  * an entry's tid is reaped (in the main wait loop), restart() is
  * called and the new tid recorded.  Entries are added by
- * supervise(path) and never removed -- chapter 108 has no
+ * supervise(path) and never removed -- chapter 113 has no
  * unload story, and won't have one until we add a service
  * manager UI.
  *
  * No backoff: the supervised entries today are clipboardd,
- * fontd, and (chapter 108d) wsd; all small daemons.  If any
+ * fontd, and (chapter 117) wsd; all small daemons.  If any
  * is crashing in a tight loop the right answer is to fix it,
  * not to back off.  When ch113 adds the audio mixer we'll
  * revisit. */
@@ -152,28 +152,28 @@ int main(void)
     /* Hand control to the shell.  When it returns, init shuts
      * down the system (well, exits — there's nobody else).
      *
-     * Milestone 46: also auto-spawn the GUI launcher so the system
+     * Also auto-spawn the GUI launcher so the system
      * boots straight to a usable desktop.  The launcher is a
      * background child we DON'T wait on specifically — it just
      * happens to also be running.  We block only on the shell so
      * that closing the launcher doesn't terminate init.
      *
-     * Milestone 47: also auto-spawn the taskbar.  Order matters
+     * Also auto-spawn the taskbar.  Order matters
      * only cosmetically — the taskbar uses ALWAYS_ON_TOP and is
      * painted last regardless.
      *
-     * Milestone 50: spawn /bin/desktop FIRST so the wallpaper
+     * Spawn /bin/desktop FIRST so the wallpaper
      * window gets the lowest z, sits underneath everything, and
      * the WM's gradient fallback only flashes for the brief
      * window between fb_init and desktop reading the BGRA blob
      * off OSFS.  Wallpaper ownership is intentionally a
      * userspace concern: the kernel knows nothing about images. */
 
-    /* Chapter 108b -- font service.
+    /* Chapter 115 -- font service.
      *
      * The TrueType rasteriser used to live in the kernel
-     * (chapter 102), eating ~1.5K lines of EL1 code plus the
-     * ~700KB DejaVuSans.ttf blob.  Chapter 108b moved it to
+     * (chapter 104), eating ~1.5K lines of EL1 code plus the
+     * ~700KB DejaVuSans.ttf blob.  Chapter 115 moved it to
      * /bin/fontd, a userspace daemon bound to /srv/font.  The
      * kernel-side WM (kernel/core/wm_font.c) is its only client
      * today; on a cache miss it sends a one-shot RPC to fontd
@@ -191,7 +191,7 @@ int main(void)
     puts("[init] launching /bin/fontd (supervised)");
     supervise("/bin/fontd", "");
 
-    /* Chapter 108d — window-server daemon.  Owns the
+    /* Chapter 117 — window-server daemon.  Owns the
      * scanout framebuffer and the /srv/wm compositor bus;
      * all GUI apps paint through it.  A wsd crash visibly
      * freezes the desktop — hence the supervisor wrapper
@@ -229,7 +229,7 @@ int main(void)
         /* non-fatal — keep going */
     }
 
-    /* Chapter 106c — boot-time httpd.
+    /* Chapter 111 — boot-time httpd.
      *
      * The browser/httpd loop closes when there's an HTTP server
      * waiting for it on the loopback interface from the moment
@@ -242,7 +242,7 @@ int main(void)
      * 8080 specifically so the existing chapter-105/106a/106b
      * regression tests can keep spawning their own httpd on 8080
      * without colliding (tcp_listen returns -2 on duplicate
-     * binds; chapter 106c memory has the audit).  The two
+     * binds; chapter 111 memory has the audit).  The two
      * coexist: init's port-80 instance serves /mnt/ files over
      * loopback; the test-spawned port-8080 instance is the
      * forwarding proxy used by HTTPS-bridge tests.
@@ -261,12 +261,12 @@ int main(void)
         /* non-fatal — desktop is still usable without it */
     }
 
-    /* Chapter 112b — boot-time httpsd.
+    /* Chapter 125 — boot-time httpsd.
      *
      * Same rationale as the chapter-106c httpd above, but for
      * TLS.  Without an in-guest HTTPS server we'd need either
      * a host-side proxy (scripts/https_proxy.py, deprecated by
-     * chapter 112d) or working outbound HTTPS through the QEMU
+     * chapter 127) or working outbound HTTPS through the QEMU
      * SLIRP stack -- both add wall-clock latency and external
      * dependencies to regression runs.  A loopback httpsd lets
      * the tls_socket handshake and the browser's https:// path
@@ -278,7 +278,7 @@ int main(void)
      * sample CN=localhost cert chain in test_chain.c is fine
      * for loopback; tlstest's --handshake mode pins on the
      * leaf public key, so name/expiry validation isn't in play
-     * yet (that's chapter 112c).
+     * yet (that's chapter 126).
      *
      * As with httpd we tolerate spawn failure: a missing
      * httpsd means TLS regression tests will fail at the
@@ -292,7 +292,7 @@ int main(void)
         /* non-fatal — TLS tests will surface this */
     }
 
-    /* Chapter 112e — second httpsd on port 8444, presenting the
+    /* Chapter 128 — second httpsd on port 8444, presenting the
      * EC / ECDSA sample chain instead of the RSA one.  Same
      * loopback-test rationale as the RSA instance above; the
      * point is to give the browser two distinct CAs to validate
@@ -307,10 +307,10 @@ int main(void)
         write(1, "\n", 1);
     }
 
-    /* Chapter 114 — clipboard service.
+    /* Chapter 140 — clipboard service.
      *
      * The clipboard isn't a kernel feature; it lives in a
-     * userspace daemon that, since chapter 114, mounts
+     * userspace daemon that, since chapter 140, mounts
      * /clipboard via the userfs interface (SYS_MOUNT +
      * libfs).  Spawned through supervise() so the main reap
      * loop respawns it if it dies -- the "keep my daemons
@@ -328,10 +328,10 @@ int main(void)
     puts("[init] launching /bin/clipboardd (supervised)");
     supervise("/bin/clipboardd", "");
 
-    /* Chapter 114e — /proc service.
+    /* Chapter 145 — /proc service.
      *
      * The chapter-99 in-kernel /proc lived under kernel/core/
-     * procfs.c.  Chapter 114e evicts it: /bin/procd mounts /proc
+     * procfs.c.  Chapter 145 evicts it: /bin/procd mounts /proc
      * via the same userfs channel clipboardd uses, and serves
      * the same files (uptime, meminfo, cpuinfo, sched, plus
      * per-pid status/cmdline/trace).  Supervised so a crash
@@ -340,7 +340,7 @@ int main(void)
     puts("[init] launching /bin/procd (supervised)");
     supervise("/bin/procd", "");
 
-    /* Chapter 96 — boot chime.  Two short beeps signal "kernel
+    /* Chapter 97 — boot chime.  Two short beeps signal "kernel
      * is up, GUI is up, you can start typing".  -ENODEV is
      * silently ignored: not every QEMU invocation attaches a
      * virtio-sound device, and a missing chime is cosmetic. */
@@ -360,7 +360,7 @@ int main(void)
      * The launcher (and anything it spawned) might exit first; we
      * just keep reaping.
      *
-     * Chapter 108: per-reap supervisor hook.  If the reaped tid
+     * Chapter 113: per-reap supervisor hook.  If the reaped tid
      * matches a supervised entry, supervise_check() respawns the
      * binary and updates the entry's tid in place.  The reap loop
      * carries on as before -- the supervisor is intentionally
